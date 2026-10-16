@@ -1,5 +1,5 @@
-# Every push builds Milk Crate on GitHub's Windows machines and publishes it
-# as a Release. Installed copies of the app update themselves from it.
+# Every push builds Milk Crate for Windows and Mac on GitHub's machines and
+# publishes both in one Release. Installed copies update themselves from it.
 # The app's code lives in the milk-crate/ folder of this repository.
 #
 # One-time setup (Settings → Secrets and variables → Actions → New repository secret):
@@ -20,13 +20,57 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: milk-crate
-
 jobs:
-  windows:
-    runs-on: windows-latest
+  # 1. A draft release for this version (listeners don't see drafts).
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.create.outputs.id }}
+      version: ${{ steps.create.outputs.version }}
+    steps:
+      - id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = `0.1.${context.runNumber}`;
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${version}`,
+              target_commitish: context.sha,
+              name: `Milk Crate ${version}`,
+              body: [
+                "**Windows:** download `Milk.Crate_" + version + "_x64-setup.exe` and run it.",
+                "**Mac:** download `Milk.Crate_" + version + "_universal.dmg`, open it and drag Milk Crate to Applications. The first time, macOS may block it: open System Settings → Privacy & Security and click **Open Anyway**.",
+                "",
+                "Installed copies update themselves.",
+              ].join("\n"),
+              draft: true,
+            });
+            core.setOutput("id", data.id);
+            core.setOutput("version", version);
+
+  # 2. Build each platform and attach it to the draft. One at a time, so the update file (latest.json) collects both.
+  build:
+    needs: release
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            rust-targets: ""
+            args: --bundles nsis
+          - name: Mac
+            os: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles app,dmg
+    name: Build for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: milk-crate
     steps:
       - uses: actions/checkout@v4
 
@@ -37,20 +81,22 @@ jobs:
           cache-dependency-path: milk-crate/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: milk-crate/src-tauri
+          key: ${{ matrix.name }}
 
       - run: npm ci
 
       - run: npm test
 
-      # Version = 0.1.<build number>, so every build is newer than the last.
       - name: Set version and update address
         shell: bash
         env:
-          VERSION: 0.1.${{ github.run_number }}
+          VERSION: ${{ needs.release.outputs.version }}
           REPO: ${{ github.repository }}
           HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: node scripts/prepare-release.mjs
@@ -62,9 +108,29 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: milk-crate
-          tagName: v__VERSION__
-          releaseName: Milk Crate __VERSION__
-          releaseBody: Download the setup .exe below to install. Installed copies update themselves.
-          releaseDraft: false
-          prerelease: false
-          args: --bundles nsis
+          releaseId: ${{ needs.release.outputs.id }}
+          args: ${{ matrix.args }}
+
+  # 3. Publish the release so installed apps see the update. If nothing built, it stays a draft.
+  publish:
+    needs: [release, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.release.outputs.id }}
+        with:
+          script: |
+            const release_id = Number(process.env.RELEASE_ID);
+            const { owner, repo } = context.repo;
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, { owner, repo, release_id });
+            const names = assets.map((a) => a.name);
+            core.info(`Assets: ${names.join(", ")}`);
+            if (!names.includes("latest.json")) {
+              core.setFailed("No platform finished building, so the release stays a draft. See the build logs above.");
+              return;
+            }
+            if (!names.some((n) => n.endsWith(".exe"))) core.warning("The Windows build is missing from this release.");
+            if (!names.some((n) => n.endsWith(".dmg"))) core.warning("The Mac build is missing from this release.");
+            await github.rest.repos.updateRelease({ owner, repo, release_id, draft: false, make_latest: "true" });
