@@ -13,9 +13,9 @@ This repo is the **desktop app**: a [Tauri 2](https://v2.tauri.app) shell (Rust)
 - **Scenes:** real places. Your scene is your city, the towns within 35 miles and your state's larger cities, on a real map with every band as a dot in its color.
 - **Accounts:** listener accounts (city, display name, crate, follows, ratings, all private except your display name) and separate artist accounts that apply and are approved by reviewers (**Review artists**). **Settings → Updates** installs the newest version from GitHub.
 - **For artists:** profile, page designer, and releases (WAV/AIFF/FLAC become 320 kbps MP3 streaming copies).
-- **Liquid glass look:** frosted, translucent panels; on Windows the window itself is see-through frosted glass (acrylic). When an album plays, its cover's colors swirl slowly behind the glass (they hold still when paused and fade out when nothing's loaded). The glass has real frosted texture (fine grain and uneven frost). Text passes WCAG AA contrast over any colors at every transparency setting.
+- **Liquid glass look:** frosted, translucent panels; on Windows the window itself is see-through frosted glass (acrylic). When an album plays, its cover's colors swirl slowly behind the glass (they hold still when paused and fade out when nothing's loaded). The glass has a subtle frosted texture (fine speckle, like real frosted glass). Text passes WCAG AA contrast over any colors at every transparency setting.
 - **Player:** a seek bar with a handle you can drag, volume slider (with mute), an **EQ** button that opens the equalizer, and **immersive mode** (the expand button, or click the cover): the album full screen with its colors swirling behind it. Controls fade when the mouse rests; Esc leaves.
-- **Settings:** **Appearance** (theme, your own accent color, album-reactive colors, glass on/off, glass transparency and grain), **Sound** (shuffle by your ratings, **6-band equalizer**: 60 Hz–15 kHz, ±12 dB, presets) and **Updates**.
+- **Settings:** **Appearance** (theme, your own accent color, album-reactive colors, glass on/off, glass transparency, and a subtle frosted texture you can turn off), **Sound** (shuffle by your ratings, **6-band equalizer**: 60 Hz–15 kHz, ±12 dB, presets) and **Updates**.
 - **Signing up** asks for your display name.
 
 ## Server setup (one time)
