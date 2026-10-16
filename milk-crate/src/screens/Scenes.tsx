@@ -1,154 +1,124 @@
 import { useMemo, useState } from "react";
+import { MapPin } from "lucide-react";
 import type { Go } from "../App";
 import { useCatalog } from "../lib/catalog";
-import { useArtistPlaces, useLiveScene, useLocation } from "../lib/location";
-import { STATE_NAMES, findPlace, inScene, placeKey, placeLabel, sceneFor, sceneSummary, type Place } from "../lib/geo";
-import { ReleaseCard, Sticker } from "../components/ui";
-import { ArtistThumb } from "../components/ArtistBanner";
-import { SceneMap } from "../components/SceneMap";
+import { useArtistPlaces, useLocation } from "../lib/location";
+import { STATE_NAMES, findPlace, placeKey, sceneFor, type Place } from "../lib/geo";
+import { buildBins, type Bin } from "../lib/bins";
+import { Button } from "../components/ui";
+import { CrateBins } from "../components/CrateBins";
+import { CountryMap } from "../components/CountryMap";
+import { CityPicker } from "../components/CityPicker";
 import { EmptyCatalog } from "./Artists";
 
 /**
- * Scenes: the music around where you live (your city, the towns nearby and
- * your state's larger cities) on a real map, or every city with artists on
- * Milk Crate. You can also explore another city's scene. Only cities where a
- * band has released music appear, and the colors follow your accent.
+ * Scenes, as record-store bins. "Your scene": one divider per town around you
+ * where a band has released music, nearest first; open a town's bin and flip
+ * through its records. "Across the country": a map of every town with bands;
+ * pick one to look around its bins without changing your own city.
  */
 export function Scenes({ go, explore }: { go: Go; explore?: { name: string; state: string } }) {
   const loc = useLocation();
-  const { releases, artistById, status, tracks, ratingCounts } = useCatalog();
-  const everyone = useArtistPlaces();
+  const { releases, status } = useCatalog();
+  const placed = useArtistPlaces();
   const [view, setView] = useState<"scene" | "national">("scene");
-  const [hovered, setHovered] = useState<string | null>(null);
 
   const explorePlace = explore && loc.places ? findPlace(loc.places, explore.name, explore.state) : undefined;
   const scene = explorePlace && loc.places ? sceneFor(explorePlace, loc.places) : loc.scene;
-  const shown = useLiveScene(scene); // the cities in it that have artists
-  // Every rating of every song, per artist: bigger dots for more-rated artists.
-  const ratings = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const t of tracks) out[t.artistId] = (out[t.artistId] ?? 0) + (ratingCounts[t.id] ?? 0);
-    return out;
-  }, [tracks, ratingCounts]);
-  if (!scene || !shown) return <div className="screen"><p className="muted">Loading your scene…</p></div>;
+  const bins = useMemo(() => (scene ? buildBins(scene, placed, releases) : []), [scene, placed, releases]);
+  if (!scene) return <div className="screen"><p className="muted">Loading your scene…</p></div>;
 
-  const local = view === "scene";
-  const here = everyone.filter((a) => inScene(scene, a.place));
-  const rising = [...here].sort((a, b) => b.artist.since - a.artist.since);
-  const hereIds = new Set(here.map((a) => a.artist.id));
-  const sceneReleases = releases.filter((r) => hereIds.has(r.artistId));
-
-  const cities = new Map<string, { place: Place; count: number }>();
-  for (const a of everyone) {
-    const k = placeKey(a.place);
-    cities.set(k, { place: a.place, count: (cities.get(k)?.count ?? 0) + 1 });
-  }
-  const cityList = [...cities.values()].sort((a, b) => b.count - a.count || b.place.pop - a.place.pop);
+  const home = loc.home;
+  const exploring = !!explorePlace && (!home || placeKey(explorePlace) !== placeKey(home));
+  const national = view === "national";
+  const browse = (p: Place) => {
+    setView("scene");
+    go(home && placeKey(p) === placeKey(home) ? { name: "scenes" } : { name: "scenes", explore: { name: p.name, state: p.state } });
+  };
 
   return (
-    <div>
-      <header className="scene-head" style={{ background: "var(--accent-soft)", padding: "40px 32px 32px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 24 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-          <span className="catalog" style={{ textTransform: "uppercase", color: "var(--accent)" }}>
-            {local ? `${explorePlace ? "Exploring" : "Your scene"} · ${STATE_NAMES[scene.home.state] ?? scene.home.state}` : "Milk Crate"}
+    <div className="screen scenes">
+      {exploring && (
+        <div role="status" className="explore-banner">
+          <MapPin size={18} strokeWidth={1.75} aria-hidden="true" style={{ color: "var(--accent)", flex: "none" }} />
+          <span style={{ flex: "1 1 280px" }}>
+            You&apos;re looking around <strong>{scene.home.name}</strong>.{home ? ` Your scene and your account stay set to ${home.name}.` : ""}
           </span>
-          <h1 className="display-xl">{local ? scene.home.name : "Every scene"}</h1>
-          <p className="muted" style={{ maxWidth: 560 }}>
-            {local
-              ? sceneSummary(shown) || (here.length ? "Your city and the towns around it." : "No one around here has released music on Milk Crate yet. Cities show up as soon as a band from there does.")
-              : "Every city where a band has released music on Milk Crate. Pick one to hear what it sounds like."}
-          </p>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            {explorePlace ? (
-              <button type="button" className="link-btn" onClick={() => go({ name: "scenes" })}>Back to your scene</button>
-            ) : (
-              <button type="button" className="link-btn" onClick={() => go({ name: "account" })}>Change your city</button>
-            )}
-          </div>
+          {home && <Button size="sm" onClick={() => go({ name: "scenes" })}>Back to {home.name}</Button>}
         </div>
-        <div role="group" aria-label="Map view" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 8, background: "var(--ground)" }}>
-          {(["scene", "national"] as const).map((v) => (
-            <button key={v} type="button" className="chip" aria-pressed={view === v} onClick={() => setView(v)}
-              style={view === v ? { background: "var(--accent)", color: "var(--on-accent)", borderColor: "var(--accent)" } : { borderColor: "transparent" }}>
-              {v === "scene" ? (explorePlace ? "This scene" : "Your scene") : "Across the country"}
-            </button>
-          ))}
+      )}
+
+      <header className="screen-head" style={{ alignItems: "flex-end" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <span className="catalog" style={{ textTransform: "uppercase", color: "var(--accent)" }}>
+            {national ? "Across the country" : `${exploring ? "Exploring" : "Your scene"} · ${STATE_NAMES[scene.home.state] ?? scene.home.state}`}
+          </span>
+          <h1 className="display-lg">{national ? "Every scene" : scene.home.name}</h1>
+          <span className="caption muted">
+            {national
+              ? `Look around any town's bins.${home ? ` Your own city stays ${home.name}.` : ""}`
+              : "Flip through the scene one town at a time, nearest first."}
+            {!national && !exploring && (
+              <> · <button type="button" className="link-btn" onClick={() => go({ name: "account" })}>Change your city</button></>
+            )}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {!national && <MiniMap bins={bins} onOpen={() => setView("national")} />}
+          <div role="group" aria-label="Scenes view" className="view-toggle">
+            <button type="button" aria-pressed={!national} onClick={() => setView("scene")}>{exploring ? scene.home.name : "Your scene"}</button>
+            <button type="button" aria-pressed={national} onClick={() => setView("national")}>Across the country</button>
+          </div>
         </div>
       </header>
 
-      <div className="screen">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 32, alignItems: "flex-start" }}>
-          <figure className="panel" style={{ margin: 0, flex: "999 1 420px", minWidth: 0, padding: 0, overflow: "hidden", gap: 0 }}>
-            <SceneMap mode={local ? "scene" : "national"} scene={scene} artists={local ? here : everyone} ratings={ratings}
-              hovered={hovered} onHover={setHovered} onOpen={(id) => go({ name: "artist", artistId: id })} />
-            <figcaption style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: "12px 16px", borderTop: "1px solid var(--line)", fontSize: 12, color: "var(--ink-muted)" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span aria-hidden="true" style={{ display: "inline-flex" }}>
-                  {["#ff5b3a", "#ffd43b", "#7aa2ff"].map((c) => <span key={c} style={{ width: 10, height: 10, borderRadius: "50%", background: c, marginRight: -3, boxShadow: "0 0 0 2px var(--ground-raised)" }} />)}
-                </span>
-                <span>A band, in its profile color</span>
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                  {[6, 9, 12].map((d) => <span key={d} style={{ width: d, height: d, borderRadius: "50%", background: "var(--ink-muted)" }} />)}
-                </span>
-                <span>Bigger dot, more ratings</span>
-              </span>
-              {local && <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px dashed var(--accent)" }} />Within 35 miles</span>}
-              <span>Map: U.S. Census Bureau · Cities: GeoNames</span>
-            </figcaption>
-          </figure>
-
-          {local ? (
-            <section className="section" style={{ flex: "1 1 300px", minWidth: 0, gap: 12 }}>
-              <h2 className="display-md">Up and coming</h2>
-              <p className="caption muted">Newest artists first. No follower counts.</p>
-              {rising.length === 0 && <p className="muted">No artists from around {scene.home.name} on Milk Crate yet.</p>}
-              {rising.map(({ artist: a, place }) => (
-                <button key={a.id} type="button" className="nav-item" style={{ height: "auto", padding: 8, gap: 12, color: "var(--ink)" }}
-                  onClick={() => go({ name: "artist", artistId: a.id })} onMouseEnter={() => setHovered(a.id)} onMouseLeave={() => setHovered(null)}>
-                  <ArtistThumb artist={a} size={48} />
-                  <span style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "50%", background: a.accent, flex: "none" }} />
-                      {a.name}
-                    </span>
-                    <span className="caption muted" style={{ fontWeight: 450 }}>{[a.genres.join(", "), `since ${a.since}`].filter(Boolean).join(" · ")}</span>
-                  </span>
-                  <Sticker tone="accent">{place.name}</Sticker>
-                </button>
-              ))}
-            </section>
+      {national ? (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 12 }}>
+            <div style={{ flex: "0 1 360px", minWidth: 220 }}>
+              <CityPicker label="Look around another town" value={null} onChange={browse} />
+            </div>
+            <span className="caption muted" style={{ paddingBottom: 12 }}>Only towns where a band has released music show up on the map.</span>
+          </div>
+          {placed.length ? (
+            <CountryMap placed={placed} places={loc.places} home={home} onBrowse={browse} />
           ) : (
-            <section className="section" style={{ flex: "1 1 300px", minWidth: 0, gap: 8 }}>
-              <h2 className="display-md">Cities with artists</h2>
-              {cityList.length === 0 && <EmptyCatalog go={go} offline={status === "offline"} what="No artists on Milk Crate yet." />}
-              {cityList.map(({ place, count }) => (
-                <button key={placeKey(place)} type="button" className="nav-item" style={{ height: "auto", padding: "8px 12px", justifyContent: "space-between", color: "var(--ink)" }}
-                  onClick={() => { setView("scene"); go({ name: "scenes", explore: { name: place.name, state: place.state } }); }}>
-                  <span>{placeLabel(place)}</span>
-                  <span className="caption muted">{count} {count === 1 ? "artist" : "artists"}</span>
-                </button>
-              ))}
-            </section>
+            <EmptyCatalog go={go} offline={status === "offline"} what="No artists have released music on Milk Crate yet." />
           )}
-        </div>
-
-        {local && (
-          <section className="section">
-            <h2 className="display-md">Released around {scene.home.name}</h2>
-            {sceneReleases.length ? (
-              <div className="release-grid">
-                {sceneReleases.map((r) => (
-                  <ReleaseCard key={r.id} title={r.title} artist={artistById[r.artistId]?.name ?? ""} year={r.year} art={r.art} onOpen={() => go({ name: "artist", artistId: r.artistId })} />
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No releases from this scene on Milk Crate yet.</p>
-            )}
-          </section>
-        )}
-      </div>
+        </>
+      ) : (
+        <CrateBins key={placeKey(scene.home)} bins={bins} centerTag={exploring ? "Here" : "Home"} go={go} />
+      )}
     </div>
+  );
+}
+
+/** A thumbnail of the scene: the 35-mile circle with a dot per town. Opens the big map. */
+function MiniMap({ bins, onOpen }: { bins: Bin[]; onOpen: () => void }) {
+  const center = bins[0]?.place;
+  if (!center) return null;
+  const W = 132, H = 88, R = 30;
+  const dots = bins.map((b) => {
+    const dx = (b.place.lng - center.lng) * Math.cos((center.lat * Math.PI) / 180) * 69.17;
+    const dy = -(b.place.lat - center.lat) * 69;
+    let x = (dx / 35) * R, y = (dy / 35) * R;
+    const d = Math.hypot(x, y);
+    const max = 38;
+    if (d > max) { x = (x / d) * max; y = (y / d) * max; }
+    return { b, x: W / 2 + x, y: H / 2 + y };
+  });
+  return (
+    <button type="button" className="mini-map" onClick={onOpen} aria-label="Open the map of every scene">
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        <circle cx={W / 2} cy={H / 2} r={R} fill="var(--accent)" fillOpacity="0.1" stroke="var(--accent)" strokeOpacity="0.6" strokeDasharray="3 3" />
+        {dots.map(({ b, x, y }) =>
+          b.artists.length ? (
+            <circle key={b.key} cx={x} cy={y} r={b.isCenter ? 4.5 : 3.2} fill={b.artists[0].artist.accent} stroke="var(--ground-sunken)" strokeWidth="1" />
+          ) : (
+            <circle key={b.key} cx={x} cy={y} r="4" fill="none" stroke="var(--accent)" strokeWidth="1.5" />
+          ),
+        )}
+      </svg>
+    </button>
   );
 }
