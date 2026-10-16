@@ -1,0 +1,70 @@
+# Every push builds Milk Crate on GitHub's Windows machines and publishes it
+# as a Release. Installed copies of the app update themselves from it.
+# The app's code lives in the milk-crate/ folder of this repository.
+#
+# One-time setup (Settings → Secrets and variables → Actions → New repository secret):
+#   TAURI_SIGNING_PRIVATE_KEY           the private key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+name: Build Milk Crate
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore: ["**.md", "**/docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create Releases
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: milk-crate
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: milk-crate/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: milk-crate/src-tauri
+
+      - run: npm ci
+
+      - run: npm test
+
+      # Version = 0.1.<build number>, so every build is newer than the last.
+      - name: Set version and update address
+        shell: bash
+        env:
+          VERSION: 0.1.${{ github.run_number }}
+          REPO: ${{ github.repository }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: node scripts/prepare-release.mjs
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: milk-crate
+          tagName: v__VERSION__
+          releaseName: Milk Crate __VERSION__
+          releaseBody: Download the setup .exe below to install. Installed copies update themselves.
+          releaseDraft: false
+          prerelease: false
+          args: --bundles nsis
