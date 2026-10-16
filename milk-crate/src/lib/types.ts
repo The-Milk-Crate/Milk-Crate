@@ -14,26 +14,20 @@ export type Rating = 0 | 1 | 2 | 3 | 4 | 5;
 export type PhysicalFormat = "LP" | "7in" | "Cassette" | "CD";
 export type Format = PhysicalFormat | "Digital";
 
-/** A local music community: "Raleigh–Durham", "Richmond". */
-export interface Scene {
-  id: ID;
-  name: string;
-  region: string; // "NC", "VA"
-  /** Neighborhoods / towns inside the scene, used for map clusters. */
-  places: string[];
-  /** Short human description of the sound, written by people in the scene. */
-  sound?: string;
-  /** Approximate center for the map, [lat, lng]. */
-  center?: [number, number];
-}
-
 export interface Artist {
   id: ID;
   /** The account that manages this artist (set for artists on the Milk Crate server). */
   ownerId?: ID;
   name: string;
-  sceneId: ID;
-  place: string; // "Durham, NC"
+  /** "Durham, NC" */
+  place: string;
+  city?: string;
+  /** Two-letter state code. */
+  state?: string;
+  lat?: number;
+  lng?: number;
+  /** New artists are "pending" until a reviewer approves them; only approved artists are public. */
+  status: "pending" | "approved" | "declined";
   genres: string[];
   bio: string;
   /** Artist-chosen page accent — part of the customizable artist page. */

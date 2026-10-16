@@ -1,5 +1,5 @@
 import type { Go } from "../App";
-import { formatTime } from "../data/scenes";
+import { formatTime } from "../lib/format";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
 import { sleeveSeed } from "../lib/sleeve";
@@ -20,6 +20,11 @@ export function ArtistPage({ artistId, go }: { artistId: string; go: Go }) {
 
   return (
     <div>
+      {artist.status !== "approved" && (
+        <p className="form-info" style={{ margin: "16px 16px 0" }}>
+          Only you can see this page until your artist application is approved.
+        </p>
+      )}
       <ArtistBanner artist={artist} />
       <div className="artist-intro">
         {artist.bio && <p className="artist-bio">{artist.bio}</p>}
@@ -32,7 +37,7 @@ export function ArtistPage({ artistId, go }: { artistId: string; go: Go }) {
           ) : (
             <Button>Follow</Button>
           )}
-          <Button variant="ghost" onClick={() => go({ name: "scenes", sceneId: artist.sceneId })}>See the scene</Button>
+          <Button variant="ghost" onClick={() => go({ name: "scenes", explore: { name: artist.city ?? artist.place.split(",")[0].trim(), state: artist.state ?? artist.place.split(",")[1]?.trim() ?? "" } })}>See the scene</Button>
         </div>
       </div>
 

@@ -2,11 +2,13 @@
  * The catalog every screen reads from: artists, releases and tracks on the
  * Milk Crate server (Supabase).
  *
- * Artists sign in on "For artists" to create a profile and upload releases;
- * uploads go to Supabase Storage and show up for every listener.
+ * Artist accounts apply on "For artists"; once a reviewer approves them,
+ * their releases go to Supabase Storage and show up for every listener.
+ * Only approved artists appear on public screens (the server enforces this
+ * too). An artist always sees their own profile, approved or not.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { byId } from "../data/scenes";
+import { byId } from "./format";
 import { useAuth } from "./auth";
 import { prepareAudio, type AudioFile } from "./transcode";
 import { MAX_UPLOAD_MB } from "../config";
@@ -29,14 +31,28 @@ export interface NewTrack {
   /** A local URL for the audio file. */
   src: string;
 }
-export type ProfileInput = Omit<Artist, "id" | "ownerId" | "page">;
+export type ProfileInput = Omit<Artist, "id" | "ownerId" | "page" | "status">;
+
+/** What an artist tells reviewers when applying. */
+export interface Application {
+  artistId: string;
+  links: string;
+  note: string;
+  contactEmail?: string;
+  reviewNote?: string;
+  submittedAt: string;
+}
+/** A reviewer's view: the artist plus their application. */
+export interface PendingArtist { artist: Artist; application?: Application }
 
 interface Catalog {
   status: CatalogStatus;
   error?: string;
+  /** Approved artists: everyone listeners can see. */
   artists: Artist[];
   releases: Release[];
   tracks: Track[];
+  /** Approved artists plus your own profile (so your page works while you wait for approval). */
   artistById: Record<string, Artist>;
   releaseById: Record<string, Release>;
   trackById: Record<string, Track>;
@@ -45,6 +61,12 @@ interface Catalog {
   myReleases: Release[];
   refresh: () => Promise<void>;
   saveProfile: (profile: ProfileInput) => Promise<void>;
+  /** Your application (artist accounts). */
+  myApplication?: Application;
+  submitApplication: (links: string, note: string, contactEmail?: string) => Promise<void>;
+  /** Reviewers: artists waiting for a decision, and recent decisions. */
+  loadReviewQueue: () => Promise<PendingArtist[]>;
+  reviewArtist: (artistId: string, decision: "approved" | "declined", note?: string) => Promise<void>;
   /** Saves the page design, uploading any photos, logo or font picked from this computer. */
   savePage: (page: ArtistPage, onProgress?: (msg: string) => void) => Promise<void>;
   publishRelease: (release: NewRelease, tracks: NewTrack[], onProgress?: (msg: string) => void) => Promise<Release>;
@@ -59,6 +81,7 @@ const EMPTY: Remote = { artists: [], releases: [], tracks: [] };
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const { userId } = useAuth();
   const [remote, setRemote] = useState<Remote>(EMPTY);
+  const [myApplication, setMyApplication] = useState<Application>();
   const [status, setStatus] = useState<CatalogStatus>("loading");
   const [error, setError] = useState<string>();
 
@@ -80,24 +103,67 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     setError(undefined);
   }, []);
 
+  // Reload when the account changes: what the server shows depends on who is asking.
   useEffect(() => {
     refresh().catch((e) => {
       setStatus("offline");
       setError(String(e?.message ?? e));
     });
-  }, [refresh]);
+  }, [refresh, userId]);
 
   const myProfile = userId ? remote.artists.find((a) => a.ownerId === userId) : undefined;
 
   const saveProfile = useCallback(
     async (p: ProfileInput) => {
       if (!userId) throw new Error("Sign in first.");
-      const row = { owner_id: userId, name: p.name, scene_id: p.sceneId, place: p.place, genres: p.genres, bio: p.bio, accent: p.accent, since: p.since };
+      const row = {
+        owner_id: userId, name: p.name, place: p.place, city: p.city ?? null, state: p.state ?? null, lat: p.lat ?? null, lng: p.lng ?? null,
+        genres: p.genres, bio: p.bio, accent: p.accent, since: p.since,
+      };
       const { error: e } = await supabase.from("artists").upsert(row, { onConflict: "owner_id" });
       if (e) throw new Error(e.message);
       await refresh();
     },
     [userId, refresh],
+  );
+
+  const myArtistId = myProfile?.id;
+  useEffect(() => {
+    setMyApplication(undefined);
+    if (!myArtistId) return;
+    supabase.from("artist_applications").select("*").eq("artist_id", myArtistId).maybeSingle()
+      .then(({ data }) => data && setMyApplication(applicationFromRow(data)));
+  }, [myArtistId]);
+
+  const submitApplication = useCallback(
+    async (links: string, note: string, contactEmail?: string) => {
+      if (!myArtistId) throw new Error("Save your artist profile first.");
+      const row = { artist_id: myArtistId, links: links.trim(), note: note.trim(), contact_email: contactEmail ?? null, submitted_at: new Date().toISOString() };
+      const { data, error: e } = await supabase.from("artist_applications").upsert(row, { onConflict: "artist_id" }).select().single();
+      if (e) throw new Error(/relation|does not exist|schema cache/i.test(e.message) ? "the server needs a one-time update: run supabase/003_accounts_and_places.sql in the Supabase SQL Editor." : e.message);
+      setMyApplication(applicationFromRow(data));
+    },
+    [myArtistId],
+  );
+
+  const loadReviewQueue = useCallback(async (): Promise<PendingArtist[]> => {
+    const [a, p] = await Promise.all([
+      supabase.from("artists").select("*").neq("status", "approved").order("created_at", { ascending: true }),
+      supabase.from("artist_applications").select("*"),
+    ]);
+    if (a.error) throw new Error(a.error.message);
+    const apps = new Map((p.data ?? []).map((r) => [r.artist_id as string, applicationFromRow(r)]));
+    return ((a.data ?? []) as ArtistRow[]).map(artistFromRow).map((artist) => ({ artist, application: apps.get(artist.id) }));
+  }, []);
+
+  const reviewArtist = useCallback(
+    async (artistId: string, decision: "approved" | "declined", note?: string) => {
+      const { error: e } = await supabase.from("artists").update({ status: decision }).eq("id", artistId);
+      if (e) throw new Error(e.message);
+      if (note !== undefined) await supabase.from("artist_applications").update({ review_note: note || null }).eq("artist_id", artistId);
+      await refresh();
+    },
+    [refresh],
   );
 
   const savePage = useCallback(
@@ -222,27 +288,46 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<Catalog>(() => {
-    const { artists, releases, tracks } = remote;
+    const approved = remote.artists.filter((a) => a.status === "approved");
+    const visible = myProfile && myProfile.status !== "approved" ? [...approved, myProfile] : approved;
+    const visibleIds = new Set(visible.map((a) => a.id));
+    const releases = remote.releases.filter((r) => visibleIds.has(r.artistId));
+    const tracks = remote.tracks.filter((t) => visibleIds.has(t.artistId));
     return {
       status,
       error,
-      artists,
+      artists: approved,
       releases,
       tracks,
-      artistById: byId(artists),
+      artistById: byId(visible),
       releaseById: byId(releases),
       trackById: byId(tracks),
       myProfile,
       myReleases: myProfile ? remote.releases.filter((r) => r.artistId === myProfile.id) : [],
       refresh,
       saveProfile,
+      myApplication,
+      submitApplication,
+      loadReviewQueue,
+      reviewArtist,
       savePage,
       publishRelease,
       removeRelease,
     };
-  }, [remote, status, error, myProfile, refresh, saveProfile, savePage, publishRelease, removeRelease]);
+  }, [remote, status, error, myProfile, myApplication, refresh, saveProfile, submitApplication, loadReviewQueue, reviewArtist, savePage, publishRelease, removeRelease]);
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
+}
+
+function applicationFromRow(r: Record<string, unknown>): Application {
+  return {
+    artistId: String(r.artist_id),
+    links: String(r.links ?? ""),
+    note: String(r.note ?? ""),
+    contactEmail: typeof r.contact_email === "string" ? r.contact_email : undefined,
+    reviewNote: typeof r.review_note === "string" ? r.review_note : undefined,
+    submittedAt: String(r.submitted_at ?? ""),
+  };
 }
 
 export function useCatalog() {

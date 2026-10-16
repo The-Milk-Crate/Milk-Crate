@@ -1,18 +1,26 @@
 /**
- * Sign-in for artists (listeners don't need an account to browse or play).
- * Email + password, so it works inside the desktop app without browser redirects.
+ * Accounts. Every login is either a listener account or an artist account,
+ * chosen at sign-up and kept separate (supabase/003_accounts_and_places.sql
+ * enforces this on the server). Reviewers (the admins table) approve artists.
+ * Email + password with emailed codes, so it works inside the desktop app.
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
+export type AccountKind = "listener" | "artist";
+
 interface Auth {
   session: Session | null;
   userId?: string;
   email?: string;
+  /** What kind of account is signed in (undefined while loading or signed out). */
+  kind?: AccountKind;
+  /** Can review artist applications. */
+  isAdmin: boolean;
   ready: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null; needsConfirmation: boolean }>;
+  signUp: (email: string, password: string, kind: AccountKind) => Promise<{ error: string | null; needsConfirmation: boolean }>;
   /** Confirms a new account with the 6-digit code from the confirmation email, and signs in. */
   verifyCode: (email: string, code: string) => Promise<string | null>;
   /** Sends the confirmation email again. */
@@ -25,6 +33,29 @@ const AuthContext = createContext<Auth | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
+  const [kind, setKind] = useState<AccountKind>();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const userId = session?.user.id;
+
+  // Look up the account kind and reviewer status for whoever is signed in.
+  useEffect(() => {
+    setKind(undefined);
+    setIsAdmin(false);
+    if (!userId) return;
+    let live = true;
+    const fromSignUp = session?.user.user_metadata?.kind === "artist" ? "artist" : "listener";
+    Promise.all([
+      supabase.from("accounts").select("kind").eq("user_id", userId).maybeSingle(),
+      supabase.from("admins").select("user_id").eq("user_id", userId).maybeSingle(),
+    ]).then(([acc, adm]) => {
+      if (!live) return;
+      setKind((acc.data?.kind as AccountKind | undefined) ?? fromSignUp);
+      setIsAdmin(!!adm.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -37,15 +68,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: Auth = {
     session,
-    userId: session?.user.id,
+    userId,
     email: session?.user.email,
-    ready,
+    kind,
+    isAdmin,
+    ready: ready && (!userId || !!kind),
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return error ? friendly(error.message) : null;
     },
-    signUp: async (email, password) => {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+    signUp: async (email, password, kind) => {
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { kind } } });
       if (error) return { error: friendly(error.message), needsConfirmation: false };
       // Supabase answers a sign-up for an existing email with an empty user and sends nothing
       // (so outsiders can't probe which emails have accounts). Tell the artist to sign in.

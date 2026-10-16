@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { Go } from "../App";
-import { formatTime } from "../data/scenes";
+import { formatTime } from "../lib/format";
 import { EmptyCatalog } from "./Artists";
 import { useCatalog } from "../lib/catalog";
+import { useArtistPlaces, useLocation } from "../lib/location";
+import { inScene } from "../lib/geo";
 import { usePlayer } from "../lib/player";
 import { pickAudioFiles } from "../lib/localFiles";
 import { Button, ReleaseCard, Sticker, TrackRow } from "../components/ui";
@@ -16,7 +18,12 @@ export function Home({ go }: { go: Go }) {
   const matches = releases.filter(
     (r) => !q || r.title.toLowerCase().includes(q) || artistById[r.artistId]?.name.toLowerCase().includes(q),
   );
-  const local = releases.filter((r) => artistById[r.artistId]?.sceneId === "rdu");
+  const { scene } = useLocation();
+  const placed = useArtistPlaces();
+  const inMyScene = new Set(scene ? placed.filter((a) => inScene(scene, a.place)).map((a) => a.artist.id) : []);
+  const local = releases.filter((r) => inMyScene.has(r.artistId));
+  const elsewhere = releases.filter((r) => !inMyScene.has(r.artistId) && artistById[r.artistId]?.status === "approved").slice(0, 10);
+  const sceneName = scene?.home.name ?? "your scene";
 
   const openRelease = (releaseId: string) => {
     const r = releases.find((x) => x.id === releaseId)!;
@@ -27,7 +34,7 @@ export function Home({ go }: { go: Go }) {
     <div className="screen">
       <header className="screen-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span className="catalog eyebrow">Raleigh–Durham</span>
+          <span className="catalog eyebrow">{scene ? `${scene.home.name}, ${scene.home.state}` : "Milk Crate"}</span>
           <h1 className="display-lg">Dig in</h1>
         </div>
         <label className="field" style={{ flex: "0 1 360px", minWidth: 220 }}>
@@ -54,7 +61,7 @@ export function Home({ go }: { go: Go }) {
           <section className="section">
             <div className="section-title">
               <h2 className="display-md">New from your scene</h2>
-              <Sticker tone="dairy">Raleigh–Durham</Sticker>
+              <Sticker tone="dairy">{sceneName} & around</Sticker>
             </div>
             {local.length ? (
             <div className="release-grid">
@@ -72,9 +79,24 @@ export function Home({ go }: { go: Go }) {
               ))}
             </div>
             ) : (
-              <EmptyCatalog go={go} offline={status === "offline"} what="No releases from Raleigh–Durham yet." />
+              <EmptyCatalog go={go} offline={status === "offline"} what={`No releases from around ${sceneName} yet.`} />
             )}
           </section>
+
+          {elsewhere.length > 0 && (
+            <section className="section">
+              <div className="section-title">
+                <h2 className="display-md">New across the country</h2>
+                <button type="button" className="link-btn" onClick={() => go({ name: "scenes" })}>See every scene</button>
+              </div>
+              <div className="release-grid">
+                {elsewhere.map((r) => (
+                  <ReleaseCard key={r.id} title={r.title} artist={artistById[r.artistId]?.name ?? ""} art={r.art}
+                    place={artistById[r.artistId]?.place} year={r.year} onOpen={() => openRelease(r.id)} />
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="section">
             <div className="section-title" style={{ justifyContent: "space-between" }}>

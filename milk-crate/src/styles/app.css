@@ -205,3 +205,31 @@ button { font: inherit; }
 .font-tile-upload { align-items: center; justify-content: center; border-style: dashed; color: var(--ink-muted); }
 .font-tile-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .range { width: 100%; max-width: 360px; accent-color: var(--accent); }
+
+/* City picker */
+.city-picker { position: relative; }
+.city-options { position: absolute; z-index: 30; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px; list-style: none;
+  background: var(--ground-raised); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-lift); max-height: 320px; overflow-y: auto; }
+.city-options li { padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; }
+.city-options li[aria-selected="true"] { background: var(--accent-soft); }
+.scene-map { display: block; width: 100%; height: auto; }
+.scene-map-loading { aspect-ratio: 640 / 400; display: grid; place-items: center; background: var(--ground-sunken); }
+.splash { height: 100%; display: grid; place-items: center; }
+.splash .mc-logo { transform: scale(1.4); }
+
+/* Welcome (first run) */
+.welcome { height: 100%; overflow-y: auto; display: grid; place-items: center; padding: var(--space-8) var(--space-6);
+  background: radial-gradient(1200px 600px at 10% 0%, var(--dairy-soft), transparent 60%), var(--ground); }
+.welcome-inner { width: min(1040px, 100%); display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-12, 48px); align-items: center; }
+.welcome-pitch { display: flex; flex-direction: column; gap: var(--space-6); }
+.welcome-pitch .mc-logo { height: 32px; align-self: flex-start; }
+.welcome-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.welcome-artist { padding-top: var(--space-2); border-top: 1px solid var(--line); }
+
+/* Review artists */
+.review-card { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: var(--space-6); }
+.review-banner { flex: 0 1 340px; aspect-ratio: 16 / 9; border-radius: var(--radius-lg); overflow: hidden; min-width: 240px; }
+.review-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.review-facts dt { color: var(--ink-muted); font-size: 13px; }
+.review-facts dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.selectable { user-select: text; }

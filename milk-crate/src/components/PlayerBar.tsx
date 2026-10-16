@@ -1,5 +1,5 @@
 import { usePlayer } from "../lib/player";
-import { formatTime } from "../data/scenes";
+import { formatTime } from "../lib/format";
 import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
 import { Glyph, PlayButton, Sleeve, StarRating } from "./ui";

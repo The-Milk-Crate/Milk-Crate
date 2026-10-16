@@ -1,9 +1,10 @@
-import { Archive, House, MapPin, Moon, Sun, Upload, UserRound } from "lucide-react";
+import { Archive, CircleUserRound, House, MapPin, Moon, ShieldCheck, Sun, Upload, UserRound } from "lucide-react";
 import type { Route } from "../App";
-import { scenes } from "../data/scenes";
 import { useEffect, useState } from "react";
 import { Logo } from "./ui";
 import { appVersion } from "../lib/updater";
+import { useAuth } from "../lib/auth";
+import { useLocation } from "../lib/location";
 
 const NAV: { name: Route["name"]; label: string; Icon: typeof House }[] = [
   { name: "home", label: "Home", Icon: House },
@@ -21,6 +22,13 @@ export function Sidebar(props: {
   matchAlbum: boolean;
   onToggleMatchAlbum: () => void;
 }) {
+  const auth = useAuth();
+  const { scene } = useLocation();
+  const nav = [
+    ...NAV,
+    { name: "account" as const, label: auth.session ? "Account" : "Sign in", Icon: CircleUserRound },
+    ...(auth.isAdmin ? [{ name: "review" as const, label: "Review artists", Icon: ShieldCheck }] : []),
+  ];
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     appVersion().then(setVersion).catch(() => {});
@@ -28,7 +36,7 @@ export function Sidebar(props: {
   return (
     <nav className="sidebar" aria-label="Main">
       <Logo className="sidebar-logo" />
-      {NAV.map(({ name, label, Icon }) => (
+      {nav.map(({ name, label, Icon }) => (
         <button
           key={name}
           type="button"
@@ -41,14 +49,16 @@ export function Sidebar(props: {
         </button>
       ))}
 
-      <div className="nav-section">
-        <span className="catalog eyebrow">Your scenes</span>
-        {scenes.slice(0, 3).map((s) => (
-          <button key={s.id} type="button" className="nav-sub" onClick={() => props.go({ name: "scenes", sceneId: s.id })}>
-            {s.name}
+      {scene && (
+        <div className="nav-section">
+          <span className="catalog eyebrow">Your scene</span>
+          <button type="button" className="nav-sub" onClick={() => props.go({ name: "scenes" })}>
+            {scene.home.name}, {scene.home.state}
           </button>
-        ))}
-      </div>
+          <span className="caption muted">{[...scene.nearby, ...scene.anchors].slice(0, 3).map((p) => p.name).join(" · ")}</span>
+          <button type="button" className="nav-sub caption" onClick={() => props.go({ name: "account" })}>Change city</button>
+        </div>
+      )}
 
       <div className="sidebar-foot">
         <button type="button" className="switch" role="switch" aria-checked={props.matchAlbum} onClick={props.onToggleMatchAlbum}

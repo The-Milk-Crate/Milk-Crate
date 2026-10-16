@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Trash2, ImagePlus, Music } from "lucide-react";
 import type { Go } from "../App";
-import { formatTime, scenes } from "../data/scenes";
+import { formatTime } from "../lib/format";
 import { useCatalog } from "../lib/catalog";
 import { useAuth } from "../lib/auth";
 import { pickAudioFiles, pickImage, readDuration } from "../lib/localFiles";
@@ -10,132 +10,59 @@ import type { Release } from "../lib/types";
 import { Button, ReleaseCard, Sleeve } from "../components/ui";
 import { ArtistThumb } from "../components/ArtistBanner";
 import { PageDesigner } from "./PageDesigner";
+import { AuthForm } from "../components/AuthForm";
+import { CityPicker } from "../components/CityPicker";
+import { useLocation } from "../lib/location";
+import type { Place } from "../lib/geo";
 
 /** Profile colors offered by default; any color can be picked with the custom swatch. */
 const PROFILE_COLORS = ["#ff5b3a", "#f0a35e", "#ffd43b", "#9be15d", "#a7e3b7", "#5fd4d0", "#7aa2ff", "#c2b1f8", "#ff8fc7", "#f3ede3"];
 
-const CITIES = scenes.flatMap((s) => s.places.map((p) => ({ city: p, region: s.region, sceneId: s.id })));
-
 interface DraftTrack { key: string; title: string; src: string; duration: number }
 
 /**
- * For artists: sign in, set up an artist profile and upload releases to the
- * Milk Crate server. Published music shows up for every listener (Home,
- * Scenes map, artist page, search).
+ * For artists. Artist accounts are separate from listener accounts. A new
+ * artist applies (profile + where to hear them); a reviewer approves them;
+ * then they can upload releases, which show up for every listener.
  */
 export function Upload({ go }: { go: Go }) {
   const auth = useAuth();
   const c = useCatalog();
   if (!auth.ready) return <div className="screen"><p className="muted">Loading…</p></div>;
-  if (!auth.session) return <AccountPanel />;
+  if (!auth.session) return <ArtistSignIn />;
+  if (auth.kind === "listener") return <ListenerSignedIn />;
   // Remount once the profile loads so the form starts filled in.
   return <ArtistTools key={c.myProfile?.id ?? "new"} go={go} />;
 }
 
-/** Sign in, create an artist account, or confirm one with the emailed code. */
-function AccountPanel() {
-  const auth = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup" | "confirm">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
-
-  const toConfirm = (text: string) => {
-    setMode("confirm");
-    setCode("");
-    setMessage({ kind: "info", text });
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage(null);
-    if (mode === "confirm") {
-      if (!code.trim()) return setMessage({ kind: "error", text: "Enter the code from your email." });
-      setBusy(true);
-      const err = await auth.verifyCode(email.trim(), code);
-      if (err) setMessage({ kind: "error", text: err });
-      setBusy(false);
-      return;
-    }
-    if (!email.trim() || !password) return setMessage({ kind: "error", text: "Enter your email and a password." });
-    setBusy(true);
-    if (mode === "signin") {
-      const err = await auth.signIn(email.trim(), password);
-      if (err && /confirm your email/i.test(err)) {
-        const resendErr = await auth.resendCode(email.trim());
-        toConfirm(resendErr ?? `Your email isn't confirmed yet. We sent a new code to ${email.trim()}.`);
-      } else if (err) setMessage({ kind: "error", text: err });
-    } else {
-      const { error, needsConfirmation } = await auth.signUp(email.trim(), password);
-      if (error) setMessage({ kind: "error", text: error });
-      else if (needsConfirmation) toConfirm(`We emailed ${email.trim()}. Enter the code from that email (check spam too). If the email has a link instead, click it, then come back and sign in.`);
-    }
-    setBusy(false);
-  };
-
-  const resend = async () => {
-    setBusy(true);
-    const err = await auth.resendCode(email.trim());
-    setMessage(err ? { kind: "error", text: err } : { kind: "info", text: `New code sent to ${email.trim()}.` });
-    setBusy(false);
-  };
-
-  const label = busy ? "One moment…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Confirm";
-
+function ArtistSignIn() {
   return (
-    <div className="screen" style={{ maxWidth: 560 }}>
+    <div className="screen" style={{ maxWidth: 600 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="catalog eyebrow">For artists</span>
         <h1 className="display-lg">Put your music in the crate</h1>
-        <p className="muted">Sign in to set up your artist page and upload releases. Listening never needs an account.</p>
+        <p className="muted">
+          Artist accounts are separate from listener accounts. To keep Milk Crate full of real local artists (not a flood of uploads),
+          new artists are reviewed before their music goes live. Apply below; while you wait, you can set up your profile and design your page.
+        </p>
       </header>
-      <form className="panel" onSubmit={submit}>
-        {mode === "confirm" ? (
-          <>
-            <h2 className="display-md">Confirm your email</h2>
-            <label className="field">
-              <span className="catalog eyebrow">Code from your email</span>
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={10}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.3em", fontSize: 18 }}
-                autoFocus
-              />
-            </label>
-          </>
-        ) : (
-          <>
-            <div role="group" aria-label="Account" style={{ display: "flex", gap: 8 }}>
-              <button type="button" className="chip" aria-pressed={mode === "signin"} onClick={() => setMode("signin")}>Sign in</button>
-              <button type="button" className="chip" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>Create account</button>
-            </div>
-            <label className="field">
-              <span className="catalog eyebrow">Email</span>
-              <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
-            <label className="field">
-              <span className="catalog eyebrow">Password</span>
-              <input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} />
-              {mode === "signup" && <span className="caption muted">At least 6 characters.</span>}
-            </label>
-          </>
-        )}
-        {message && <p role={message.kind === "error" ? "alert" : "status"} className={message.kind === "error" ? "form-error" : "form-info"}>{message.text}</p>}
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-          <Button variant="primary" type="submit" disabled={busy}>{label}</Button>
-          {mode === "confirm" && (
-            <>
-              <button type="button" className="link-btn" disabled={busy} onClick={resend}>Send a new code</button>
-              <button type="button" className="link-btn" onClick={() => { setMode("signin"); setMessage(null); }}>Back</button>
-            </>
-          )}
-        </div>
-      </form>
+      <AuthForm kind="artist" signUpLabel="Apply to join" initialMode="signup" />
+    </div>
+  );
+}
+
+function ListenerSignedIn() {
+  const auth = useAuth();
+  return (
+    <div className="screen" style={{ maxWidth: 600 }}>
+      <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <span className="catalog eyebrow">For artists</span>
+        <h1 className="display-lg">This is a listener account</h1>
+        <p className="muted">
+          You're signed in as {auth.email}, a listener account. Artist accounts are separate: sign out, then apply to join as an artist with a different email.
+        </p>
+      </header>
+      <div><Button onClick={() => auth.signOut()}>Sign out</Button></div>
     </div>
   );
 }
@@ -144,11 +71,13 @@ function ArtistTools({ go }: { go: Go }) {
   const auth = useAuth();
   const c = useCatalog();
   const me = c.myProfile;
+  const approved = me?.status === "approved";
 
   /* ---------- profile ---------- */
   const [editing, setEditing] = useState(!me);
   const [name, setName] = useState(me?.name ?? "");
-  const [city, setCity] = useState(me ? me.place.split(",")[0] : "Raleigh");
+  const loc = useLocation();
+  const [city, setCity] = useState<Place | null>(me ? loc.placeOf(me) : loc.home);
   const [genre, setGenre] = useState(me?.genres.join(", ") ?? "");
   const [bio, setBio] = useState(me?.bio ?? "");
   const [color, setColor] = useState(me?.accent ?? PROFILE_COLORS[7]);
@@ -157,14 +86,17 @@ function ArtistTools({ go }: { go: Go }) {
 
   const saveProfile = async () => {
     if (!name.trim()) return setProfileError("Add your artist or band name.");
-    const where = CITIES.find((x) => x.city === city) ?? CITIES[0];
+    if (!city) return setProfileError("Pick your home city or town from the list.");
     setSavingProfile(true);
     setProfileError("");
     try {
       await c.saveProfile({
       name: name.trim(),
-      sceneId: where.sceneId,
-      place: `${where.city}, ${where.region}`,
+      place: `${city.name}, ${city.state}`,
+      city: city.name,
+      state: city.state,
+      lat: city.lat,
+      lng: city.lng,
       genres: genre.split(",").map((g) => g.trim()).filter(Boolean),
       bio: bio.trim(),
       accent: color,
@@ -231,9 +163,13 @@ function ArtistTools({ go }: { go: Go }) {
     <div className="screen" style={{ maxWidth: 960 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="catalog eyebrow">For artists</span>
-        <h1 className="display-lg">Put your music in the crate</h1>
+        <h1 className="display-lg">{approved ? "Put your music in the crate" : me ? "Your application" : "Apply to join Milk Crate"}</h1>
         <p className="muted" style={{ maxWidth: 600 }}>
-          Upload a release. Listeners can stream it, rate it, and find you as a dot on your scene's map, in your color.
+          {approved
+            ? "Upload a release. Listeners can stream it, rate it, and find you as a dot on your scene's map, in your color."
+            : me
+              ? "While we review your application, you can polish your profile and design your page. Only you can see them until you're approved."
+              : "Step 1: your artist profile. Step 2: tell us where to hear your music. A Milk Crate reviewer will take a look."}
         </p>
         <p className="caption muted" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           Signed in as {auth.email}
@@ -267,12 +203,7 @@ function ArtistTools({ go }: { go: Go }) {
                 <span className="catalog eyebrow">Artist or band name</span>
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pink Insulation" />
               </label>
-              <label className="field">
-                <span className="catalog eyebrow">Home city</span>
-                <select value={city} onChange={(e) => setCity(e.target.value)}>
-                  {CITIES.map((x) => <option key={x.city} value={x.city}>{x.city}, {x.region}</option>)}
-                </select>
-              </label>
+              <CityPicker label="Home city or town" value={city} onChange={setCity} />
               <label className="field">
                 <span className="catalog eyebrow">Genres</span>
                 <input value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="Indie rock, shoegaze" />
@@ -300,17 +231,20 @@ function ArtistTools({ go }: { go: Go }) {
             </fieldset>
             {profileError && <p role="alert" className="form-error">{profileError}</p>}
             <div style={{ display: "flex", gap: 12 }}>
-              <Button variant="primary" onClick={saveProfile} disabled={savingProfile}>{savingProfile ? "Saving…" : me ? "Save profile" : "Create profile"}</Button>
+              <Button variant="primary" onClick={saveProfile} disabled={savingProfile}>{savingProfile ? "Saving…" : me ? "Save profile" : "Continue"}</Button>
               {me && <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>}
             </div>
           </>
         )}
       </section>
 
+      {me && me.status !== "approved" && <ApplicationPanel />}
+
       {me && !editing && <PageDesigner go={go} />}
 
       {/* ---------- New release ---------- */}
-      <section className="panel" aria-disabled={!me} style={!me ? { opacity: 0.5, pointerEvents: "none" } : undefined}>
+      {approved ? (
+      <section className="panel">
         <h2 className="display-md">New release</h2>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
           <div style={{ width: 180, flex: "none", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -385,6 +319,13 @@ function ArtistTools({ go }: { go: Go }) {
         </div>
       </section>
 
+      ) : (
+        <section className="panel locked">
+          <h2 className="display-md">New release</h2>
+          <p className="muted">You can upload music once your application is approved. We'll review it as soon as we can.</p>
+        </section>
+      )}
+
       {/* ---------- Your releases ---------- */}
       {c.myReleases.length > 0 && (
         <section className="section">
@@ -413,5 +354,79 @@ function ArtistTools({ go }: { go: Go }) {
         </section>
       )}
     </div>
+  );
+}
+
+/** Pending or declined artists: where to hear them, and what the reviewers said. */
+function ApplicationPanel() {
+  const auth = useAuth();
+  const c = useCatalog();
+  const me = c.myProfile!;
+  const app = c.myApplication;
+  const [links, setLinks] = useState(app?.links ?? "");
+  const [note, setNote] = useState(app?.note ?? "");
+  const [editing, setEditing] = useState(!app);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [lastApp, setLastApp] = useState(app);
+  if (app !== lastApp) {
+    // The saved application arrived (or changed): show it.
+    setLastApp(app);
+    setLinks(app?.links ?? "");
+    setNote(app?.note ?? "");
+    setEditing(!app);
+  }
+
+  const send = async () => {
+    if (!links.trim()) return setError("Add at least one link where we can hear your music (Bandcamp, SoundCloud, YouTube, Instagram…).");
+    setBusy(true);
+    setError("");
+    try {
+      await c.submitApplication(links, note, auth.email);
+      setEditing(false);
+    } catch (e) {
+      setError(`Couldn't send your application: ${(e as Error).message}`);
+    }
+    setBusy(false);
+  };
+
+  const declined = me.status === "declined";
+  return (
+    <section className={`panel application ${declined ? "is-declined" : ""}`}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h2 className="display-md">{!app ? "Step 2: your application" : declined ? "Application not approved" : "Application under review"}</h2>
+        {app && !editing && <Button size="sm" onClick={() => setEditing(true)}>{declined ? "Update and resend" : "Edit"}</Button>}
+      </div>
+      {app && !editing ? (
+        <>
+          <p className="muted">
+            {declined
+              ? "A reviewer didn't approve this application. You can update it and send it again."
+              : "Thanks! A Milk Crate reviewer will listen and get back to you here. Nothing goes public until you're approved."}
+          </p>
+          {app.reviewNote && <p className="form-info"><strong>From the reviewer:</strong> {app.reviewNote}</p>}
+          <dl className="review-facts">
+            <dt>Where to hear you</dt><dd>{app.links}</dd>
+            {app.note && (<><dt>Your note</dt><dd>{app.note}</dd></>)}
+          </dl>
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span className="catalog eyebrow">Where can we hear you?</span>
+            <textarea rows={3} value={links} onChange={(e) => setLinks(e.target.value)} placeholder="Links to your music: Bandcamp, SoundCloud, YouTube, Instagram…" />
+          </label>
+          <label className="field">
+            <span className="catalog eyebrow">Anything else? (optional)</span>
+            <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Shows you've played, who's in the band, what you're working on." />
+          </label>
+          {error && <p role="alert" className="form-error">{error}</p>}
+          <div style={{ display: "flex", gap: 12 }}>
+            <Button variant="primary" onClick={send} disabled={busy}>{busy ? "Sending…" : app ? "Send again" : "Send application"}</Button>
+            {app && <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

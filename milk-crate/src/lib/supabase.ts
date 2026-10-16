@@ -15,13 +15,17 @@ export interface ArtistRow {
   id: string;
   owner_id: string;
   name: string;
-  scene_id: string;
   place: string;
   genres: string[];
   bio: string;
   accent: string;
   since: number;
   page: unknown;
+  city: string | null;
+  state: string | null;
+  lat: number | null;
+  lng: number | null;
+  status?: string;
 }
 
 export interface ReleaseRow {
@@ -49,8 +53,13 @@ export const artistFromRow = (r: ArtistRow): Artist => ({
   id: r.id,
   ownerId: r.owner_id,
   name: r.name,
-  sceneId: r.scene_id,
   place: r.place,
+  city: r.city ?? undefined,
+  state: r.state ?? undefined,
+  lat: typeof r.lat === "number" ? r.lat : undefined,
+  lng: typeof r.lng === "number" ? r.lng : undefined,
+  // Servers set up before approval existed have no status column: everyone there is approved.
+  status: r.status === "pending" || r.status === "declined" ? r.status : "approved",
   genres: r.genres ?? [],
   bio: r.bio ?? "",
   accent: safeColor(r.accent) ?? "#c2b1f8",

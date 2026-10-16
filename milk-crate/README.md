@@ -6,33 +6,37 @@ This repo is the **desktop app**: a [Tauri 2](https://v2.tauri.app) shell (Rust)
 
 ## What works today
 
-- Home, Scenes, Your Crate, Artists and artist pages, built on the Milk Crate design system. Everything shown comes from real artist accounts on the Milk Crate server; screens show a friendly empty state until artists sign up.
-- A real player: add audio files from your computer (MP3, FLAC, WAV, M4A, OGG) and play them.
-- 1–5 star ratings, saved between launches, and **weighted shuffle** — higher-rated tracks come up more often.
-- An **album-reactive accent**: lavender by default; while something plays, the logo, play button and highlights take on the album's color. Toggle it with "Album colors" in the sidebar.
-- **For artists:** sign in, set up an artist profile (name, city, genres, bio, profile color), and **design your page**: a wide banner and an optional vertical one (the page cross-fades to whichever fits the window's shape), with your name set inside the banner on one centered line (long names shrink to fit) — lettered your way (16 built-in fonts or upload your own, any color, bold/italic/caps, size, letter spacing) or replaced by your logo or hand-drawn lettering. Live previews show a wide and a tall window. Upload releases with cover art and audio files. WAV, AIFF and FLAC files (and anything over the server's 50 MB limit) are converted to a 320 kbps MP3 streaming copy first. Uploads go to the Milk Crate server (Supabase) and show up for every listener — Home, artist pages, search and the Scenes map.
-- **Scenes map:** every band is a dot in its own profile color, grouped by neighborhood. Hover a dot to see who it is; click to open their page.
-- Dark and light themes.
+- **Real scenes.** On first launch people say where they live (any US city or town with 1,000+ people). Their scene is their city, the towns within 35 miles, and the larger cities in their state. The Scenes map is a real map (state borders, true city positions) with every band as a dot in its profile color at its home city, plus an "Across the country" view and a way to explore any city's scene.
+- **Two kinds of accounts.** *Listener accounts* (email, password, city — kept private) and *artist accounts*, which are separate: one email is one kind, for good. People can also look around without an account (their city is saved on that computer).
+- **Artists apply to join.** A new artist account sets up a profile and sends an application (links to their music, a note). Until a reviewer approves them they're hidden from listeners and can't upload music, but they can design their page. Reviewers approve or decline on the **Review artists** screen. The server enforces all of this (`supabase/003_accounts_and_places.sql`).
+- **Artist pages** designed by the artist: a wide and a vertical banner that cross-fade to fit the window, with the name on one centered line inside the banner in their choice of font (or their own), color and style, or their logo or hand-drawn lettering.
+- **Releases:** approved artists upload cover art and audio; WAV, AIFF and FLAC (and anything over 50 MB) become 320 kbps MP3 streaming copies.
+- A real player with 1–5 star ratings and **weighted shuffle**, play files from your own computer, an **album-reactive accent**, dark and light themes, and **automatic updates** from GitHub Releases.
 
 ## Server setup (one time)
 
-The app talks to the Supabase project in `src/config.ts`. Before the first upload:
+The app talks to the Supabase project in `src/config.ts`. In the Supabase dashboard open **SQL Editor → New query**, paste each file below, and click **Run**, in this order:
 
-1. In the Supabase dashboard open **SQL Editor → New query**, paste everything in `supabase/schema.sql`, and click **Run**. That creates the artists/releases/tracks tables, the `covers` and `audio` storage buckets, and the permission rules (anyone can listen; only an artist's own account can change their music).
-2. Then run `supabase/002_artist_pages.sql` the same way (adds artist page designs and the `profiles` storage for banners, logos and fonts). If you set the server up before this file existed, run just this one.
-3. Make the confirmation email send a code instead of a link (the app has no web page to land on). In **Authentication → Emails → Templates → Confirm signup**, replace the message body with:
+1. `supabase/schema.sql`: artists, releases and tracks, plus storage for covers and audio.
+2. `supabase/002_artist_pages.sql`: artist page designs, plus storage for banners, logos and fonts.
+3. `supabase/003_accounts_and_places.sql`: listener and artist accounts, artist approval, and real locations. Artists already on the server stay approved.
+4. Make yourself a reviewer (use the email you sign in to Milk Crate with):
+   ```sql
+   insert into public.admins (user_id) select id from auth.users where email = 'you@example.com';
+   ```
+   Restart Milk Crate and a **Review artists** item appears in the sidebar. Any account can be a reviewer.
+
+All of these are safe to run again. Then set up email:
+
+5. Make the confirmation email send a code instead of a link (the app has no web page to land on). In **Authentication → Emails → Templates → Confirm signup**, replace the message body with:
 
    ```html
    <h2>Welcome to Milk Crate</h2>
    <p>Your confirmation code:</p>
    <p style="font-size:28px;font-weight:bold;letter-spacing:6px">{{ .Token }}</p>
-   <p>Type it into the Milk Crate app to finish setting up your artist account.</p>
+   <p>Type it into the Milk Crate app to finish setting up your account.</p>
    ```
-
-   Click **Save**. New artists then type the code into the app's **For artists** screen.
-4. Before inviting real artists: Supabase's built-in email only delivers to your own team's addresses and sends a few emails an hour. Under **Authentication → Emails → SMTP Settings**, connect a real email sender (Gmail with an app password works for a small pilot).
-
-Listeners don't need accounts. Artists create one on the **For artists** screen.
+6. Before inviting real people: Supabase's built-in email only delivers to your own team's addresses and sends a few emails an hour. Under **Authentication → Emails → SMTP Settings**, connect a real email sender (Gmail with an app password works for a small pilot).
 
 ## Get the .exe
 
@@ -86,7 +90,7 @@ npm run build        # type-check + build the UI only
 src/
   App.tsx              screens + routing, theme, album-accent switch
   components/          UI primitives (ui.tsx), Sidebar, PlayerBar
-  screens/             Home, Scenes, Crate, Artists, ArtistPage, Upload (For artists), PageDesigner
+  screens/             Welcome, Home, Scenes, Crate, Artists, ArtistPage, Upload (For artists), PageDesigner, Account, Review
   lib/
     types.ts           data model (Artist, Release, Track, Scene, MerchItem, Show, CrateItem)
     player.tsx         player state: queue, transport, ratings, weighted shuffle
@@ -98,16 +102,19 @@ src/
     transcode.ts       makes MP3 streaming copies of big/uncompressed audio (mp3.worker.ts does the encoding)
     localFiles.ts      pick audio files (native dialog in the app, file input in a browser)
     storage.ts         saved settings and ratings
-    catalog.tsx        server catalog, shared by every screen; publishing/removing, saving page designs
+    catalog.tsx        server catalog (approved artists), publishing, page designs, applications and reviews
+    geo.ts             real places: city search, distances, scenes (+ tests)
+    location.tsx       your home city and scene (listener account, artist profile, or this computer)
     artistPage.ts      artist page design: name fonts, styles, safety checks on saved designs
     supabase.ts        Supabase client and row mapping
-    auth.tsx           artist sign-in (email + password)
+    auth.tsx           accounts: listener or artist, reviewer status, sign-in with emailed codes
   config.ts            Supabase project URL + publishable key
-  data/scenes.ts       the scene cities artists can choose, plus small formatting helpers
   styles/              tokens.css (from the design system), components.css, app.css
 src-tauri/             Rust desktop shell, window config, icons, permissions
 supabase/schema.sql    database tables, storage buckets and permissions (run once)
 supabase/002_artist_pages.sql  artist page designs + profiles storage (run once, after schema.sql)
+supabase/003_accounts_and_places.sql  listener/artist accounts, approval, locations (run once, after 002)
+public/cities-us.json  US cities and towns (GeoNames, CC BY 4.0); rebuild with scripts/build-cities.mjs
 docs/architecture.md   where this is going: backend, payments, licensing, roadmap
 scripts/               build-windows.ps1 (used by "Build Milk Crate.bat"), prepare-release.mjs (used by GitHub builds)
 .github/workflows/     build.yml — builds and publishes a Release on every push (auto-update)

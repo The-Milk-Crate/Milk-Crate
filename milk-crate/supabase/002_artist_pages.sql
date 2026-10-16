@@ -1,6 +1,6 @@
 -- Milk Crate: artist page designs (banners, name lettering, logo).
 -- Run once after schema.sql: Supabase dashboard → SQL Editor → New query → paste all of this → Run.
--- Safe to run again.
+-- Safe to run again, but if you've run 003_accounts_and_places.sql, run 003 again afterwards (it tightens the file rules below).
 
 -- The page design, as JSON (see ArtistPage in src/lib/types.ts). Kept small.
 alter table public.artists add column if not exists page jsonb not null default '{}'::jsonb;
@@ -34,3 +34,6 @@ create policy "artists update own files" on storage.objects
 create policy "artists delete own files" on storage.objects
   for delete to authenticated
   using (bucket_id in ('covers', 'audio', 'profiles') and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Tell the API about the new column right away.
+notify pgrst, 'reload schema';
