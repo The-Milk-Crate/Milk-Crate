@@ -25,7 +25,7 @@ export function Artists({ go }: { go: Go }) {
                 title={a.name}
                 artist={a.place.split(",")[0]}
                 place={a.genres[0]}
-                art={latest?.art}
+                art={a.page.bannerTall ?? a.page.banner ?? latest?.art}
                 seed={latest ? sleeveSeed(latest.title, a.name) : a.name}
                 onOpen={() => go({ name: "artist", artistId: a.id })}
               />

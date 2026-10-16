@@ -59,28 +59,44 @@ export async function pickAudioFiles(): Promise<Track[]> {
 export const isPersistable = (track: Track) => !track.src?.startsWith("blob:");
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+export const FILE_KINDS = {
+  image: { name: "Images", extensions: IMAGE_EXTENSIONS },
+  /** Logos and lettering: transparent PNG or SVG work best. */
+  logo: { name: "Logo or lettering", extensions: [...IMAGE_EXTENSIONS, "svg"] },
+  font: { name: "Font files", extensions: ["ttf", "otf", "woff", "woff2"] },
+} as const;
 
 /** Pick one cover image. Returns a URL the app can display, or null if cancelled. */
-export async function pickImage(): Promise<string | null> {
+export const pickImage = () => pickFile("image");
+
+/**
+ * Pick one file of a kind. Returns a URL the app can read, or null if cancelled.
+ * In a browser the file name is kept after "#" so its type can be worked out later.
+ */
+export async function pickFile(kind: keyof typeof FILE_KINDS): Promise<string | null> {
+  const { name, extensions } = FILE_KINDS[kind];
   if (isDesktop()) {
     const [{ open }, { convertFileSrc }] = await Promise.all([
       import("@tauri-apps/plugin-dialog"),
       import("@tauri-apps/api/core"),
     ]);
-    const picked = await open({ multiple: false, directory: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
+    const picked = await open({ multiple: false, directory: false, filters: [{ name, extensions: [...extensions] }] });
     return typeof picked === "string" ? convertFileSrc(picked) : null;
   }
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = IMAGE_EXTENSIONS.map((e) => `.${e}`).join(",");
+    input.accept = extensions.map((e) => `.${e}`).join(",");
     input.onchange = () => {
       const f = input.files?.[0];
-      resolve(f ? URL.createObjectURL(f) : null);
+      resolve(f ? `${URL.createObjectURL(f)}#${encodeURIComponent(f.name)}` : null);
     };
     input.click();
   });
 }
+
+/** The file name at the end of a picked file's URL ("My Font.otf"). */
+export const fileNameOf = (url: string) => decodeURIComponent(url.split(/[#/\\]|%2F|%5C/i).pop() ?? "").slice(0, 80);
 
 /** Reads an audio file's length in seconds (0 if it can't be read). */
 export function readDuration(src: string): Promise<number> {

@@ -10,8 +10,9 @@ import { byId } from "../data/scenes";
 import { useAuth } from "./auth";
 import { prepareAudio, type AudioFile } from "./transcode";
 import { MAX_UPLOAD_MB } from "../config";
+import { isServerFile, profilesPath } from "./artistPage";
 import { artistFromRow, fileSlug, readLocalFile, releasesFromRows, supabase, type ArtistRow, type ReleaseRow, type TrackRow } from "./supabase";
-import type { Artist, Release, Track } from "./types";
+import type { Artist, ArtistPage, Release, Track } from "./types";
 
 export type CatalogStatus = "loading" | "ready" | "offline";
 
@@ -28,7 +29,7 @@ export interface NewTrack {
   /** A local URL for the audio file. */
   src: string;
 }
-export type ProfileInput = Omit<Artist, "id" | "ownerId">;
+export type ProfileInput = Omit<Artist, "id" | "ownerId" | "page">;
 
 interface Catalog {
   status: CatalogStatus;
@@ -44,6 +45,8 @@ interface Catalog {
   myReleases: Release[];
   refresh: () => Promise<void>;
   saveProfile: (profile: ProfileInput) => Promise<void>;
+  /** Saves the page design, uploading any photos, logo or font picked from this computer. */
+  savePage: (page: ArtistPage, onProgress?: (msg: string) => void) => Promise<void>;
   publishRelease: (release: NewRelease, tracks: NewTrack[], onProgress?: (msg: string) => void) => Promise<Release>;
   removeRelease: (releaseId: string) => Promise<void>;
 }
@@ -95,6 +98,51 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       await refresh();
     },
     [userId, refresh],
+  );
+
+  const savePage = useCallback(
+    async (draft: ArtistPage, onProgress?: (msg: string) => void) => {
+      if (!userId || !myProfile) throw new Error("Set up your artist profile first.");
+      const before = myProfile.page;
+      const page: ArtistPage = { ...draft };
+      const files = [
+        ["banner", "wide banner"],
+        ["bannerTall", "vertical banner"],
+        ["logo", "logo"],
+        ["fontUrl", "font"],
+      ] as const;
+      const added: string[] = [];
+      try {
+        for (const [key, label] of files) {
+          const url = page[key];
+          if (!url || isServerFile(url)) continue;
+          onProgress?.(`Uploading your ${label}…`);
+          const file = await readLocalFile(url);
+          if (file.blob.size > 10 * 1048576) throw new Error(`Your ${label} is over 10 MB. Use a smaller file.`);
+          const name = { banner: "banner", bannerTall: "banner-tall", logo: "logo", fontUrl: "font" }[key];
+          const path = `${userId}/${name}-${Date.now()}.${file.ext}`;
+          const { error: e } = await supabase.storage.from("profiles").upload(path, file.blob, { contentType: file.type, upsert: true });
+          if (e) throw new Error(/bucket not found/i.test(e.message) ? e.message : /mime|type/i.test(e.message) ? `That ${label} file type isn't supported.` : `Couldn't upload your ${label}: ${e.message}`);
+          added.push(path);
+          page[key] = supabase.storage.from("profiles").getPublicUrl(path).data.publicUrl;
+        }
+        onProgress?.("Saving your page…");
+        const { error: e } = await supabase.from("artists").update({ page }).eq("owner_id", userId);
+        if (e) throw new Error(e.message);
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (/column .*page|page.*column|bucket not found/i.test(msg))
+          err = new Error("the server needs a one-time update: run supabase/002_artist_pages.sql in the Supabase SQL Editor.");
+        if (added.length) await supabase.storage.from("profiles").remove(added);
+        throw err;
+      }
+      // Clean up files that were replaced or removed.
+      const stale = files.map(([k]) => before[k]).filter((u, i) => u && u !== page[files[i][0]]).map(profilesPath).filter((p): p is string => !!p);
+      if (stale.length) await supabase.storage.from("profiles").remove(stale);
+      await refresh();
+      onProgress?.("");
+    },
+    [userId, myProfile, refresh],
   );
 
   const publishRelease = useCallback(
@@ -188,10 +236,11 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       myReleases: myProfile ? remote.releases.filter((r) => r.artistId === myProfile.id) : [],
       refresh,
       saveProfile,
+      savePage,
       publishRelease,
       removeRelease,
     };
-  }, [remote, status, error, myProfile, refresh, saveProfile, publishRelease, removeRelease]);
+  }, [remote, status, error, myProfile, refresh, saveProfile, savePage, publishRelease, removeRelease]);
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>;
 }

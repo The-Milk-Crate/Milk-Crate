@@ -3,9 +3,10 @@ import { formatTime } from "../data/scenes";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
 import { sleeveSeed } from "../lib/sleeve";
-import { PlayButton, ReleaseCard, Sleeve, TrackRow } from "../components/ui";
+import { Button, PlayButton, ReleaseCard, Sleeve, TrackRow } from "../components/ui";
+import { ArtistBanner } from "../components/ArtistBanner";
 
-/** A customizable artist page: the header uses the artist's own accent; merch and tickets sell direct. */
+/** An artist's page, designed by the artist: their banner and lettering up top, their music below. */
 export function ArtistPage({ artistId, go }: { artistId: string; go: Go }) {
   const p = usePlayer();
   const { artistById, releases, trackById, myProfile } = useCatalog();
@@ -19,37 +20,32 @@ export function ArtistPage({ artistId, go }: { artistId: string; go: Go }) {
 
   return (
     <div>
-      <header className="artist-head" style={{ background: artist.accent }}>
-        <Sleeve src={latest?.art} seed={sleeveSeed(latest?.title ?? "", artist.name)} alt={latest ? `${latest.title} cover` : ""} />
-        <div style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-          <span className="catalog" style={{ textTransform: "uppercase" }}>
-            Artist · {artist.place} · {artist.genres.join(", ")}
-          </span>
-          <h1 className="display-xl">{artist.name}</h1>
-          <p style={{ maxWidth: 560, fontSize: 15, lineHeight: "22px" }}>{artist.bio}</p>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
+      <ArtistBanner artist={artist} />
+      <div className="artist-intro">
+        {artist.bio && <p className="artist-bio">{artist.bio}</p>}
+        <div className="artist-intro-actions">
+          {tracks.length > 0 && (
             <PlayButton size="lg" playing={playingThis} onClick={() => (playingThis || tracks.some((t) => t.id === p.current?.id) ? p.toggle() : p.playQueue(tracks))} />
-            {artistId === myProfile?.id ? (
-              <button type="button" className="artist-btn" onClick={() => go({ name: "upload" })}>Edit your page</button>
-            ) : (
-              <button type="button" className="artist-btn">Follow</button>
-            )}
-            <button type="button" className="artist-btn" style={{ borderColor: "transparent" }} onClick={() => go({ name: "scenes", sceneId: artist.sceneId })}>
-              See the scene
-            </button>
-          </div>
+          )}
+          {artistId === myProfile?.id ? (
+            <Button onClick={() => go({ name: "upload" })}>Edit your page</Button>
+          ) : (
+            <Button>Follow</Button>
+          )}
+          <Button variant="ghost" onClick={() => go({ name: "scenes", sceneId: artist.sceneId })}>See the scene</Button>
         </div>
-      </header>
+      </div>
 
       <div className="screen" style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 40 }}>
         <section className="section" style={{ flex: "999 1 480px", minWidth: 0 }}>
           {latest && (
             <>
-              <div className="section-title" style={{ alignItems: "baseline" }}>
-                <h2 className="display-md">{latest.title}</h2>
-                <span className="catalog eyebrow">
-                  {latest.catalogNumber ? `CAT# ${latest.catalogNumber} · ` : ""}{latest.year} · {latest.kind}
-                </span>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 20, flexWrap: "wrap" }}>
+                <Sleeve src={latest.art} seed={sleeveSeed(latest.title, artist.name)} alt={`${latest.title} cover`} style={{ width: 132, flex: "none" }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                  <span className="catalog eyebrow">Latest · {latest.catalogNumber ? `CAT# ${latest.catalogNumber} · ` : ""}{latest.year} · {latest.kind}</span>
+                  <h2 className="display-md">{latest.title}</h2>
+                </div>
               </div>
               <div>
                 {tracks.map((t, i) => (

@@ -3,7 +3,8 @@ import type { Go } from "../App";
 import { sceneById, scenes } from "../data/scenes";
 import { useCatalog } from "../lib/catalog";
 import type { Artist } from "../lib/types";
-import { ReleaseCard, Sleeve, Sticker } from "../components/ui";
+import { ReleaseCard, Sticker } from "../components/ui";
+import { ArtistThumb } from "../components/ArtistBanner";
 
 /** Where each neighborhood cluster sits on the (illustrative) scene map. */
 const CLUSTER_SPOTS: [number, number][] = [[490, 150], [270, 110], [110, 215], [290, 240], [400, 260], [560, 240]];
@@ -139,7 +140,7 @@ export function Scenes({ go, sceneId = "rdu" }: { go: Go; sceneId?: string }) {
                 <button key={a.id} type="button" className="nav-item" style={{ height: "auto", padding: 8, gap: 12, color: "var(--ink)" }}
                   onClick={() => go({ name: "artist", artistId: a.id })}
                   onMouseEnter={() => setHovered(a.id)} onMouseLeave={() => setHovered(null)}>
-                  <Sleeve seed={a.name} style={{ width: 48, flex: "none" }} />
+                  <ArtistThumb artist={a} size={48} />
                   <span style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column" }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "50%", background: a.accent, flex: "none" }} />

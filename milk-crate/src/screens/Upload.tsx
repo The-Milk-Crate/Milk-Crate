@@ -8,6 +8,8 @@ import { pickAudioFiles, pickImage, readDuration } from "../lib/localFiles";
 import { sleeveSeed } from "../lib/sleeve";
 import type { Release } from "../lib/types";
 import { Button, ReleaseCard, Sleeve } from "../components/ui";
+import { ArtistThumb } from "../components/ArtistBanner";
+import { PageDesigner } from "./PageDesigner";
 
 /** Profile colors offered by default; any color can be picked with the custom swatch. */
 const PROFILE_COLORS = ["#ff5b3a", "#f0a35e", "#ffd43b", "#9be15d", "#a7e3b7", "#5fd4d0", "#7aa2ff", "#c2b1f8", "#ff8fc7", "#f3ede3"];
@@ -251,7 +253,7 @@ function ArtistTools({ go }: { go: Go }) {
 
         {me && !editing ? (
           <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-            <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: "50%", background: me.accent, flex: "none" }} />
+            <ArtistThumb artist={me} size={48} />
             <div style={{ flex: "1 1 240px", display: "flex", flexDirection: "column" }}>
               <span style={{ fontWeight: 650, fontSize: 16 }}>{me.name}</span>
               <span className="caption muted">{[me.place, me.genres.join(", ")].filter(Boolean).join(" · ")}</span>
@@ -304,6 +306,8 @@ function ArtistTools({ go }: { go: Go }) {
           </>
         )}
       </section>
+
+      {me && !editing && <PageDesigner go={go} />}
 
       {/* ---------- New release ---------- */}
       <section className="panel" aria-disabled={!me} style={!me ? { opacity: 0.5, pointerEvents: "none" } : undefined}>

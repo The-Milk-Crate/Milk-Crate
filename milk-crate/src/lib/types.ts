@@ -40,6 +40,34 @@ export interface Artist {
   accent: string;
   /** Year of first release; drives "up and coming" (no follower counts). */
   since: number;
+  /** How the artist designed their page: photos, name lettering, logo. */
+  page: ArtistPage;
+}
+
+/** An artist's page design. Every field is optional; missing ones use Milk Crate defaults. */
+export interface ArtistPage {
+  /** Banner photo for wide windows (landscape). */
+  banner?: string;
+  /** Banner photo for tall windows and phones (vertical). The page cross-fades to whichever fits. */
+  bannerTall?: string;
+  /** Turns off the shade along the bottom of the banner that keeps the name readable. */
+  noShade?: boolean;
+  /** Band logo or hand-drawn lettering, shown in the banner instead of the typed name when nameMode is "logo". */
+  logo?: string;
+  nameMode?: "text" | "logo";
+  /** A font id from NAME_FONTS, or "custom" for an uploaded font file (fontUrl). */
+  font?: string;
+  fontUrl?: string;
+  /** Original file name of the uploaded font, for the editor. */
+  fontName?: string;
+  /** Name color (#rrggbb). Absent: automatic, readable on the page color. */
+  nameColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  caps?: boolean;
+  /** Letter spacing in em, -0.05 to 0.3. */
+  spacing?: number;
+  size?: "m" | "l" | "xl";
 }
 
 export interface Release {

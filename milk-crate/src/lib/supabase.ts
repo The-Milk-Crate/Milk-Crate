@@ -5,6 +5,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "../config";
 import type { Artist, Release, Track } from "./types";
+import { safeColor, sanitizePage } from "./artistPage";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
@@ -20,6 +21,7 @@ export interface ArtistRow {
   bio: string;
   accent: string;
   since: number;
+  page: unknown;
 }
 
 export interface ReleaseRow {
@@ -51,8 +53,9 @@ export const artistFromRow = (r: ArtistRow): Artist => ({
   place: r.place,
   genres: r.genres ?? [],
   bio: r.bio ?? "",
-  accent: r.accent,
+  accent: safeColor(r.accent) ?? "#c2b1f8",
   since: r.since,
+  page: sanitizePage(r.page),
 });
 
 export function releasesFromRows(releases: ReleaseRow[], tracks: TrackRow[]): { releases: Release[]; tracks: Track[] } {
@@ -83,11 +86,13 @@ const EXT_BY_TYPE: Record<string, string> = {
   "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/flac": "flac", "audio/x-flac": "flac",
   "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/mp4": "m4a", "audio/x-m4a": "m4a",
   "audio/aac": "aac", "audio/ogg": "ogg", "audio/opus": "opus",
-  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/svg+xml": "svg",
+  "font/ttf": "ttf", "font/otf": "otf", "font/woff": "woff", "font/woff2": "woff2",
 };
 const TYPE_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg", flac: "audio/flac", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", opus: "audio/ogg",
-  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", svg: "image/svg+xml",
+  ttf: "font/ttf", otf: "font/otf", woff: "font/woff", woff2: "font/woff2",
 };
 
 /**
