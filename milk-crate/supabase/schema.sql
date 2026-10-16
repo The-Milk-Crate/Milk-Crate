@@ -1,5 +1,6 @@
 -- Milk Crate database setup.
 -- Run once: Supabase dashboard → SQL Editor → New query → paste all of this → Run.
+-- Then run 002_artist_pages.sql the same way.
 -- Safe to run again; it skips anything that already exists.
 
 -- ============ Tables ============

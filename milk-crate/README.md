@@ -10,7 +10,7 @@ This repo is the **desktop app**: a [Tauri 2](https://v2.tauri.app) shell (Rust)
 - A real player: add audio files from your computer (MP3, FLAC, WAV, M4A, OGG) and play them.
 - 1–5 star ratings, saved between launches, and **weighted shuffle** — higher-rated tracks come up more often.
 - An **album-reactive accent**: lavender by default; while something plays, the logo, play button and highlights take on the album's color. Toggle it with "Album colors" in the sidebar.
-- **For artists:** sign in, set up an artist profile (name, city, genres, bio, profile color) and upload releases with cover art and audio files. WAV, AIFF and FLAC files (and anything over the server's 50 MB limit) are converted to a 320 kbps MP3 streaming copy first. Uploads go to the Milk Crate server (Supabase) and show up for every listener — Home, artist pages, search and the Scenes map.
+- **For artists:** sign in, set up an artist profile (name, city, genres, bio, profile color), and **design your page**: a wide banner and an optional vertical one (the page cross-fades to whichever fits the window's shape), with your name set inside the banner on one centered line (long names shrink to fit) — lettered your way (16 built-in fonts or upload your own, any color, bold/italic/caps, size, letter spacing) or replaced by your logo or hand-drawn lettering. Live previews show a wide and a tall window. Upload releases with cover art and audio files. WAV, AIFF and FLAC files (and anything over the server's 50 MB limit) are converted to a 320 kbps MP3 streaming copy first. Uploads go to the Milk Crate server (Supabase) and show up for every listener — Home, artist pages, search and the Scenes map.
 - **Scenes map:** every band is a dot in its own profile color, grouped by neighborhood. Hover a dot to see who it is; click to open their page.
 - Dark and light themes.
 
@@ -19,7 +19,8 @@ This repo is the **desktop app**: a [Tauri 2](https://v2.tauri.app) shell (Rust)
 The app talks to the Supabase project in `src/config.ts`. Before the first upload:
 
 1. In the Supabase dashboard open **SQL Editor → New query**, paste everything in `supabase/schema.sql`, and click **Run**. That creates the artists/releases/tracks tables, the `covers` and `audio` storage buckets, and the permission rules (anyone can listen; only an artist's own account can change their music).
-2. Make the confirmation email send a code instead of a link (the app has no web page to land on). In **Authentication → Emails → Templates → Confirm signup**, replace the message body with:
+2. Then run `supabase/002_artist_pages.sql` the same way (adds artist page designs and the `profiles` storage for banners, logos and fonts). If you set the server up before this file existed, run just this one.
+3. Make the confirmation email send a code instead of a link (the app has no web page to land on). In **Authentication → Emails → Templates → Confirm signup**, replace the message body with:
 
    ```html
    <h2>Welcome to Milk Crate</h2>
@@ -29,7 +30,7 @@ The app talks to the Supabase project in `src/config.ts`. Before the first uploa
    ```
 
    Click **Save**. New artists then type the code into the app's **For artists** screen.
-3. Before inviting real artists: Supabase's built-in email only delivers to your own team's addresses and sends a few emails an hour. Under **Authentication → Emails → SMTP Settings**, connect a real email sender (Gmail with an app password works for a small pilot).
+4. Before inviting real artists: Supabase's built-in email only delivers to your own team's addresses and sends a few emails an hour. Under **Authentication → Emails → SMTP Settings**, connect a real email sender (Gmail with an app password works for a small pilot).
 
 Listeners don't need accounts. Artists create one on the **For artists** screen.
 
@@ -85,7 +86,7 @@ npm run build        # type-check + build the UI only
 src/
   App.tsx              screens + routing, theme, album-accent switch
   components/          UI primitives (ui.tsx), Sidebar, PlayerBar
-  screens/             Home, Scenes, Crate, Artists, ArtistPage, Upload (For artists)
+  screens/             Home, Scenes, Crate, Artists, ArtistPage, Upload (For artists), PageDesigner
   lib/
     types.ts           data model (Artist, Release, Track, Scene, MerchItem, Show, CrateItem)
     player.tsx         player state: queue, transport, ratings, weighted shuffle
@@ -97,7 +98,8 @@ src/
     transcode.ts       makes MP3 streaming copies of big/uncompressed audio (mp3.worker.ts does the encoding)
     localFiles.ts      pick audio files (native dialog in the app, file input in a browser)
     storage.ts         saved settings and ratings
-    catalog.tsx        server catalog, shared by every screen; publishing/removing
+    catalog.tsx        server catalog, shared by every screen; publishing/removing, saving page designs
+    artistPage.ts      artist page design: name fonts, styles, safety checks on saved designs
     supabase.ts        Supabase client and row mapping
     auth.tsx           artist sign-in (email + password)
   config.ts            Supabase project URL + publishable key
@@ -105,6 +107,7 @@ src/
   styles/              tokens.css (from the design system), components.css, app.css
 src-tauri/             Rust desktop shell, window config, icons, permissions
 supabase/schema.sql    database tables, storage buckets and permissions (run once)
+supabase/002_artist_pages.sql  artist page designs + profiles storage (run once, after schema.sql)
 docs/architecture.md   where this is going: backend, payments, licensing, roadmap
 scripts/               build-windows.ps1 (used by "Build Milk Crate.bat"), prepare-release.mjs (used by GitHub builds)
 .github/workflows/     build.yml — builds and publishes a Release on every push (auto-update)
