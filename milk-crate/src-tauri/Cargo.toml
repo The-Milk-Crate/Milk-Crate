@@ -15,7 +15,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # protocol-asset lets the webview play audio files from the listener's disk.
-tauri = { version = "2", features = ["protocol-asset"] }
+# macos-private-api: lets the window be transparent (frosted glass) on macOS.
+tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
 tauri-plugin-dialog = "2"
 # Auto-update from GitHub Releases (signed), and restarting after an update.
 tauri-plugin-updater = "2"
