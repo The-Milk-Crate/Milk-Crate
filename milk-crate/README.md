@@ -6,12 +6,14 @@ This repo is the **desktop app**: a [Tauri 2](https://v2.tauri.app) shell (Rust)
 
 ## What works today
 
-- **Real scenes.** On first launch people say where they live (any US city or town with 1,000+ people). Their scene is their city, the towns within 35 miles, and the larger cities in their state. The Scenes map is a real map (state borders, true city positions) with every band as a dot in its profile color at its home city, plus an "Across the country" view and a way to explore any city's scene.
-- **Two kinds of accounts.** *Listener accounts* (email, password, city — kept private) and *artist accounts*, which are separate: one email is one kind, for good. People can also look around without an account (their city is saved on that computer).
-- **Artists apply to join.** A new artist account sets up a profile and sends an application (links to their music, a note). Until a reviewer approves them they're hidden from listeners and can't upload music, but they can design their page. Reviewers approve or decline on the **Review artists** screen. The server enforces all of this (`supabase/003_accounts_and_places.sql`).
-- **Artist pages** designed by the artist: a wide and a vertical banner that cross-fade to fit the window, with the name on one centered line inside the banner in their choice of font (or their own), color and style, or their logo or hand-drawn lettering.
-- **Releases:** approved artists upload cover art and audio; WAV, AIFF and FLAC (and anything over 50 MB) become 320 kbps MP3 streaming copies.
-- A real player with 1–5 star ratings and **weighted shuffle**, play files from your own computer, an **album-reactive accent**, dark and light themes, and **automatic updates** from GitHub Releases.
+- **Home:** a dashboard. What's in your rotation (albums you've played most lately), new releases (ones from your scene marked "Near you"), artists to discover, and what you've recently added to your crate. Search covers artists, albums and genres.
+- **Your Crate:** albums you've saved, your physical media (vinyl, 7", cassette, CD; adding something that's on Milk Crate puts the digital album in your crate too), playlists, and audio files from your computer. Shuffle your whole library, or play albums start to finish. **Your own star ratings live here** and steer shuffle.
+- **Artists:** who you follow (play straight from their albums), artists who *sound like* them, and everyone on Milk Crate. "Sounds like" uses each track's measured tempo, energy, brightness and dynamics (taken when the artist uploads); older uploads fall back to shared genres.
+- **Artist and album pages are separate.** Artist pages (designed by the artist: banners, lettering, city and genre under the name) list their albums; album pages let you play, add to your crate, mark a physical copy, and add songs to playlists. **Stars on these pages are the average from everyone**, never who rated what.
+- **Scenes:** real places. Your scene is your city, the towns within 35 miles and your state's larger cities, on a real map with every band as a dot in its color.
+- **Accounts:** listener accounts (city, display name, crate, follows, ratings, all private except your display name) and separate artist accounts that apply and are approved by reviewers (**Review artists**). **Account → Check for updates** installs the newest version from GitHub.
+- **For artists:** profile, page designer, and releases (WAV/AIFF/FLAC become 320 kbps MP3 streaming copies).
+- **Settings:** theme, album-reactive colors, shuffle by your ratings.
 
 ## Server setup (one time)
 
@@ -20,7 +22,8 @@ The app talks to the Supabase project in `src/config.ts`. In the Supabase dashbo
 1. `supabase/schema.sql`: artists, releases and tracks, plus storage for covers and audio.
 2. `supabase/002_artist_pages.sql`: artist page designs, plus storage for banners, logos and fonts.
 3. `supabase/003_accounts_and_places.sql`: listener and artist accounts, artist approval, and real locations. Artists already on the server stay approved.
-4. Make yourself a reviewer (use the email you sign in to Milk Crate with):
+4. `supabase/004_crates_and_ratings.sql`: crates, physical media, playlists, follows, ratings (averages), display names, sound profiles.
+5. Make yourself a reviewer (use the email you sign in to Milk Crate with):
    ```sql
    insert into public.admins (user_id) select id from auth.users where email = 'you@example.com';
    ```
@@ -28,7 +31,7 @@ The app talks to the Supabase project in `src/config.ts`. In the Supabase dashbo
 
 All of these are safe to run again. Then set up email:
 
-5. Make the confirmation email send a code instead of a link (the app has no web page to land on). In **Authentication → Emails → Templates → Confirm signup**, replace the message body with:
+6. Make the confirmation email send a code instead of a link (the app has no web page to land on). In **Authentication → Emails → Templates → Confirm signup**, replace the message body with:
 
    ```html
    <h2>Welcome to Milk Crate</h2>
@@ -36,7 +39,7 @@ All of these are safe to run again. Then set up email:
    <p style="font-size:28px;font-weight:bold;letter-spacing:6px">{{ .Token }}</p>
    <p>Type it into the Milk Crate app to finish setting up your account.</p>
    ```
-6. Before inviting real people: Supabase's built-in email only delivers to your own team's addresses and sends a few emails an hour. Under **Authentication → Emails → SMTP Settings**, connect a real email sender (Gmail with an app password works for a small pilot).
+7. Before inviting real people: Supabase's built-in email only delivers to your own team's addresses and sends a few emails an hour. Under **Authentication → Emails → SMTP Settings**, connect a real email sender (Gmail with an app password works for a small pilot).
 
 ## Get the .exe
 
@@ -90,7 +93,7 @@ npm run build        # type-check + build the UI only
 src/
   App.tsx              screens + routing, theme, album-accent switch
   components/          UI primitives (ui.tsx), Sidebar, PlayerBar
-  screens/             Welcome, Home, Scenes, Crate, Artists, ArtistPage, Upload (For artists), PageDesigner, Account, Review
+  screens/             Welcome, Home, Crate, Artists, ArtistPage, AlbumPage, Scenes, Account, Upload (For artists), PageDesigner, Review, Settings
   lib/
     types.ts           data model (Artist, Release, Track, Scene, MerchItem, Show, CrateItem)
     player.tsx         player state: queue, transport, ratings, weighted shuffle
@@ -105,6 +108,10 @@ src/
     catalog.tsx        server catalog (approved artists), publishing, page designs, applications and reviews
     geo.ts             real places: city search, distances, scenes (+ tests)
     location.tsx       your home city and scene (listener account, artist profile, or this computer)
+    library.tsx        your crate, physical media, playlists, follows, ratings, display name
+    sound.ts           sound profiles: tempo, energy, brightness, dynamics (+ tests); measure.ts runs it on uploads
+    similar.ts         "sounds like" recommendations (+ tests)
+    settings.tsx       theme and album-color settings
     artistPage.ts      artist page design: name fonts, styles, safety checks on saved designs
     supabase.ts        Supabase client and row mapping
     auth.tsx           accounts: listener or artist, reviewer status, sign-in with emailed codes
@@ -114,6 +121,7 @@ src-tauri/             Rust desktop shell, window config, icons, permissions
 supabase/schema.sql    database tables, storage buckets and permissions (run once)
 supabase/002_artist_pages.sql  artist page designs + profiles storage (run once, after schema.sql)
 supabase/003_accounts_and_places.sql  listener/artist accounts, approval, locations (run once, after 002)
+supabase/004_crates_and_ratings.sql   crates, playlists, follows, ratings, display names, sound (run once, after 003)
 public/cities-us.json  US cities and towns (GeoNames, CC BY 4.0); rebuild with scripts/build-cities.mjs
 docs/architecture.md   where this is going: backend, payments, licensing, roadmap
 scripts/               build-windows.ps1 (used by "Build Milk Crate.bat"), prepare-release.mjs (used by GitHub builds)
