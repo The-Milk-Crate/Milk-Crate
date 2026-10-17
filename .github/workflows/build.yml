@@ -10,7 +10,7 @@ name: Build Milk Crate
 on:
   push:
     branches: [main, master]
-    paths-ignore: ["**.md", "**/docs/**"]
+    paths-ignore: ["**.md", "**/docs/**", "**/site/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

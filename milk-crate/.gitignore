@@ -1,0 +1,17 @@
+node_modules
+dist
+*.local
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Rust / Tauri build output
+src-tauri/target
+src-tauri/gen/schemas
+
+# Built executables (from Build Milk Crate.bat)
+release/
+
+# Update signing keys: never commit
+*.key
+milkcrate-signing-secrets.txt

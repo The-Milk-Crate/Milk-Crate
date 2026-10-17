@@ -1,0 +1,36 @@
+# (This copy is for reference. GitHub reads the one at the top of the repository: .github/workflows/pages.yml)
+# Publishes the share page (milk-crate/site/) to GitHub Pages, so links people share
+# open a real web page: https://the-milk-crate.github.io/Milk-Crate/?album=…
+#
+# One-time setup: repository Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Share page
+
+on:
+  push:
+    branches: [main, master]
+    paths: ["milk-crate/site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: milk-crate/site
+      - id: deployment
+        uses: actions/deploy-pages@v4
