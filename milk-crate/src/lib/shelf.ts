@@ -129,3 +129,14 @@ export function flipSound(kind: "sleeve" | "case" | "tape") {
     /* no sound: fine */
   }
 }
+
+/* ---------- Sorting ---------- */
+
+export type ShelfSort = "az" | "year";
+
+/** A–Z: by artist, then title. Year: newest first (ones with no year last), then A–Z. */
+export function sortShelf<T extends { artist: string; title: string; year?: number }>(items: T[], by: ShelfSort): T[] {
+  const name = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  const az = (a: T, b: T) => name(a.artist, b.artist) || name(a.title, b.title);
+  return [...items].sort(by === "year" ? (a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity) || az(a, b) : az);
+}
