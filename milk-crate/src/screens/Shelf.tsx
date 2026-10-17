@@ -225,7 +225,7 @@ function Cover({ it, kind }: { it: ShelfItem; kind: ShelfFormat }) {
       <span className="tape">
         <span className="tape-screw s1" /><span className="tape-screw s2" /><span className="tape-screw s3" /><span className="tape-screw s4" />
         <span className="tape-label">
-          {/* The album cover, turned sideways to fill the label. */}
+          {/* The album cover, upright, cropped to fill the label. */}
           <span className="tape-art"><Sleeve src={it.art} seed={it.seed} alt="" /></span>
           <span className="tape-window">
             <span className="tape-reel full" />
