@@ -36,16 +36,22 @@ export async function installLocationProblem(): Promise<string | null> {
   try {
     const { resourceDir } = await import("@tauri-apps/api/path");
     const dir = await resourceDir();
-    if (dir.startsWith("/Volumes/") || dir.includes("/AppTranslocation/"))
-      return "Milk Crate is running from the disk image or a temporary spot, so it can't update itself. Quit Milk Crate, drag it into your Applications folder, open it from there, and try again.";
+    if (dir.startsWith("/Volumes/"))
+      return "Milk Crate is running from the disk image, so it can't update itself. Quit it, eject the Milk Crate disk image, and open Milk Crate from your Applications folder.";
+    if (dir.includes("/AppTranslocation/"))
+      return 'macOS is running Milk Crate from a temporary, read-only copy (it does this for downloaded apps that aren\'t from a registered Apple developer), so it can\'t update itself. One-time fix: make sure Milk Crate is in Applications, quit it, open Terminal and run:  xattr -dr com.apple.quarantine "/Applications/Milk Crate.app"  then open Milk Crate again.';
   } catch {
     /* can't tell: try the update anyway */
   }
   return null;
 }
 
+/** Thrown when the update can't work from where the app is running; the message says what to do. */
+export class UpdateBlocked extends Error {}
+
 /** Tauri reports errors as plain text; turn whatever was thrown into a sentence a person can act on. */
 export function updateErrorText(e: unknown): string {
+  if (e instanceof UpdateBlocked) return e.message;
   const raw = typeof e === "string" ? e : e instanceof Error ? e.message : (e as { message?: string })?.message ?? JSON.stringify(e);
   const why = raw && raw !== "undefined" && raw !== "{}" ? raw : "no details";
   const mac = /Mac/i.test(navigator.userAgent);
@@ -63,7 +69,7 @@ export function updateErrorText(e: unknown): string {
 /** Downloads and installs the update, reporting 0–100, then restarts the app. */
 export async function installUpdate(update: Update, onProgress: (pct: number | null) => void) {
   const problem = await installLocationProblem();
-  if (problem) throw problem;
+  if (problem) throw new UpdateBlocked(problem);
   let total = 0;
   let done = 0;
   await update.downloadAndInstall((e) => {

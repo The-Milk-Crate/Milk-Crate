@@ -7,7 +7,7 @@
  * holds that town's artists and their releases, newest first.
  */
 import { inScene, miles, placeKey, type Place, type Scene } from "./geo";
-import type { Release } from "./types";
+import { outAt, type Release } from "./types";
 import type { ArtistPlace } from "./location";
 
 /** A release counts as new for this long after it goes up. */
@@ -27,7 +27,8 @@ export interface Bin {
   isNew: boolean;
 }
 
-const addedTime = (r: Release) => (r.addedAt ? Date.parse(r.addedAt) || 0 : 0);
+/** When it came out (its release date if it was scheduled, else when it went up). */
+const addedTime = (r: Release) => outAt(r);
 
 export function buildBins(scene: Scene, placed: ArtistPlace[], releases: Release[], now = Date.now()): Bin[] {
   const center = scene.home;

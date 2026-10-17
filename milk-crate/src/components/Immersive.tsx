@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Minimize2 } from "lucide-react";
+import { Minimize2, ScrollText } from "lucide-react";
+import { SongInfoContent, hasSongInfo } from "./SongInfo";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
 import { useCatalog } from "../lib/catalog";
@@ -14,8 +15,9 @@ const IDLE_MS = 3000;
 
 /**
  * Immersive mode: the album that's playing, full screen, with its colors
- * swirling behind it. The controls fade out when the mouse rests and come
- * back when it moves. Esc (or the button) leaves; Space plays/pauses.
+ * swirling behind it. The progress bar and play controls always stay up; the
+ * exit button fades out when the mouse rests and comes back when
+ * it moves. Esc (or the button) leaves; Space plays/pauses.
  */
 export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
   const p = usePlayer();
@@ -24,14 +26,20 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
   const release = t ? c.releaseById[t.releaseId] : undefined;
   const artist = t ? c.artistById[t.artistId] : undefined;
   const artistName = artist?.name ?? (t ? "Your files" : "");
-  const at = t ? p.queue.findIndex((q) => q.id === t.id) : -1;
-  const upNext = at >= 0 ? p.queue[at + 1] : undefined;
   const [idle, setIdle] = useState(false);
+  // Lyrics and credits take the cover's place while they're open (and stay open from song to song).
+  const [showInfo, setShowInfo] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
   const toggle = useRef(p.toggle);
   toggle.current = p.toggle;
+
+  // Tells the main swirl behind this to stop drawing while immersive mode covers it.
+  useEffect(() => {
+    document.documentElement.dataset.immersive = "true";
+    return () => { delete document.documentElement.dataset.immersive; };
+  }, []);
 
   // Full screen while open; put the window back the way it was on the way out.
   useEffect(() => {
@@ -95,7 +103,11 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
         <Minimize2 size={16} strokeWidth={1.75} aria-hidden="true" /> Exit immersive mode <kbd>Esc</kbd>
       </button>
       <div className="immersive-stage">
-        <Sleeve src={release?.art} seed={release ? sleeveSeed(release.title, artistName) : t.title} alt={release ? `${release.title} cover` : ""} />
+        {showInfo && hasSongInfo(t) ? (
+          <div className="immersive-lyrics" aria-label={`Lyrics and credits for ${t.title}`}><SongInfoContent track={t} /></div>
+        ) : (
+          <Sleeve src={release?.art} seed={release ? sleeveSeed(release.title, artistName) : t.title} alt={release ? `${release.title} cover` : ""} />
+        )}
         <div className="immersive-info">
           <FrostGrain source="immersive" saturate={1.5} />
           {release && (
@@ -115,7 +127,11 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
             <PlayButton size="lg" playing={p.playing} onClick={p.toggle} />
             <button type="button" className="mc-icon-btn" aria-label="Next" onClick={p.next}><Glyph.next /></button>
           </div>
-          <p className="caption immersive-next">{upNext ? <>Up next: <strong>{upNext.title}</strong></> : "Last song in the queue"}</p>
+          {hasSongInfo(t) && (
+            <button type="button" className={`immersive-lyrics-btn${showInfo ? " on" : ""}`} aria-pressed={showInfo} onClick={() => setShowInfo((v) => !v)}>
+              <ScrollText size={15} strokeWidth={1.75} aria-hidden="true" /> {showInfo ? "Show the cover" : t.lyrics ? "Lyrics" : "Credits"}
+            </button>
+          )}
         </div>
       </div>
     </div>

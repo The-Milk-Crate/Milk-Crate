@@ -1,38 +1,42 @@
 import type { Rating } from "./types";
 
 /**
- * Weighted shuffle: songs you've rated higher come up more often.
+ * Weighted shuffle: your favorite songs, and songs on albums you rated
+ * higher, come up more often.
  *
- * Each track gets a weight from its rating; unrated tracks sit in the middle
- * so new music still gets heard. The order is drawn without replacement
- * (Efraimidis–Spirakis), so every track still plays once per pass — a
- * five-star track just tends to come earlier.
+ * Each track gets a weight: favorites the most, then from the album's rating;
+ * songs on albums you haven't rated sit in the middle so new music still gets
+ * heard. The order is drawn without replacement (Efraimidis–Spirakis), so
+ * every track still plays once per pass — a favorite just tends to come earlier.
  */
 export const RATING_WEIGHTS: Record<Rating, number> = {
-  0: 1, // unrated — neutral, so new music still surfaces
+  0: 1, // not rated — neutral, so new music still surfaces
   1: 0.2,
   2: 0.5,
   3: 1,
   4: 2,
-  5: 3.5,
+  5: 3,
 };
+/** A favorite song beats even a five-star album. */
+export const FAVORITE_WEIGHT = 3.5;
 
 export function weightFor(rating: Rating | undefined): number {
   return RATING_WEIGHTS[rating ?? 0];
 }
 
+/** How strongly a song is pulled toward the front: favorites most, then by its album's stars. */
+export function songWeight(favorite: boolean, albumStars?: Rating): number {
+  return favorite ? FAVORITE_WEIGHT : weightFor(albumStars);
+}
+
 /**
- * Returns a new array in weighted-random order.
+ * Returns a new array in weighted-random order (higher weight tends to come first).
  * `random` is injectable so the behavior can be tested deterministically.
  */
-export function weightedShuffle<T>(
-  items: readonly T[],
-  getRating: (item: T) => Rating | undefined,
-  random: () => number = Math.random,
-): T[] {
+export function weightedShuffle<T>(items: readonly T[], getWeight: (item: T) => number, random: () => number = Math.random): T[] {
   return items
     .map((item) => {
-      const w = weightFor(getRating(item));
+      const w = Math.max(0.01, getWeight(item));
       // key = u^(1/w); larger keys come first. Higher weight → key closer to 1.
       const u = Math.max(random(), Number.EPSILON);
       return { item, key: Math.pow(u, 1 / w) };

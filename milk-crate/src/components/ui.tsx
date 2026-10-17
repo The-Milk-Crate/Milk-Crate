@@ -5,6 +5,7 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import type { Rating } from "../lib/types";
 import { sleeveDesign, sleeveSeed } from "../lib/sleeve";
+import { useDownloadedTracks } from "../lib/downloads";
 
 const cx = (...c: (string | false | undefined | null)[]) => c.filter(Boolean).join(" ");
 
@@ -23,6 +24,25 @@ export const Glyph = {
   star: () => <G d="M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.45L12 17.45 6.2 20.5l1.1-6.45-4.7-4.6 6.5-.95z" />,
   crate: () => <G d={MARK_PATH} vb="0 0 64 64" rule="evenodd" />,
 };
+
+/* ---------- Downloaded ---------- */
+/** A small arrow-into-tray mark: this song (or every song on this album) plays without the internet. */
+export function DownloadedMark({ label = "Downloaded", size = 14 }: { label?: string; size?: number }) {
+  return (
+    <span className="mc-downloaded" role="img" aria-label={label} title={`${label}: plays without the internet`}>
+      <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true">
+        <circle cx="8" cy="8" r="7.25" fill="currentColor" />
+        <path d="M8 4.2v5.2M5.6 7.3 8 9.7l2.4-2.4M5 11.6h6" fill="none" stroke="var(--mc-downloaded-ink, var(--on-accent))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
+/** True when every one of these songs is downloaded. */
+export function useAllDownloaded(trackIds?: string[]) {
+  const dl = useDownloadedTracks();
+  return !!trackIds?.length && trackIds.every((id) => dl[id]);
+}
 
 /* ---------- Button ---------- */
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -105,8 +125,11 @@ export function ReleaseCard(props: {
   onPlay?: () => void;
   /** Sleeve seed; defaults to title + artist. Pass it when `artist` isn't the artist's name. */
   seed?: string;
+  /** The release's songs: shows the downloaded mark when every one is downloaded. */
+  trackIds?: string[];
 }) {
   const meta = [props.artist, props.place, props.year].filter(Boolean).join(" · ");
+  const downloaded = useAllDownloaded(props.trackIds);
   return (
     <div className="mc-card-wrap">
       <a
@@ -122,7 +145,7 @@ export function ReleaseCard(props: {
           {props.sticker && <Sticker tone={props.stickerTone}>{props.sticker}</Sticker>}
         </div>
         <div>
-          <div className="mc-card-title">{props.title}</div>
+          <div className="mc-card-title">{props.title}{downloaded && <> <DownloadedMark label="Album downloaded" size={13} /></>}</div>
           <div className="mc-card-meta">{meta}</div>
         </div>
       </a>
@@ -135,7 +158,7 @@ export function ReleaseCard(props: {
   );
 }
 
-/** Average star rating from everyone on Milk Crate (read-only). */
+/** Average star rating from everyone on Milk Crate (read-only). Albums are rated; songs are favorited. */
 export function AverageRating({ value, size = 14 }: { value?: number; size?: number }) {
   if (!value) return <span className="mc-avg mc-avg-none" title="Not rated yet" style={{ "--mc-star": `${size}px` } as CSSProperties}>Not rated</span>;
   const pct = Math.max(0, Math.min(100, (value / 5) * 100));
@@ -151,10 +174,36 @@ export function AverageRating({ value, size = 14 }: { value?: number; size?: num
   );
 }
 
+/* ---------- Favorites and streams ---------- */
+
+/** "12", "1,204", "12.4K", "1.2M". */
+export function streamsLabel(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}M`;
+  if (n >= 10_000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, "")}K`;
+  return n.toLocaleString("en-US");
+}
+
+/** The heart on a song: adds it to (or takes it out of) your favorites. */
+export function FavoriteButton({ on, title, onToggle, size = 16 }: { on: boolean; title: string; onToggle: () => void; size?: number }) {
+  return (
+    <button type="button" className={cx("mc-fav", on && "on")} aria-pressed={on} aria-label={on ? `Remove ${title} from favorites` : `Favorite ${title}`}
+      title={on ? "In your favorites" : "Add to favorites"}
+      onClick={(e) => { e.stopPropagation(); onToggle(); }} onKeyDown={(e) => e.stopPropagation()}>
+      <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+        <path d="M12 20.5s-7.5-4.6-9.2-9.3C1.6 7.9 3.8 4.5 7.3 4.5c2 0 3.6 1.1 4.7 2.7 1.1-1.6 2.7-2.7 4.7-2.7 3.5 0 5.7 3.4 4.5 6.7C19.5 15.9 12 20.5 12 20.5Z" />
+      </svg>
+    </button>
+  );
+}
+
 /* ---------- TrackRow ---------- */
 export function TrackRow(props: {
   index: number; title: string; artist?: string; duration: string;
-  rating?: Rating; onRate?: (v: Rating) => void;
+  /** Show a heart: filled when the song is one of your favorites. */
+  favorite?: boolean;
+  onFavorite?: () => void;
+  /** Show how many times the song has been streamed (artist pages). */
+  streams?: number;
   /** This row is the song that's loaded in the player. */
   playing?: boolean;
   /** The loaded song is paused (shows a play button instead of pause). */
@@ -162,11 +211,12 @@ export function TrackRow(props: {
   onPlay?: () => void;
   /** Pause / resume the loaded song. */
   onToggle?: () => void;
-  /** Show the everyone-average instead of your own rating (read-only). */
-  average?: number | null;
   /** Extra controls before the duration (add to playlist, remove…). */
   actions?: ReactNode;
+  /** The song's id: shows the downloaded mark when it's downloaded. */
+  trackId?: string;
 }) {
+  const downloaded = useDownloadedTracks()[props.trackId ?? ""];
   return (
     <div
       className={cx("mc-track", props.playing && "playing")}
@@ -189,10 +239,13 @@ export function TrackRow(props: {
         )}
       </span>
       <span className="mc-track-text">
-        <span className="mc-track-title">{props.title}</span>
+        <span className="mc-track-title">{props.title}{downloaded && <> <DownloadedMark size={12} /></>}</span>
         {props.artist && <span className="mc-track-artist">{props.artist}</span>}
       </span>
-      {props.average !== undefined ? <AverageRating value={props.average ?? undefined} /> : <StarRating value={props.rating ?? 0} onChange={props.onRate} size={14} />}
+      <span className="mc-track-meta">
+        {props.streams !== undefined && <span className="mc-track-streams" title="Streams on Milk Crate">{streamsLabel(props.streams)}</span>}
+        {props.onFavorite && <FavoriteButton on={!!props.favorite} title={props.title} onToggle={props.onFavorite} />}
+      </span>
       {props.actions && <span className="mc-track-actions" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{props.actions}</span>}
       <span className="mc-track-dur">{props.duration}</span>
     </div>

@@ -1,160 +1,319 @@
-import { useMemo, useState } from "react";
-import { Shuffle, Trash2, X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { ChevronRight, Heart, Shuffle, Trash2, X } from "lucide-react";
 import type { CrateTab, Go } from "../App";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
-import { FORMAT_LABEL, attempt, useLibrary, type PhysicalItem } from "../lib/library";
-import { pickAudioFiles } from "../lib/localFiles";
+import { FORMAT_LABEL, attempt, useLibrary } from "../lib/library";
 import { usePersistentState } from "../lib/storage";
 import { formatTime } from "../lib/format";
 import { sleeveSeed } from "../lib/sleeve";
-import type { PhysicalFormat, Track } from "../lib/types";
-import { Button, PlayButton, ReleaseCard, Sleeve, TrackRow } from "../components/ui";
+import { KIND_LABEL, buildCrate, byRecentlyPlayed, type CrateEntry } from "../lib/crate";
+import { fileArtist, useFileCover } from "../lib/fileTags";
+import type { Track } from "../lib/types";
+import { Button, PlayButton, ReleaseCard, Sleeve, Sticker, TrackRow, useAllDownloaded, DownloadedMark } from "../components/ui";
 import { AddToPlaylist } from "../components/AddToPlaylist";
-
-const FORMATS: PhysicalFormat[] = ["LP", "7in", "Cassette", "CD"];
+import { AlbumRating } from "../components/AlbumRating";
+import { HistoryList } from "../components/HistoryList";
 
 /**
- * Your Crate: albums you've saved, your records, tapes and CDs, playlists, and
- * audio files from your computer. Your own star ratings live here.
+ * Your Crate. The overview has a shelf for each part: Albums, Singles,
+ * Favorites, Recently Played and Playlists, each showing what you played last.
+ * Click a shelf's heading for all of it. Your Computer and Your Shelf open
+ * under Your Crate in the sidebar.
  */
-export function Crate({ go, tab = "albums", releaseId, playlistId }: { go: Go; tab?: CrateTab; releaseId?: string; playlistId?: string }) {
+export function Crate({ go, tab, releaseId, playlistId }: { go: Go; tab?: CrateTab; releaseId?: string; playlistId?: string }) {
   if (releaseId) return <CrateAlbum go={go} releaseId={releaseId} />;
   if (playlistId) return <CratePlaylist go={go} playlistId={playlistId} />;
-  return <CrateHome go={go} tab={tab} />;
+  if (tab) return <CratePage go={go} tab={tab} />;
+  return <CrateHome go={go} />;
 }
 
-function useLibraryTracks() {
+/** Everything in your crate, one entry per release (albums, and singles/doubles/triples). */
+export function useCrate(): CrateEntry[] {
+  const c = useCatalog();
+  const lib = useLibrary();
+  const p = usePlayer();
+  return useMemo(
+    () => buildCrate(lib.saved, lib.crateSongs, c.releaseById, (id) => c.trackById[id]?.releaseId, p.history).sort(byRecentlyPlayed),
+    [lib.saved, lib.crateSongs, c.releaseById, c.trackById, p.history],
+  );
+}
+
+/** Your favorite songs: the ones you played most recently first, then the rest, newest favorite first. */
+function useFavoriteTracks(): Track[] {
   const c = useCatalog();
   const lib = useLibrary();
   const p = usePlayer();
   return useMemo(() => {
-    const fromAlbums = lib.saved.flatMap((s) => c.releaseById[s.releaseId]?.trackIds.map((id) => c.trackById[id]) ?? []).filter(Boolean) as Track[];
-    return [...fromAlbums, ...p.localTracks];
-  }, [lib.saved, c.releaseById, c.trackById, p.localTracks]);
+    const local = p.localTracks.filter((t) => p.favorites.has(t.id));
+    const all = [...lib.favorites.map((id) => c.trackById[id]).filter(Boolean), ...local];
+    const played = new Map<string, number>();
+    for (const h of p.history) if (!played.has(h.trackId)) played.set(h.trackId, h.at);
+    return all.map((t, order) => ({ t, order })).sort((a, b) => (played.get(b.t.id) ?? 0) - (played.get(a.t.id) ?? 0) || a.order - b.order).map((x) => x.t);
+  }, [lib.favorites, c.trackById, p.localTracks, p.favorites, p.history]);
 }
 
-function CrateHome({ go, tab }: { go: Go; tab: CrateTab }) {
+/** Songs you've played, newest first, each once. */
+function useRecentSongs(limit = 16): Track[] {
+  const c = useCatalog();
+  const p = usePlayer();
+  return useMemo(() => {
+    const local = new Map(p.localTracks.map((t) => [t.id, t]));
+    const seen = new Set<string>();
+    const out: Track[] = [];
+    for (const h of p.history) {
+      if (seen.has(h.trackId)) continue;
+      seen.add(h.trackId);
+      const t = c.trackById[h.trackId] ?? local.get(h.trackId);
+      if (t) out.push(t);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }, [p.history, c.trackById, p.localTracks, limit]);
+}
+
+const tracksOf = (e: CrateEntry, byId: Record<string, Track>) => e.trackIds.map((id) => byId[id]).filter(Boolean);
+/** "album", "EP", "single". */
+const kindWord = (k: string) => (k === "EP" ? k : k === "LP" ? "album" : k.toLowerCase());
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/* ---------- The overview: a shelf for each part of your crate ---------- */
+
+function CrateHome({ go }: { go: Go }) {
   const c = useCatalog();
   const p = usePlayer();
   const lib = useLibrary();
-  const all = useLibraryTracks();
-  const albums = lib.saved.map((s) => c.releaseById[s.releaseId]).filter(Boolean);
-  const albumTracks = all.filter((t) => !t.id.startsWith("local:"));
-  const shelf = lib.physical.length;
-  const tabs: { id: CrateTab; label: string; count: number }[] = [
-    { id: "albums", label: "Albums", count: albums.length },
-    { id: "songs", label: "Songs", count: albumTracks.length },
-    { id: "physical", label: "Physical media", count: shelf },
-    { id: "playlists", label: "Playlists", count: lib.playlists.length },
-    { id: "files", label: "On this computer", count: p.localTracks.length },
-  ];
+  const crate = useCrate();
+  const albums = crate.filter((e) => e.kind === "album");
+  const singles = crate.filter((e) => e.kind !== "album");
+  const favorites = useFavoriteTracks();
+  const recent = useRecentSongs();
+  const everything = useMemo(() => {
+    const ids = new Set([...crate.flatMap((e) => e.trackIds), ...lib.favorites]);
+    return [...ids].map((id) => c.trackById[id]).filter(Boolean);
+  }, [crate, lib.favorites, c.trackById]);
 
   return (
     <div className="screen">
       <header className="screen-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span className="catalog eyebrow">{albums.length} {albums.length === 1 ? "album" : "albums"} · {shelf} on your shelf · {lib.playlists.length} {lib.playlists.length === 1 ? "playlist" : "playlists"}</span>
+          <span className="catalog eyebrow">{plural(albums.length, "album")} · {plural(singles.length, "single")} · {plural(favorites.length, "favorite")}</span>
           <h1 className="display-lg">Your Crate</h1>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-          <Button variant="primary" onClick={() => p.shuffleAll(all)} disabled={!all.length}>
-            <Shuffle size={16} aria-hidden="true" /> Shuffle your library
-          </Button>
-        </div>
+        <Button variant="primary" onClick={() => p.shuffleAll(everything)} disabled={!everything.length}>
+          <Shuffle size={16} aria-hidden="true" /> Shuffle your crate
+        </Button>
       </header>
 
       {!lib.signedIn && (
         <div className="empty">
-          <span>Your crate lives in your account, so it's with you on any computer. Sign in or create a free listener account to save albums, add your records and make playlists.</span>
+          <span>Your crate lives in your account, so it's with you on any computer. Sign in or create a free listener account to add albums and songs, favorite songs and make playlists.</span>
           <Button size="sm" variant="primary" onClick={() => go({ name: "account" })}>Sign in</Button>
         </div>
       )}
 
-      <div role="tablist" aria-label="Your crate" className="segmented">
-        {tabs.map((t) => (
-          <button key={t.id} type="button" role="tab" className="chip" aria-selected={tab === t.id} aria-pressed={tab === t.id} onClick={() => go({ name: "crate", tab: t.id })}>
-            {t.label} <span className="muted" style={{ fontWeight: 450 }}>{t.count}</span>
-          </button>
-        ))}
-      </div>
+      <CrateShelf title="Albums" count={albums.length} onOpen={() => go({ name: "crate", tab: "albums" })}
+        empty="Open any album and choose Add to your crate. Four or more songs from one album land here too.">
+        {albums.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
+      </CrateShelf>
 
-      {tab === "albums" && (
-        albums.length ? (
-          <div className="release-grid">
-            {albums.map((r) => {
-              const a = c.artistById[r.artistId];
-              const formats = lib.physical.filter((x) => x.releaseId === r.id).map((x) => x.format);
-              return (
-                <ReleaseCard key={r.id} title={r.title} artist={a?.name ?? ""} year={r.year} art={r.art}
-                  sticker={formats.length ? formats.map((f) => (f === "7in" ? '7"' : f)).join(" + ") : undefined} stickerTone="sticker"
-                  onOpen={() => go({ name: "crate", releaseId: r.id })}
-                  onPlay={() => p.playQueue(r.trackIds.map((id) => c.trackById[id]).filter(Boolean))} />
-              );
-            })}
-          </div>
-        ) : (
-          lib.signedIn && <div className="empty"><span>No albums yet. Open any album and choose "Add to your crate", or add a record you own under Physical media.</span><Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button></div>
-        )
-      )}
+      <CrateShelf title="Singles" count={singles.length} onOpen={() => go({ name: "crate", tab: "singles" })}
+        empty="Add one, two or three songs from an album (from a song's menu) and they show here as a single, double or triple.">
+        {singles.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
+      </CrateShelf>
 
-      {tab === "songs" && <CrateSongs go={go} tracks={albumTracks} />}
-      {tab === "physical" && <PhysicalShelf go={go} />}
-      {tab === "playlists" && <PlaylistList go={go} />}
-      {tab === "files" && <LocalFiles />}
+      <CrateShelf title="Favorites" count={favorites.length} onOpen={() => go({ name: "crate", tab: "favorites" })}
+        empty="Tap the heart next to any song and it lands here.">
+        {favorites.slice(0, 12).map((t, i) => <SongTile key={t.id} track={t} onPlay={() => p.playQueue(favorites, i)} />)}
+      </CrateShelf>
+
+      <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}
+        empty="Songs you play show up here, even ones that aren't in your crate.">
+        {recent.map((t) => <SongTile key={t.id} track={t} onPlay={() => p.playNow(t)} />)}
+      </CrateShelf>
+
+      <CrateShelf title="Playlists" count={lib.playlists.length} onOpen={() => go({ name: "crate", tab: "playlists" })}
+        empty="Make a playlist here, or add songs to one from any song's menu.">
+        {lib.playlists.slice(0, 12).map((pl) => {
+          const first = pl.trackIds.map((id) => c.trackById[id]).find(Boolean);
+          const r = first ? c.releaseById[first.releaseId] : undefined;
+          return (
+            <Tile key={pl.id} art={r?.art} seed={`playlist ${pl.name}`} title={pl.name} sub={plural(pl.trackIds.length, "song")}
+              onOpen={() => go({ name: "crate", playlistId: pl.id })} />
+          );
+        })}
+      </CrateShelf>
     </div>
   );
 }
 
-/* ---------- Every song from your saved albums ---------- */
+/** One shelf on the overview: a bordered heading (click for all of it) over a row of covers. */
+function CrateShelf({ title, count, showCount = true, onOpen, empty, children }: {
+  title: string; count: number; showCount?: boolean; onOpen: () => void; empty: string; children: ReactNode;
+}) {
+  return (
+    <section className="crate-shelf" aria-label={title}>
+      <button type="button" className="crate-heading" onClick={onOpen} aria-label={`${title}${showCount ? `, ${count}` : ""}. See all`}>
+        <span className="display-md">{title}</span>
+        {showCount && <span className="crate-heading-count numeral">{count}</span>}
+        <ChevronRight size={20} strokeWidth={2} aria-hidden="true" />
+      </button>
+      {count ? <div className="cover-row">{children}</div> : <p className="caption muted crate-empty">{empty}</p>}
+    </section>
+  );
+}
 
-type SongSort = "added" | "title" | "artist" | "rating";
-const SONG_SORTS: { id: SongSort; label: string }[] = [
-  { id: "added", label: "Recently added" },
-  { id: "title", label: "Title" },
-  { id: "artist", label: "Artist" },
-  { id: "rating", label: "Your rating" },
-];
+/** A square cover with a title under it. */
+function Tile({ art, seed, title, sub, sticker, downloaded, onOpen, onPlay }: {
+  art?: string; seed: string; title: string; sub?: string; sticker?: string; downloaded?: boolean; onOpen: () => void; onPlay?: () => void;
+}) {
+  return (
+    <div className="cover-tile">
+      <button type="button" className="cover-tile-open" onClick={onOpen} title={[title, sub].filter(Boolean).join(" · ")}>
+        <span className="cover-tile-art">
+          <Sleeve src={art} seed={seed} alt="" />
+          {sticker && <Sticker>{sticker}</Sticker>}
+        </span>
+        <span className="cover-tile-title">{title}{downloaded && <> <DownloadedMark size={12} /></>}</span>
+        {sub && <span className="cover-tile-sub caption muted">{sub}</span>}
+      </button>
+      {onPlay && (
+        <button type="button" className="mc-play cover-tile-play" aria-label={`Play ${title}`} onClick={onPlay}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z" /></svg>
+        </button>
+      )}
+    </div>
+  );
+}
 
-function CrateSongs({ go, tracks }: { go: Go; tracks: Track[] }) {
+function EntryTile({ entry: e, go }: { entry: CrateEntry; go: Go }) {
   const c = useCatalog();
   const p = usePlayer();
-  const [sort, setSort] = usePersistentState<SongSort>("mc.crateSongSort", "added");
-  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
-  const artistOf = (t: Track) => c.artistById[t.artistId]?.name ?? "";
-  const albumOf = (t: Track) => c.releaseById[t.releaseId];
-  const sorted = useMemo(() => {
-    const list = tracks.map((t, order) => ({ t, order }));
-    const cmp = {
-      added: () => 0,
-      title: (a: Track, b: Track) => byName(a.title, b.title),
-      artist: (a: Track, b: Track) => byName(artistOf(a), artistOf(b)) || byName(albumOf(a)?.title ?? "", albumOf(b)?.title ?? ""),
-      rating: (a: Track, b: Track) => (p.ratings[b.id] ?? 0) - (p.ratings[a.id] ?? 0),
-    }[sort];
-    return list.sort((a, b) => cmp(a.t, b.t) || a.order - b.order).map((x) => x.t);
-  }, [tracks, sort, p.ratings, c.artistById, c.releaseById]); // eslint-disable-line react-hooks/exhaustive-deps
+  const artist = c.artistById[e.release.artistId]?.name ?? "";
+  const downloaded = useAllDownloaded(e.trackIds);
+  const tracks = tracksOf(e, c.trackById);
+  return (
+    <Tile art={e.release.art} seed={sleeveSeed(e.release.title, artist)} title={e.release.title} sub={artist}
+      sticker={e.kind === "album" ? undefined : KIND_LABEL[e.kind]} downloaded={downloaded}
+      onOpen={() => go({ name: "crate", releaseId: e.release.id })} onPlay={tracks.length ? () => p.playQueue(tracks) : undefined} />
+  );
+}
 
-  if (!tracks.length)
-    return <div className="empty"><span>No songs yet. Add an album to your crate and its songs show up here.</span><Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button></div>;
+function SongTile({ track: t, onPlay }: { track: Track; onPlay: () => void }) {
+  const c = useCatalog();
+  const r = c.releaseById[t.releaseId];
+  const artist = c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer");
+  const fileCover = useFileCover(t.tags?.cover);
+  return <Tile art={r?.art ?? fileCover} seed={r ? sleeveSeed(r.title, artist) : t.title} title={t.title} sub={artist} onOpen={onPlay} />;
+}
+
+/* ---------- A full page for one shelf ---------- */
+
+const PAGE_TITLE: Record<CrateTab, string> = { albums: "Albums", singles: "Singles", favorites: "Favorites", history: "Recently Played", playlists: "Playlists" };
+
+function CratePage({ go, tab }: { go: Go; tab: CrateTab }) {
+  return (
+    <div className="screen">
+      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate" })}>← Your Crate</button>
+      <h1 className="display-lg">{PAGE_TITLE[tab]}</h1>
+      {tab === "albums" && <Entries go={go} kind="albums" />}
+      {tab === "singles" && <Entries go={go} kind="singles" />}
+      {tab === "favorites" && <Favorites go={go} />}
+      {tab === "history" && <History />}
+      {tab === "playlists" && <PlaylistList go={go} />}
+    </div>
+  );
+}
+
+type EntrySort = "played" | "added" | "artist" | "title";
+const ENTRY_SORTS: { id: EntrySort; label: string }[] = [
+  { id: "played", label: "Recently played" },
+  { id: "added", label: "Recently added" },
+  { id: "artist", label: "Artist" },
+  { id: "title", label: "Title" },
+];
+
+/** Every album, or every single/double/triple, in your crate. */
+function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
+  const c = useCatalog();
+  const p = usePlayer();
+  const lib = useLibrary();
+  const crate = useCrate();
+  const [sort, setSort] = usePersistentState<EntrySort>(`mc.crateSort.${kind}`, "played");
+  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  const artistOf = (e: CrateEntry) => c.artistById[e.release.artistId]?.name ?? "";
+  const list = crate.filter((e) => (kind === "albums" ? e.kind === "album" : e.kind !== "album"));
+  if (sort === "added") list.sort((a, b) => b.addedAt - a.addedAt);
+  if (sort === "artist") list.sort((a, b) => byName(artistOf(a), artistOf(b)) || byName(a.release.title, b.release.title));
+  if (sort === "title") list.sort((a, b) => byName(a.release.title, b.release.title));
+
+  if (!list.length)
+    return (
+      <div className="empty">
+        <span>{kind === "albums"
+          ? "No albums yet. Open any album and choose Add to your crate. Four or more songs from one album count as an album too."
+          : "No singles yet. From any song's menu choose Add to your crate. One, two or three songs from an album show here as a single, double or triple."}</span>
+        <Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button>
+      </div>
+    );
 
   return (
-    <section className="section">
+    <>
       <div className="section-title" style={{ justifyContent: "space-between" }}>
         <label className="field sort-field">
           <span className="catalog eyebrow">Sort by</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SongSort)}>
-            {SONG_SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          <select value={sort} onChange={(e) => setSort(e.target.value as EntrySort)}>
+            {ENTRY_SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
           </select>
         </label>
-        <span className="caption muted">Your ratings. Higher-rated songs come up more when you shuffle.</span>
+        <span className="caption muted">{plural(list.length, kind === "albums" ? "album" : "single")}</span>
+      </div>
+      <div className="release-grid">
+        {list.map((e) => {
+          const formats = lib.physical.filter((x) => x.releaseId === e.release.id).map((x) => (x.format === "7in" ? '7"' : x.format));
+          const sticker = e.kind !== "album" ? KIND_LABEL[e.kind] : formats.length ? formats.join(" + ") : undefined;
+          const tracks = tracksOf(e, c.trackById);
+          return (
+            <ReleaseCard key={e.release.id} title={e.release.title} artist={artistOf(e)} year={e.whole ? e.release.year : undefined} art={e.release.art}
+              trackIds={e.trackIds} sticker={sticker} stickerTone="sticker"
+              onOpen={() => go({ name: "crate", releaseId: e.release.id })} onPlay={tracks.length ? () => p.playQueue(tracks) : undefined} />
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/* ---------- Favorites: every song you've hearted ---------- */
+
+function Favorites({ go }: { go: Go }) {
+  const c = useCatalog();
+  const p = usePlayer();
+  const tracks = useFavoriteTracks();
+  if (!tracks.length)
+    return (
+      <div className="empty">
+        <span>No favorites yet. Tap the heart next to any song and it lands here. Favorites come up more when you shuffle.</span>
+        <Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button>
+      </div>
+    );
+  return (
+    <section className="section">
+      <div className="section-title" style={{ justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <PlayButton playing={tracks.some((t) => t.id === p.current?.id) && p.playing} onClick={() => p.playQueue(tracks)} />
+          <Button onClick={() => p.shuffleAll(tracks)}><Shuffle size={16} aria-hidden="true" /> Shuffle favorites</Button>
+        </div>
+        <span className="caption muted"><Heart size={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /> Played most recently first. Tap a heart again to take a song out.</span>
       </div>
       <div>
-        {sorted.map((t, i) => {
-          const album = albumOf(t);
+        {tracks.map((t, i) => {
+          const album = c.releaseById[t.releaseId];
           return (
-            <TrackRow key={t.id} index={i + 1} title={t.title} artist={[artistOf(t), album?.title].filter(Boolean).join(" · ")} duration={formatTime(t.duration)}
-              rating={p.ratings[t.id]} onRate={(v) => p.rate(t.id, v)} playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle}
-              onPlay={() => p.playQueue(sorted, i)} actions={<AddToPlaylist trackIds={[t.id]} />} />
+            <TrackRow key={t.id} trackId={t.id} index={i + 1} title={t.title} artist={[c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer"), album?.title ?? t.tags?.album].filter(Boolean).join(" · ")}
+              duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
+              playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(tracks, i)}
+              actions={t.id.startsWith("local:") ? undefined : <AddToPlaylist trackIds={[t.id]} />} />
           );
         })}
       </div>
@@ -162,108 +321,31 @@ function CrateSongs({ go, tracks }: { go: Go; tracks: Track[] }) {
   );
 }
 
-/* ---------- Physical media ---------- */
+/* ---------- Listening history ---------- */
 
-function PhysicalShelf({ go }: { go: Go }) {
-  const c = useCatalog();
+function History() {
+  const p = usePlayer();
   const lib = useLibrary();
-  const [format, setFormat] = useState<PhysicalFormat>("LP");
-  const [query, setQuery] = useState("");
-  const [manual, setManual] = useState(false);
-  const [artistName, setArtistName] = useState("");
-  const [title, setTitle] = useState("");
-  const [msg, setMsg] = useState<{ kind: "info" | "error"; text: string } | null>(null);
-
-  const q = query.trim().toLowerCase();
-  const matches = q.length > 1
-    ? c.releases.filter((r) => r.title.toLowerCase().includes(q) || c.artistById[r.artistId]?.name.toLowerCase().includes(q)).slice(0, 6)
-    : [];
-
-  const add = (item: Parameters<typeof lib.addPhysical>[0], label: string) =>
-    void attempt(async () => {
-      await lib.addPhysical(item);
-      setMsg({ kind: "info", text: item.releaseId ? `Added ${label} (${FORMAT_LABEL[item.format]}). It's on Milk Crate, so the digital album is in your crate too.` : `Added ${label} (${FORMAT_LABEL[item.format]}).` });
-      setQuery(""); setArtistName(""); setTitle(""); setManual(false);
-    }, (m) => setMsg({ kind: "error", text: m }));
-
-  const groups = FORMATS.map((f) => ({ format: f, items: lib.physical.filter((x) => x.format === f) })).filter((g) => g.items.length);
-
+  const [sure, setSure] = useState(false);
+  const [msg, setMsg] = useState("");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <section className="panel">
-        <h2 className="display-md">Add a record, tape or CD</h2>
-        <div role="group" aria-label="Format" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {FORMATS.map((f) => <button key={f} type="button" className="chip" aria-pressed={format === f} onClick={() => setFormat(f)}>{FORMAT_LABEL[f]}</button>)}
-        </div>
-        {!manual ? (
-          <>
-            <label className="field">
-              <span className="catalog eyebrow">Find it on Milk Crate</span>
-              <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Album or artist" />
-            </label>
-            {matches.length > 0 && (
-              <div className="pick-list">
-                {matches.map((r) => {
-                  const a = c.artistById[r.artistId];
-                  return (
-                    <button key={r.id} type="button" className="pick-row" onClick={() => add({ format, releaseId: r.id }, r.title)}>
-                      <Sleeve src={r.art} seed={sleeveSeed(r.title, a?.name ?? "")} style={{ width: 40, flex: "none" }} />
-                      <span style={{ flex: "1 1 auto", minWidth: 0 }}><strong>{r.title}</strong><span className="caption muted"> · {a?.name} · {r.year}</span></span>
-                      <span className="caption">Add as {FORMAT_LABEL[format]}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {q.length > 1 && matches.length === 0 && <p className="caption muted">Not on Milk Crate yet.</p>}
-            <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => setManual(true)}>Not on Milk Crate? Add it by hand</button>
-          </>
+    <section className="section">
+      <div className="section-title" style={{ justifyContent: "space-between" }}>
+        <span className="caption muted" style={{ maxWidth: 520 }}>
+          {lib.signedIn ? "Everything you've played, newest first. It's in your account, so it follows you to any computer, and only you can see it." : "Everything you've played on this computer, newest first. Sign in to keep it with you on any computer."}
+        </span>
+        {p.history.length > 0 && (sure ? (
+          <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <Button size="sm" onClick={() => void p.clearHistory().then(() => setMsg("History cleared.")).catch((e) => setMsg((e as Error).message)).finally(() => setSure(false))}>Clear it all</Button>
+            <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep it</button>
+          </span>
         ) : (
-          <>
-            <div className="form-grid">
-              <label className="field"><span className="catalog eyebrow">Artist</span><input value={artistName} onChange={(e) => setArtistName(e.target.value)} /></label>
-              <label className="field"><span className="catalog eyebrow">Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-            </div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <Button variant="primary" disabled={!title.trim()} onClick={() => add({ format, artistName: artistName.trim(), title: title.trim() }, title.trim())}>Add to your shelf</Button>
-              <Button variant="ghost" onClick={() => setManual(false)}>Search Milk Crate instead</Button>
-            </div>
-          </>
-        )}
-        <p className="caption muted">Scanning a barcode is coming soon.</p>
-        {msg && <p role={msg.kind === "error" ? "alert" : "status"} className={msg.kind === "error" ? "form-error" : "form-info"}>{msg.text}</p>}
-      </section>
-
-      {groups.map((g) => (
-        <section key={g.format} className="section" style={{ gap: 8 }}>
-          <h2 className="display-md">{FORMAT_LABEL[g.format]}{g.items.length > 1 ? "s" : ""}</h2>
-          {g.items.map((item) => <ShelfRow key={item.id} item={item} go={go} />)}
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function ShelfRow({ item, go }: { item: PhysicalItem; go: Go }) {
-  const c = useCatalog();
-  const lib = useLibrary();
-  const release = item.releaseId ? c.releaseById[item.releaseId] : undefined;
-  return (
-    <div className="list-row">
-      <Sleeve src={release?.art} seed={sleeveSeed(item.title, item.artistName)} style={{ width: 48, flex: "none" }} />
-      <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <span style={{ fontWeight: 650 }}>{release?.title ?? item.title}</span>
-        <span className="caption muted">{(release && c.artistById[release.artistId]?.name) || item.artistName}</span>
+          <Button size="sm" variant="ghost" onClick={() => setSure(true)}><Trash2 size={14} aria-hidden="true" /> Clear history</Button>
+        ))}
       </div>
-      {release ? (
-        <button type="button" className="link-btn caption" onClick={() => go({ name: "crate", releaseId: release.id })}>Digital copy in your crate</button>
-      ) : (
-        <span className="caption muted">Not on Milk Crate yet</span>
-      )}
-      <button type="button" className="mc-icon-btn" aria-label={`Remove ${item.title}`} onClick={() => void attempt(() => lib.removePhysical(item.id))}>
-        <Trash2 size={16} strokeWidth={1.75} aria-hidden="true" />
-      </button>
-    </div>
+      {msg && <p className="form-info" role="status">{msg}</p>}
+      <HistoryList />
+    </section>
   );
 }
 
@@ -320,7 +402,7 @@ function CratePlaylist({ go, playlistId }: { go: Go; playlistId: string }) {
 
   return (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: "playlists" })}>← Your playlists</button>
+      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: "playlists" })}>← Playlists</button>
       <header className="screen-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "1 1 360px" }}>
           <span className="catalog eyebrow">Playlist · {playable.length} songs · {formatTime(playable.reduce((s, t) => s + t.duration, 0))}</span>
@@ -342,8 +424,8 @@ function CratePlaylist({ go, playlistId }: { go: Go; playlistId: string }) {
       <div>
         {tracks.map((t, i) =>
           t ? (
-            <TrackRow key={`${t.id}-${i}`} index={i + 1} title={t.title} artist={c.artistById[t.artistId]?.name} duration={formatTime(t.duration)}
-              rating={p.ratings[t.id]} onRate={(v) => p.rate(t.id, v)} playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle}
+            <TrackRow key={`${t.id}-${i}`} trackId={t.id} index={i + 1} title={t.title} artist={c.artistById[t.artistId]?.name} duration={formatTime(t.duration)}
+              favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)} playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle}
               onPlay={() => p.playQueue(playable, playable.indexOf(t))}
               actions={<button type="button" className="mc-icon-btn" aria-label={`Remove ${t.title} from playlist`} onClick={() => void attempt(() => lib.removeFromPlaylist(pl.id, i))}><X size={16} aria-hidden="true" /></button>} />
           ) : null,
@@ -353,75 +435,77 @@ function CratePlaylist({ go, playlistId }: { go: Go; playlistId: string }) {
   );
 }
 
-/* ---------- One album in your crate (with your ratings) ---------- */
+/* ---------- One release in your crate: rate it, see which songs you have ---------- */
 
 function CrateAlbum({ go, releaseId }: { go: Go; releaseId: string }) {
   const c = useCatalog();
   const p = usePlayer();
   const lib = useLibrary();
+  const crate = useCrate();
+  const [msg, setMsg] = useState("");
   const r = c.releaseById[releaseId];
+  const entry = crate.find((e) => e.release.id === releaseId);
+  const downloaded = useAllDownloaded(entry?.trackIds);
   if (!r) return <div className="screen"><p className="muted">Album not found.</p></div>;
   const a = c.artistById[r.artistId];
   const tracks = r.trackIds.map((id) => c.trackById[id]).filter(Boolean);
+  const mine = new Set(entry?.trackIds ?? []);
+  const inCrate = tracks.filter((t) => mine.has(t.id));
+  const rest = tracks.filter((t) => !mine.has(t.id));
   const owned = lib.physical.filter((x) => x.releaseId === r.id);
-  const saved = lib.isSaved(r.id);
+  const back = entry && entry.kind !== "album" ? { tab: "singles" as const, label: "← Singles" } : { tab: "albums" as const, label: "← Albums" };
+  const kindLabel = entry ? (entry.whole ? "In your crate" : `${KIND_LABEL[entry.kind]} in your crate · ${plural(inCrate.length, "song")} of ${tracks.length}`) : "Not in your crate";
+
+  const row = (t: Track, i: number, list: Track[], dim: boolean) => (
+    <div key={t.id} className={dim ? "crate-out" : undefined}>
+      <TrackRow trackId={t.id} index={r.trackIds.indexOf(t.id) + 1} title={t.title} duration={formatTime(t.duration)} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
+        playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(list, i)} actions={<AddToPlaylist trackIds={[t.id]} />} />
+    </div>
+  );
 
   return (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: "albums" })}>← Your crate</button>
+      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: back.tab })}>{back.label}</button>
       <header className="album-head">
         <Sleeve src={r.art} seed={sleeveSeed(r.title, a?.name ?? "")} alt={`${r.title} cover`} style={{ width: 200, flex: "none" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: "1 1 320px", minWidth: 0 }}>
-          <span className="catalog eyebrow">In your crate{owned.length ? ` · on your shelf as ${owned.map((o) => FORMAT_LABEL[o.format]).join(", ")}` : ""}</span>
+          <span className="catalog eyebrow">{kindLabel}{owned.length ? ` · on your shelf as ${owned.map((o) => FORMAT_LABEL[o.format]).join(", ")}` : ""}</span>
           <h1 className="display-lg">{r.title}</h1>
-          <p className="muted">{a?.name} · {r.kind} · {r.year}</p>
+          <p className="muted">{a?.name} · {r.kind} · {r.year}{downloaded && <> · <DownloadedMark /> Downloaded</>}</p>
+          <AlbumRating releaseId={r.id} />
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <PlayButton size="lg" playing={false} onClick={() => p.playQueue(tracks)} />
+            <PlayButton size="lg" playing={false} onClick={() => p.playQueue(inCrate.length ? inCrate : tracks)} />
             <Button onClick={() => go({ name: "album", releaseId: r.id })}>Album page</Button>
-            {saved && <Button variant="ghost" onClick={() => void attempt(async () => { await lib.unsave(r.id); go({ name: "crate", tab: "albums" }); })}>Remove from crate</Button>}
+            {entry && !entry.whole && rest.length > 0 && (
+              <Button onClick={() => void attempt(() => lib.save(r.id), setMsg)}>Add the whole {kindWord(r.kind)}</Button>
+            )}
+            {entry && (
+              <Button variant="ghost" onClick={() => void attempt(async () => {
+                if (entry.whole) await lib.unsave(r.id);
+                else await lib.removeSongs(entry.trackIds);
+                go({ name: "crate", tab: back.tab });
+              }, setMsg)}><Trash2 size={14} aria-hidden="true" /> Remove from crate</Button>
+            )}
           </div>
+          {msg && <p className="form-info" role="status">{msg}</p>}
         </div>
       </header>
       <section className="section">
         <div className="section-title" style={{ justifyContent: "space-between" }}>
-          <h2 className="display-md">Songs</h2>
-          <span className="caption muted">Your ratings. Higher-rated songs come up more when you shuffle.</span>
+          <h2 className="display-md">{rest.length && inCrate.length ? "In your crate" : "Songs"}</h2>
+          <span className="caption muted">Your album rating and hearted songs both steer what comes up when you shuffle.</span>
         </div>
-        <div>
-          {tracks.map((t, i) => (
-            <TrackRow key={t.id} index={i + 1} title={t.title} duration={formatTime(t.duration)} rating={p.ratings[t.id]} onRate={(v) => p.rate(t.id, v)}
-              playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(tracks, i)} actions={<AddToPlaylist trackIds={[t.id]} />} />
-          ))}
-        </div>
+        <div>{(inCrate.length ? inCrate : tracks).map((t, i, list) => row(t, i, list, false))}</div>
       </section>
-    </div>
-  );
-}
-
-/* ---------- Files on this computer ---------- */
-
-function LocalFiles() {
-  const p = usePlayer();
-  return (
-    <section className="section">
-      <div className="section-title" style={{ justifyContent: "space-between" }}>
-        <p className="muted">Play audio files from your computer. Ratings here stay on this computer.</p>
-        <div style={{ display: "flex", gap: 12 }}>
-          {p.localTracks.length > 1 && <Button onClick={() => p.shuffleAll(p.localTracks)}><Shuffle size={16} aria-hidden="true" /> Shuffle</Button>}
-          <Button variant="primary" onClick={async () => p.addLocalTracks(await pickAudioFiles())}>Add audio files</Button>
-        </div>
-      </div>
-      {p.localTracks.length ? (
-        <div>
-          {p.localTracks.map((t, i) => (
-            <TrackRow key={t.id} index={i + 1} title={t.title} duration={t.duration ? formatTime(t.duration) : "—"} rating={p.ratings[t.id]}
-              playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(p.localTracks, i)} onRate={(v) => p.rate(t.id, v)}
-              actions={<button type="button" className="mc-icon-btn" aria-label={`Remove ${t.title}`} onClick={() => p.removeLocalTrack(t.id)}><X size={16} aria-hidden="true" /></button>} />
-          ))}
-        </div>
-      ) : (
-        <div className="empty"><span>No files yet. MP3, FLAC, WAV, M4A and OGG all work.</span></div>
+      {inCrate.length > 0 && rest.length > 0 && (
+        <section className="section">
+          <div className="section-title" style={{ justifyContent: "space-between" }}>
+            <h2 className="display-md">Also on this {kindWord(r.kind)}</h2>
+            <span className="caption muted">Add one from its menu. Four or more songs and it moves to Albums.</span>
+          </div>
+          <div>{rest.map((t, i, list) => row(t, i, list, true))}</div>
+        </section>
       )}
-    </section>
+    </div>
   );
 }

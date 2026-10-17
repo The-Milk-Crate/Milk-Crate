@@ -1,9 +1,11 @@
 /**
- * Where the player's sound goes: volume, plus a 6-band equalizer.
+ * Where the player's sound goes: the Normalizer's per-song level, a 6-band
+ * equalizer, then volume.
  *
- * The equalizer uses the Web Audio API. It's only wired in once someone turns
- * it on, because routing audio through Web Audio requires the audio to be
- * loaded with CORS (Milk Crate's server and the desktop app's file access both
+ * The Normalizer and equalizer use the Web Audio API (which can also turn a
+ * song up past the audio element's maximum). It's only wired in once someone
+ * turns one of them on, because routing audio through Web Audio requires the
+ * audio to be loaded with CORS (Milk Crate's server and the desktop app's file access both
  * allow it). Before that, the audio element plays directly.
  */
 
@@ -27,6 +29,9 @@ export const EQ_PRESETS: Record<string, number[]> = {
   Loudness: [5, 2, 0, -1, 2, 4],
 };
 
+/** The Normalizer's level for a song it hasn't measured yet, in dB. */
+const PROVISIONAL_DB = -3;
+
 /** Slider position (0–1) to gain. Squared so the slider feels even to the ear. */
 export const volumeToGain = (v: number) => Math.max(0, Math.min(1, v)) ** 2;
 
@@ -38,10 +43,14 @@ export class AudioOut {
   private muted = false;
   private eqOn = false;
   private gains = FLAT;
+  private norm?: GainNode;
+  private normOn = false;
+  private normDb = 0;
+  private normTrack?: string;
 
   constructor(private el: HTMLAudioElement) {}
 
-  /** True once the equalizer has been wired in (from then on audio must load with CORS). */
+  /** True once Web Audio has been wired in (from then on audio must load with CORS). */
   get routed() {
     return !!this.ctx;
   }
@@ -70,6 +79,31 @@ export class AudioOut {
     this.apply();
   }
 
+  /**
+   * The Normalizer's change for the playing song, in dB (null while it's being
+   * measured). A new song takes its level at once; a measurement that lands
+   * mid-song glides there so it isn't a jump.
+   */
+  setNormalizer(on: boolean, gainDb: number | null, track?: string) {
+    const newTrack = track !== this.normTrack;
+    this.normTrack = track;
+    this.normOn = on;
+    // Until a song is measured, play it a little under unity: most masters are louder than the target.
+    this.normDb = gainDb ?? PROVISIONAL_DB;
+    if (on && !this.ctx) {
+      this.wire();
+      this.apply(); // hand the volume over to Web Audio
+    }
+    if (this.ctx && this.norm) {
+      const g = this.norm.gain;
+      const to = on ? 10 ** (this.normDb / 20) : 1;
+      const now = this.ctx.currentTime;
+      g.cancelScheduledValues(now);
+      if (newTrack) g.setValueAtTime(to, now);
+      else g.setTargetAtTime(to, now, on && gainDb !== null ? 0.4 : 0.05);
+    }
+  }
+
   private wire() {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
@@ -96,7 +130,10 @@ export class AudioOut {
       return f;
     });
     this.gain = ctx.createGain();
-    let node: AudioNode = source;
+    this.norm = ctx.createGain();
+    this.norm.gain.value = this.normOn ? 10 ** (this.normDb / 20) : 1;
+    source.connect(this.norm);
+    let node: AudioNode = this.norm;
     for (const f of this.filters) { node.connect(f); node = f; }
     node.connect(this.gain);
     this.gain.connect(ctx.destination);

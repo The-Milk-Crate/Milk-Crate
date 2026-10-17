@@ -1,8 +1,9 @@
 /**
  * Your library, saved to your account: albums in your crate, physical media,
- * playlists, artists you follow, your star ratings and your display name.
- * (Server tables: supabase/004_crates_and_ratings.sql. All private to you,
- * except display names; ratings are shared only as averages.)
+ * playlists, artists you follow, favorite songs, your album ratings and your
+ * display name. (Server tables: supabase/004_crates_and_ratings.sql and
+ * 007_albums_favorites_streams.sql. All private to you, except display names;
+ * album ratings are shared only as averages.)
  *
  * Without an account these are empty, and trying to save something asks the
  * person to sign up (see needsAccount).
@@ -14,6 +15,8 @@ import { supabase } from "./supabase";
 import type { PhysicalFormat, Rating } from "./types";
 
 export interface SavedAlbum { releaseId: string; addedAt: string }
+/** A song added to your crate on its own (not with its whole release). */
+export interface CrateSong { trackId: string; addedAt: string }
 export interface PhysicalItem { id: string; format: PhysicalFormat; releaseId?: string; artistName: string; title: string; note: string; addedAt: string }
 export interface Playlist { id: string; name: string; trackIds: string[]; updatedAt: string }
 export interface NewPhysical { format: PhysicalFormat; releaseId?: string; artistName?: string; title?: string; note?: string }
@@ -24,12 +27,26 @@ interface Library {
   signedIn: boolean;
   ready: boolean;
   saved: SavedAlbum[];
+  /** Songs added on their own (see lib/crate.ts for how they group into singles and albums). */
+  crateSongs: CrateSong[];
   physical: PhysicalItem[];
   playlists: Playlist[];
   following: string[];
-  myRatings: Record<string, Rating>;
+  /** Favorite songs, newest first. */
+  favorites: string[];
+  /** Your star rating for each album you've rated. */
+  albumRatings: Record<string, Rating>;
   displayName?: string;
   isSaved: (releaseId: string) => boolean;
+  /** Is this song in your crate (on its own, or with its whole release)? */
+  isSongInCrate: (trackId: string, releaseId: string) => boolean;
+  /** Adds songs to your crate on their own. */
+  addSongs: (trackIds: string[]) => Promise<void>;
+  /**
+   * Takes songs out of your crate. If their whole release was in your crate, the rest of
+   * the release stays in as separate songs.
+   */
+  removeSongs: (trackIds: string[], release?: { id: string; trackIds: string[] }) => Promise<void>;
   isFollowing: (artistId: string) => boolean;
   save: (releaseId: string) => Promise<void>;
   unsave: (releaseId: string) => Promise<void>;
@@ -43,7 +60,11 @@ interface Library {
   removeFromPlaylist: (id: string, index: number) => Promise<void>;
   follow: (artistId: string) => Promise<void>;
   unfollow: (artistId: string) => Promise<void>;
-  rate: (trackId: string, stars: Rating) => Promise<void>;
+  isFavorite: (trackId: string) => boolean;
+  /** Adds or removes a song from your favorites. */
+  setFavorite: (trackId: string, on: boolean) => Promise<void>;
+  /** Rates an album 1–5 stars (0 clears your rating). */
+  rateAlbum: (releaseId: string, stars: Rating) => Promise<void>;
   setDisplayName: (name: string) => Promise<void>;
   /** Set when someone without an account tries to save something; the app shows a prompt. */
   needsAccount: string | null;
@@ -53,9 +74,11 @@ interface Library {
 const LibraryContext = createContext<Library | null>(null);
 
 const SETUP_HINT = "the server needs a one-time update: run supabase/004_crates_and_ratings.sql in the Supabase SQL Editor.";
-const check = (error: { message: string } | null) => {
+const SETUP_HINT_011 = "the server needs a one-time update: run supabase/011_crate_songs.sql in the Supabase SQL Editor.";
+const SETUP_HINT_007 = "the server needs a one-time update: run supabase/007_albums_favorites_streams.sql in the Supabase SQL Editor.";
+const check = (error: { message: string } | null, hint = SETUP_HINT) => {
   if (!error) return;
-  throw new Error(/relation|does not exist|schema cache/i.test(error.message) ? SETUP_HINT : error.message);
+  throw new Error(/relation|does not exist|schema cache/i.test(error.message) ? hint : error.message);
 };
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
@@ -64,15 +87,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const catalog = useCatalog();
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState<SavedAlbum[]>([]);
+  const [crateSongs, setCrateSongs] = useState<CrateSong[]>([]);
   const [physical, setPhysical] = useState<PhysicalItem[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [following, setFollowing] = useState<string[]>([]);
-  const [myRatings, setMyRatings] = useState<Record<string, Rating>>({});
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [albumRatings, setAlbumRatings] = useState<Record<string, Rating>>({});
   const [displayName, setDisplayNameState] = useState<string>();
   const [needsAccount, setNeedsAccount] = useState<string | null>(null);
 
   useEffect(() => {
-    setSaved([]); setPhysical([]); setPlaylists([]); setFollowing([]); setMyRatings({}); setDisplayNameState(undefined);
+    setSaved([]); setCrateSongs([]); setPhysical([]); setPlaylists([]); setFollowing([]); setFavorites([]); setAlbumRatings({}); setDisplayNameState(undefined);
     if (!userId) { setReady(true); return; }
     setReady(false);
     let live = true;
@@ -81,15 +106,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       supabase.from("physical_items").select("*").order("added_at", { ascending: false }),
       supabase.from("playlists").select("*").order("updated_at", { ascending: false }),
       supabase.from("follows").select("*").order("created_at", { ascending: false }),
-      supabase.from("ratings").select("track_id,stars"),
+      supabase.from("favorites").select("track_id").order("created_at", { ascending: false }),
+      supabase.from("album_ratings").select("release_id,stars"),
       supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
-    ]).then(([c, ph, pl, f, r, pr]) => {
+      supabase.from("crate_songs").select("track_id,added_at").order("added_at", { ascending: false }),
+    ]).then(([c, ph, pl, f, fav, ar, pr, cs]) => {
       if (!live) return;
       setSaved((c.data ?? []).map((x) => ({ releaseId: x.release_id, addedAt: x.added_at })));
+      setCrateSongs((cs.data ?? []).map((x) => ({ trackId: x.track_id as string, addedAt: x.added_at as string })));
       setPhysical((ph.data ?? []).map(physicalFromRow));
       setPlaylists((pl.data ?? []).map(playlistFromRow));
       setFollowing((f.data ?? []).map((x) => x.artist_id));
-      setMyRatings(Object.fromEntries((r.data ?? []).map((x) => [x.track_id, x.stars as Rating])));
+      setFavorites((fav.data ?? []).map((x) => x.track_id as string));
+      setAlbumRatings(Object.fromEntries((ar.data ?? []).map((x) => [x.release_id, x.stars as Rating])));
       setDisplayNameState(pr.data?.display_name ?? undefined);
       // The name chosen when signing up becomes the display name the first time the account signs in.
       if (!pr.error && !pr.data && nameFromSignUp) {
@@ -126,7 +155,44 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.from("crate_items").delete().eq("release_id", releaseId);
     if (error) setSaved(before);
     check(error);
-  }, [gate, saved]);
+    // Songs from it that were added on their own go too.
+    const songs = catalog.releaseById[releaseId]?.trackIds ?? [];
+    const loose = crateSongs.filter((x) => songs.includes(x.trackId)).map((x) => x.trackId);
+    if (loose.length) {
+      setCrateSongs((cs) => cs.filter((x) => !loose.includes(x.trackId)));
+      await supabase.from("crate_songs").delete().in("track_id", loose);
+    }
+  }, [gate, saved, crateSongs, catalog.releaseById]);
+
+  const addSongs = useCallback(async (trackIds: string[]) => {
+    gate("add songs to your crate");
+    const fresh = trackIds.filter((id) => !crateSongs.some((x) => x.trackId === id));
+    if (!fresh.length) return;
+    const now = new Date().toISOString();
+    setCrateSongs((cs) => [...fresh.map((trackId) => ({ trackId, addedAt: now })), ...cs]);
+    const { error } = await supabase.from("crate_songs").upsert(fresh.map((track_id) => ({ track_id })), { onConflict: "user_id,track_id", ignoreDuplicates: true });
+    if (error) setCrateSongs((cs) => cs.filter((x) => !fresh.includes(x.trackId)));
+    check(error, SETUP_HINT_011);
+  }, [gate, crateSongs]);
+
+  const removeSongs = useCallback(async (trackIds: string[], release?: { id: string; trackIds: string[] }) => {
+    gate("manage your crate");
+    // The whole release was in: keep the rest of it, as separate songs.
+    if (release && saved.some((x) => x.releaseId === release.id)) {
+      const rest = release.trackIds.filter((id) => !trackIds.includes(id));
+      if (rest.length) await addSongs(rest);
+      const before = saved;
+      setSaved((s) => s.filter((x) => x.releaseId !== release.id));
+      const { error } = await supabase.from("crate_items").delete().eq("release_id", release.id);
+      if (error) setSaved(before);
+      check(error);
+    }
+    const before = crateSongs;
+    setCrateSongs((cs) => cs.filter((x) => !trackIds.includes(x.trackId)));
+    const { error } = await supabase.from("crate_songs").delete().in("track_id", trackIds);
+    if (error) setCrateSongs(before);
+    check(error, SETUP_HINT_011);
+  }, [gate, saved, crateSongs, addSongs]);
 
   const addPhysical = useCallback(async (item: NewPhysical) => {
     gate("add records, tapes and CDs to your crate");
@@ -201,21 +267,32 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     check(error);
   }, [gate]);
 
-  const rate = useCallback(async (trackId: string, stars: Rating) => {
-    gate("rate songs");
-    const before = myRatings[trackId];
-    setMyRatings((r) => {
+  const setFavorite = useCallback(async (trackId: string, on: boolean) => {
+    gate("favorite songs");
+    const before = favorites;
+    setFavorites((f) => (on ? [trackId, ...f.filter((x) => x !== trackId)] : f.filter((x) => x !== trackId)));
+    const { error } = on
+      ? await supabase.from("favorites").upsert({ track_id: trackId }, { onConflict: "user_id,track_id", ignoreDuplicates: true })
+      : await supabase.from("favorites").delete().eq("track_id", trackId);
+    if (error) setFavorites(before);
+    check(error, SETUP_HINT_007);
+  }, [gate, favorites]);
+
+  const rateAlbum = useCallback(async (releaseId: string, stars: Rating) => {
+    gate("rate albums");
+    const before = albumRatings[releaseId];
+    setAlbumRatings((r) => {
       const next = { ...r };
-      if (stars) next[trackId] = stars; else delete next[trackId];
+      if (stars) next[releaseId] = stars; else delete next[releaseId];
       return next;
     });
     const { error } = stars
-      ? await supabase.from("ratings").upsert({ track_id: trackId, stars, updated_at: new Date().toISOString() }, { onConflict: "user_id,track_id" })
-      : await supabase.from("ratings").delete().eq("track_id", trackId);
-    if (error) setMyRatings((r) => ({ ...r, [trackId]: before }));
-    check(error);
-    catalog.refreshAverages();
-  }, [gate, myRatings, catalog]);
+      ? await supabase.from("album_ratings").upsert({ release_id: releaseId, stars, updated_at: new Date().toISOString() }, { onConflict: "user_id,release_id" })
+      : await supabase.from("album_ratings").delete().eq("release_id", releaseId);
+    if (error) setAlbumRatings((r) => ({ ...r, [releaseId]: before }));
+    check(error, SETUP_HINT_007);
+    catalog.refreshStats();
+  }, [gate, albumRatings, catalog]);
 
   const setDisplayName = useCallback(async (name: string) => {
     const uid = gate("choose a display name");
@@ -224,14 +301,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setDisplayNameState(name.trim());
   }, [gate]);
 
+  const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const value = useMemo<Library>(() => ({
-    signedIn: !!userId, ready, saved, physical, playlists, following, myRatings, displayName,
+    signedIn: !!userId, ready, saved, physical, playlists, following, favorites, albumRatings, displayName,
+    isFavorite: (trackId: string) => favoriteSet.has(trackId),
     isSaved: (id) => saved.some((s) => s.releaseId === id),
+    isSongInCrate: (trackId, releaseId) => saved.some((s) => s.releaseId === releaseId) || crateSongs.some((x) => x.trackId === trackId),
+    addSongs, removeSongs, crateSongs,
     isFollowing: (id) => following.includes(id),
     save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
-    follow, unfollow, rate, setDisplayName,
+    follow, unfollow, setFavorite, rateAlbum, setDisplayName,
     needsAccount, dismissNeedsAccount: () => setNeedsAccount(null),
-  }), [userId, ready, saved, physical, playlists, following, myRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, follow, unfollow, rate, setDisplayName, needsAccount]);
+  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }

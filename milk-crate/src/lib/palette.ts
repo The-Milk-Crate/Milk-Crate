@@ -33,8 +33,11 @@ function tame([h, s, l]: [number, number, number]): string {
   return toHex(hslToRgb(h, ss, ls));
 }
 
-/** Four colors from raw pixels (most prominent first). */
-export function paletteFromPixels(px: RGB[], count = 4): string[] {
+/** How many album colors swirl behind the glass. */
+export const SWIRL_COLORS = 6;
+
+/** SWIRL_COLORS colors from raw pixels (most prominent first). */
+export function paletteFromPixels(px: RGB[], count = SWIRL_COLORS): string[] {
   const BUCKETS = 18;
   const buckets: { w: number; sum: RGB; n: number }[] = Array.from({ length: BUCKETS + 1 }, () => ({ w: 0, sum: [0, 0, 0], n: 0 }));
   for (const p of px) {
@@ -53,14 +56,14 @@ export function paletteFromPixels(px: RGB[], count = 4): string[] {
   const picked: [number, number, number][] = [];
   for (const b of ranked) {
     const hsl = b.hsl!;
-    const far = picked.every((p) => Math.min(Math.abs(p[0] - hsl[0]), 360 - Math.abs(p[0] - hsl[0])) >= 28 || (p[1] < 0.12) !== (hsl[1] < 0.12));
+    const far = picked.every((p) => Math.min(Math.abs(p[0] - hsl[0]), 360 - Math.abs(p[0] - hsl[0])) >= 22 || (p[1] < 0.12) !== (hsl[1] < 0.12));
     if (far) picked.push(hsl);
     if (picked.length === count) break;
   }
   if (!picked.length) return [];
   // Single-color covers: fill out with lighter and darker shades of the main color.
   const base = picked[0];
-  const shifts = [[0, 0.12], [18, -0.1], [-18, 0.05]];
+  const shifts = [[0, 0.12], [18, -0.1], [-18, 0.05], [36, -0.04], [-36, 0.1], [54, 0.02]];
   for (let k = 0; picked.length < count; k++) {
     const [dh, dl] = shifts[k % shifts.length];
     picked.push([(base[0] + dh + 360) % 360, base[1], base[2] + dl]);

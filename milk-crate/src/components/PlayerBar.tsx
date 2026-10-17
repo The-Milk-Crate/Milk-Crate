@@ -1,18 +1,20 @@
 import { usePlayer } from "../lib/player";
 import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
-import { Maximize2, Volume1, Volume2, VolumeX } from "lucide-react";
+import { ListMusic, Maximize2, Repeat, Repeat1, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { Go } from "../App";
 import { SeekBar } from "./SeekBar";
-import { Glyph, PlayButton, Sleeve } from "./ui";
+import { FavoriteButton, Glyph, PlayButton, Sleeve } from "./ui";
+import { fileArtist, useFileCover } from "../lib/fileTags";
 
 /** The persistent player along the bottom of the window. */
-export function PlayerBar({ go, onImmersive }: { go: Go; onImmersive: () => void }) {
+export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onImmersive: () => void; queueOpen: boolean; onQueue: () => void }) {
   const p = usePlayer();
   const { artistById, releaseById } = useCatalog();
   const t = p.current;
-  const artist = t ? artistById[t.artistId]?.name ?? "Your files" : "";
+  const artist = t ? artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer") : "";
   const release = t ? releaseById[t.releaseId] : undefined;
+  const fileCover = useFileCover(t?.tags?.cover);
 
   return (
     <div className="mc-player" role="region" aria-label="Player">
@@ -20,10 +22,14 @@ export function PlayerBar({ go, onImmersive }: { go: Go; onImmersive: () => void
         {t ? (
           <>
             <button type="button" className="mc-player-art" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive}>
-              <Sleeve src={release?.art} seed={release ? sleeveSeed(release.title, artist) : t.title} />
+              <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artist) : t.title} />
             </button>
             <div style={{ minWidth: 0 }}>
-              <div className="mc-track-title">{t.title}</div>
+              {/* The heart sits on the song's line, right after its name. */}
+              <div className="mc-player-title-row">
+                <span className="mc-track-title">{t.title}</span>
+                <FavoriteButton on={p.isFavorite(t.id)} title={t.title} onToggle={() => p.toggleFavorite(t.id)} />
+              </div>
               <div className="mc-track-artist">{artist}</div>
             </div>
           </>
@@ -37,6 +43,12 @@ export function PlayerBar({ go, onImmersive }: { go: Go; onImmersive: () => void
           <button type="button" className="mc-icon-btn" aria-label="Previous" onClick={p.prev} disabled={!t}><Glyph.prev /></button>
           <PlayButton playing={p.playing} onClick={p.toggle} />
           <button type="button" className="mc-icon-btn" aria-label="Next" onClick={p.next} disabled={!t}><Glyph.next /></button>
+          <button type="button" className={`mc-icon-btn repeat-btn${p.repeat !== "off" ? " on" : ""}`} aria-pressed={p.repeat !== "off"}
+            aria-label={p.repeat === "off" ? "Repeat: off" : p.repeat === "all" ? "Repeat: the whole queue" : "Repeat: this song"}
+            title={p.repeat === "off" ? "Repeat off" : p.repeat === "all" ? "Repeating the queue" : "Repeating this song"}
+            onClick={() => p.setRepeat(p.repeat === "off" ? "all" : p.repeat === "all" ? "one" : "off")}>
+            {p.repeat === "one" ? <Repeat1 size={17} strokeWidth={1.9} aria-hidden="true" /> : <Repeat size={17} strokeWidth={1.9} aria-hidden="true" />}
+          </button>
         </div>
         <SeekBar />
       </div>
@@ -52,6 +64,9 @@ export function PlayerBar({ go, onImmersive }: { go: Go; onImmersive: () => void
           <button type="button" className={`eq-btn${p.eqOn ? " on" : ""}`} aria-label={`Equalizer settings (equalizer ${p.eqOn ? "on" : "off"})`}
             title={`Equalizer ${p.eqOn ? "on" : "off"}. Open equalizer settings.`} onClick={() => go({ name: "settings", tab: "sound" })}>EQ</button>
         </div>
+        <button type="button" className={`mc-icon-btn${queueOpen ? " on" : ""}`} aria-label="Queue" aria-pressed={queueOpen} title="Queue" onClick={onQueue}>
+          <ListMusic size={18} strokeWidth={1.75} aria-hidden="true" />
+        </button>
         <button type="button" className="mc-icon-btn" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive} disabled={!t}>
           <Maximize2 size={18} strokeWidth={1.75} aria-hidden="true" />
         </button>

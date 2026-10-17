@@ -1,14 +1,22 @@
 /**
  * Real places and scenes.
  *
- * Cities come from public/cities-us.json (GeoNames: every US city and town
- * with 1,000+ people). A listener's scene is built around their home city:
- * the cities within SCENE_RADIUS_MI of it, plus the larger cities in their
- * state (and the towns right around those).
+ * Cities come from public/cities-us.json, cities-ca.json and cities-au.json
+ * (GeoNames: every city and town with 1,000+ people in the United States,
+ * Canada and Australia). A listener's scene is built around their home city:
+ * the cities within SCENE_RADIUS_MI of it (across a border too), plus the
+ * larger cities in their state or province (and the towns right around those).
  */
 import { useEffect, useState } from "react";
 
-export interface Place { name: string; state: string; lat: number; lng: number; pop: number }
+/** The countries Milk Crate covers. */
+export type Country = "US" | "CA" | "AU";
+export const COUNTRIES: Country[] = ["US", "CA", "AU"];
+export const COUNTRY_NAMES: Record<Country, string> = { US: "United States", CA: "Canada", AU: "Australia" };
+export const isCountry = (c: unknown): c is Country => c === "US" || c === "CA" || c === "AU";
+
+/** `state` is the state, province or territory code: NC, ON, NSW. */
+export interface Place { name: string; state: string; country: Country; lat: number; lng: number; pop: number }
 export interface Point { lat: number; lng: number }
 
 export const SCENE_RADIUS_MI = 35;
@@ -19,22 +27,51 @@ const ANCHOR_MIN_POP = 100_000;
 const ANCHOR_MIN_COUNT = 3;
 
 export const placeLabel = (p: { name: string; state: string }) => `${p.name}, ${p.state}`;
-export const placeKey = (p: { name: string; state: string }) => `${p.name}|${p.state}`.toLowerCase();
+/** A town's id. US towns keep the key they always had. */
+export const placeKey = (p: { name: string; state: string; country?: Country }) =>
+  (p.country && p.country !== "US" ? `${p.name}|${p.state}|${p.country}` : `${p.name}|${p.state}`).toLowerCase();
+
+/** "North Carolina", "Ontario", "New South Wales". */
+export const regionName = (p: { state: string; country?: Country }) => REGION_NAMES[p.country ?? "US"][p.state] ?? p.state;
+/** "North Carolina" in the US; "Ontario, Canada" elsewhere (for lists that mix countries). */
+export const regionAndCountry = (p: { state: string; country?: Country }) =>
+  !p.country || p.country === "US" ? regionName(p) : `${regionName(p)}, ${COUNTRY_NAMES[p.country]}`;
+/** "Toronto, ON" with the country added when it isn't the one you're in: "Perth, WA, Australia". */
+export const placeLabelFrom = (p: { name: string; state: string; country?: Country }, mine?: Country) =>
+  (p.country ?? "US") === (mine ?? "US") ? placeLabel(p) : `${placeLabel(p)}, ${COUNTRY_NAMES[p.country ?? "US"]}`;
+
+/* ---------- distance units ---------- */
+
+/** Miles in the US, kilometres in Canada and Australia. */
+export type Units = "mi" | "km";
+export const unitsFor = (c?: Country | null): Units => (c && c !== "US" ? "km" : "mi");
+/** "9 mi" / "14 km" (never 0). */
+export const distanceLabel = (mi: number, units: Units = "mi") =>
+  units === "km" ? `${Math.max(1, Math.round(mi * 1.609344)).toLocaleString("en-US")} km` : `${Math.max(1, Math.round(mi)).toLocaleString("en-US")} mi`;
+/** "35 miles" / "56 km", for sentences. */
+export const distanceWords = (mi: number, units: Units = "mi") =>
+  units === "km" ? `${Math.round(mi * 1.609344).toLocaleString("en-US")} km` : `${Math.round(mi).toLocaleString("en-US")} ${Math.round(mi) === 1 ? "mile" : "miles"}`;
 
 /* ---------- loading ---------- */
 
 let loading: Promise<Place[]> | null = null;
 
+/** Turns one country's city file into places. */
+export const placesFromFile = (country: Country, d: { cities: [string, string, number, number, number][] }): Place[] =>
+  d.cities.map(([name, state, lat, lng, pop]) => ({ name, state, country, lat, lng, pop }));
+
 export function loadPlaces(): Promise<Place[]> {
   if (!loading) {
-    loading = fetch("/cities-us.json")
-      .then((r) => {
-        if (!r.ok) throw new Error(`cities ${r.status}`);
-        return r.json();
-      })
-      .then((d: { cities: [string, string, number, number, number][] }) =>
-        d.cities.map(([name, state, lat, lng, pop]) => ({ name, state, lat, lng, pop })),
-      )
+    loading = Promise.all(
+      COUNTRIES.map((c) =>
+        fetch(`/cities-${c.toLowerCase()}.json`).then((r) => {
+          if (!r.ok) throw new Error(`cities ${r.status}`);
+          return r.json().then((d) => placesFromFile(c, d));
+        }),
+      ),
+    )
+      // Biggest first across every country (search stops at the first matches it finds).
+      .then((lists) => lists.flat().sort((a, b) => b.pop - a.pop))
       .catch((e) => {
         loading = null;
         throw e;
@@ -59,20 +96,34 @@ export function usePlaces(): Place[] | null {
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/^saint\b/, "st").replace(/[^a-z0-9 ]/g, "").trim();
 
-/** City search for the picker: "rale", "raleigh nc", "portland, me". Biggest places first. */
+const isRegionCode = (code: string) => COUNTRIES.some((c) => REGION_NAMES[c][code]) || isCountry(code);
+
+/** Does "nc", "ontario", "nsw", "canada" or "australia" describe where this place is? */
+function matchesRegion(p: Place, part: string): boolean {
+  const st = part.trim().toUpperCase();
+  const f = fold(part);
+  if (!f) return true;
+  const [region, country] = part.includes(",") ? part.split(",", 2) : [part, ""];
+  if (country.trim()) return matchesRegion(p, region) && matchesRegion(p, country);
+  // An exact code ("NS", "WA") means that one: Nova Scotia, not New South Wales. Otherwise, the start of one.
+  const codeHit = isRegionCode(st) ? p.state === st : p.state.startsWith(st);
+  return codeHit || fold(regionName(p)).startsWith(f) || p.country === st || fold(COUNTRY_NAMES[p.country]).startsWith(f) ||
+    (p.country === "AU" && st === "AUS") || (p.country === "CA" && st === "CAN") || (p.country === "US" && (st === "USA" || f === "us"));
+}
+
+/** City search for the picker: "rale", "raleigh nc", "portland, me", "toronto on", "perth, australia". Biggest places first. */
 export function searchPlaces(places: Place[], query: string, limit = 8): Place[] {
   const raw = query.trim();
   if (!raw) return [];
-  let [namePart, statePart] = raw.includes(",") ? raw.split(",", 2) : [raw, ""];
-  const m = !statePart && /^(.*\S)\s+([A-Za-z]{2})$/.exec(namePart);
-  if (m && STATE_NAMES[m[2].toUpperCase()]) [namePart, statePart] = [m[1], m[2]];
+  let [namePart, statePart] = raw.includes(",") ? [raw.slice(0, raw.indexOf(",")), raw.slice(raw.indexOf(",") + 1)] : [raw, ""];
+  const m = !statePart && /^(.*\S)\s+([A-Za-z]{2,3})$/.exec(namePart);
+  if (m && isRegionCode(m[2].toUpperCase())) [namePart, statePart] = [m[1], m[2]];
   const q = fold(namePart);
-  const st = statePart.trim().toUpperCase();
   if (!q) return [];
   const starts: Place[] = [];
   const contains: Place[] = [];
   for (const p of places) {
-    if (st && !p.state.startsWith(st) && !fold(STATE_NAMES[p.state] ?? "").startsWith(fold(statePart))) continue;
+    if (statePart.trim() && !matchesRegion(p, statePart)) continue;
     const n = fold(p.name);
     if (n.startsWith(q)) starts.push(p);
     else if (q.length > 2 && n.includes(q)) contains.push(p);
@@ -81,15 +132,15 @@ export function searchPlaces(places: Place[], query: string, limit = 8): Place[]
   return [...starts, ...contains].slice(0, limit);
 }
 
-export function findPlace(places: Place[], name: string, state: string): Place | undefined {
-  const key = placeKey({ name, state });
+export function findPlace(places: Place[], name: string, state: string, country: Country = "US"): Place | undefined {
+  const key = placeKey({ name, state, country });
   return places.find((p) => placeKey(p) === key);
 }
 
-/** "Durham, NC" → the place, for profiles saved before locations had coordinates. */
+/** "Durham, NC" → the place, for profiles saved before locations had coordinates (all in the US). */
 export function placeFromLabel(places: Place[], label: string): Place | undefined {
   const [name, state] = label.split(",").map((s) => s.trim());
-  return name && state ? findPlace(places, name, state) : undefined;
+  return name && state ? findPlace(places, name, state, "US") : undefined;
 }
 
 /* ---------- distance and scenes ---------- */
@@ -107,13 +158,13 @@ export interface Scene {
   home: Place;
   /** Cities within SCENE_RADIUS_MI of home (not including home), biggest first. */
   nearby: Place[];
-  /** Larger cities elsewhere in the home state. */
+  /** Larger cities elsewhere in the home state or province. */
   anchors: Place[];
 }
 
 export function sceneFor(home: Place, places: Place[]): Scene {
   const nearby = places.filter((p) => placeKey(p) !== placeKey(home) && miles(home, p) <= SCENE_RADIUS_MI);
-  const inState = places.filter((p) => p.state === home.state);
+  const inState = places.filter((p) => p.state === home.state && p.country === home.country);
   const anchors = inState
     .filter((p, i) => p.pop >= ANCHOR_MIN_POP || i < ANCHOR_MIN_COUNT)
     .filter((p) => placeKey(p) !== placeKey(home) && miles(home, p) > SCENE_RADIUS_MI);
@@ -142,9 +193,11 @@ export function sceneWithArtists(scene: Scene, artistPlaces: Place[]): Scene {
 }
 
 /** Is this point part of the scene? */
-export function inScene(scene: Scene, pt: Point): boolean {
+export function inScene(scene: Scene, pt: Point & { country?: Country }): boolean {
   if (miles(scene.home, pt) <= SCENE_RADIUS_MI) return true;
-  return scene.anchors.some((a) => miles(a, pt) <= ANCHOR_RADIUS_MI);
+  // The towns around the state's (or province's) larger cities only count on the same side of a
+  // border: Windsor's scene includes Detroit's suburbs only for someone who lives near Windsor.
+  return scene.anchors.some((a) => (!pt.country || pt.country === a.country) && miles(a, pt) <= ANCHOR_RADIUS_MI);
 }
 
 /** "Durham, Cary and Chapel Hill nearby, plus Charlotte and Greensboro" */
@@ -159,7 +212,7 @@ export function sceneSummary(scene: Scene, max = 3): string {
   return parts.join(", ");
 }
 
-/* ---------- states ---------- */
+/* ---------- states, provinces and territories ---------- */
 
 export const STATE_NAMES: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut",
@@ -171,3 +224,13 @@ export const STATE_NAMES: Record<string, string> = {
   RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah",
   VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
 };
+
+export const PROVINCE_NAMES: Record<string, string> = {
+  AB: "Alberta", BC: "British Columbia", MB: "Manitoba", NB: "New Brunswick", NL: "Newfoundland and Labrador", NS: "Nova Scotia",
+  NT: "Northwest Territories", NU: "Nunavut", ON: "Ontario", PE: "Prince Edward Island", QC: "Quebec", SK: "Saskatchewan", YT: "Yukon",
+};
+export const AU_STATE_NAMES: Record<string, string> = {
+  ACT: "Australian Capital Territory", NSW: "New South Wales", NT: "Northern Territory", QLD: "Queensland",
+  SA: "South Australia", TAS: "Tasmania", VIC: "Victoria", WA: "Western Australia",
+};
+export const REGION_NAMES: Record<Country, Record<string, string>> = { US: STATE_NAMES, CA: PROVINCE_NAMES, AU: AU_STATE_NAMES };

@@ -5,7 +5,7 @@ import { rememberCity, useLocation } from "../lib/location";
 import type { Place } from "../lib/geo";
 import { AuthForm } from "../components/AuthForm";
 import { CityPicker } from "../components/CityPicker";
-import { Button, Logo } from "../components/ui";
+import { Button, MARK_PATH } from "../components/ui";
 
 /**
  * First run: make a listener account (or sign in, or just look around) and
@@ -34,7 +34,7 @@ export function Welcome({ go }: { go: Go }) {
   const cityStep = (
     <div className="panel">
       <CityPicker label="Where do you live?" value={city} onChange={(p) => { setCity(p); setError(""); }} autoFocus />
-      <p className="caption muted">Your scene is your city, the towns around it, and the bigger cities in your state.</p>
+      <p className="caption muted">Your scene is your city, the towns around it, and the bigger cities in your state or province. Milk Crate covers the United States, Canada and Australia.</p>
       {error && <p role="alert" className="form-error">{error}</p>}
       <div><Button variant="primary" onClick={start} disabled={saving}>{saving ? "One moment…" : "Start listening"}</Button></div>
     </div>
@@ -44,11 +44,8 @@ export function Welcome({ go }: { go: Go }) {
     <div className="welcome">
       <div className="welcome-inner">
         <section className="welcome-pitch">
-          <Logo />
-          <h1 className="display-xl">Music from where you live.</h1>
-          <p className="muted" style={{ fontSize: 16, lineHeight: "24px", maxWidth: 440 }}>
-            Milk Crate is built around local scenes. Tell us your city and we'll show you the bands around you, on a real map, with no charts and no top 100.
-          </p>
+          <svg className="welcome-mark" viewBox="0 0 64 64" aria-hidden="true"><path d={MARK_PATH} fillRule="evenodd" fill="currentColor" /></svg>
+          <h1 className="display-xl">Milk Crate.</h1>
         </section>
 
         <section className="welcome-form">

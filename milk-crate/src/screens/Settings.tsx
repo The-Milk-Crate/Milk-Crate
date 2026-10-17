@@ -6,7 +6,11 @@ import { usePlayer } from "../lib/player";
 import { appVersion, checkForUpdate, installUpdate, updateErrorText, type Update } from "../lib/updater";
 import { accentForColor } from "../lib/accent";
 import { EQ_BANDS, EQ_MAX_DB, EQ_PRESETS, FLAT } from "../lib/audioOut";
-import { Button } from "../components/ui";
+import { CEILING_DBTP, TARGET_LUFS } from "../lib/loudness";
+import { Button, DownloadedMark, Sleeve } from "../components/ui";
+import { useCatalog } from "../lib/catalog";
+import { formatBytes, useDownloads } from "../lib/downloads";
+import { sleeveSeed } from "../lib/sleeve";
 
 function Switch({ label, hint, on, onChange, tag }: { label: string; hint: string; on: boolean; onChange: (v: boolean) => void; tag?: string }) {
   return (
@@ -23,6 +27,7 @@ function Switch({ label, hint, on, onChange, tag }: { label: string; hint: strin
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "sound", label: "Sound" },
+  { id: "downloads", label: "Downloads" },
   { id: "updates", label: "Updates" },
 ];
 
@@ -50,6 +55,7 @@ export function Settings({ go, tab }: { go: Go; tab: SettingsTab }) {
       <div id="settings-panel" role="tabpanel" aria-labelledby={`settings-${tab}`} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         {tab === "appearance" && <Appearance />}
         {tab === "sound" && <Sound />}
+        {tab === "downloads" && <Downloads go={go} />}
         {tab === "updates" && <Updates />}
       </div>
     </div>
@@ -146,7 +152,17 @@ function Sound() {
     <>
       <section className="panel" style={{ gap: 4 }}>
         <h2 className="display-md" style={{ marginBottom: 8 }}>Playing</h2>
-        <Switch label="Shuffle by my ratings" hint="When shuffling, five-star songs come up most." on={p.weighted} onChange={p.setWeighted} />
+        <Switch label="Shuffle by my favorites" hint="When shuffling, your favorite songs come up most, then songs from albums you rated highly." on={p.weighted} onChange={p.setWeighted} />
+        <Switch label="Normalizer" tag="Experimental"
+          hint={`Plays every song at the same loudness (${TARGET_LUFS} LUFS) without moving your volume slider, and never lets peaks go over ${CEILING_DBTP} dB. A quiet song with loud peaks stays a little under, so it isn't squashed.`}
+          on={p.normalizerOn} onChange={p.setNormalizerOn} />
+        {p.normalizerOn && p.current?.src && (
+          <span className="caption muted" role="status" style={{ padding: "0 0 8px" }}>
+            {p.normalizerDb === null
+              ? `Measuring "${p.current.title}"…`
+              : `"${p.current.title}": ${Math.abs(p.normalizerDb) < 0.05 ? "no change" : `${p.normalizerDb > 0 ? "+" : "−"}${Math.abs(p.normalizerDb).toFixed(1)} dB`}`}
+          </span>
+        )}
       </section>
       <Equalizer />
     </>
@@ -239,6 +255,60 @@ function Updates() {
           <Button onClick={check} disabled={!isDesktop() || state.s === "checking" || state.s === "installing"}>{state.s === "checking" ? "Checking…" : "Check for updates"}</Button>
         )}
       </div>
+    </section>
+  );
+}
+
+/* ---------- Downloads ---------- */
+
+/** Songs saved on this computer for listening without the internet: how much space, and removing them. */
+function Downloads({ go }: { go: Go }) {
+  const c = useCatalog();
+  const dl = useDownloads();
+  const [msg, setMsg] = useState("");
+  const [sure, setSure] = useState(false);
+  const byRelease = new Map<string, { ids: string[]; bytes: number }>();
+  for (const d of Object.values(dl.byTrack)) {
+    const e = byRelease.get(d.releaseId) ?? { ids: [], bytes: 0 };
+    e.ids.push(d.trackId);
+    e.bytes += d.size;
+    byRelease.set(d.releaseId, e);
+  }
+  const count = Object.keys(dl.byTrack).length;
+  return (
+    <section className="panel">
+      <h2 className="display-md">Downloads</h2>
+      <p className="muted">
+        {count
+          ? `${count} ${count === 1 ? "song" : "songs"} · ${formatBytes(dl.totalBytes)} on this computer. They play without the internet.`
+          : "Nothing downloaded yet. Choose Download from any album or song's menu to listen without the internet."}
+        {dl.pending.size > 0 && ` Downloading ${dl.pending.size} more…`}
+      </p>
+      <p className="caption muted"><DownloadedMark /> marks a song, or an album with every song, that's downloaded.</p>
+      {[...byRelease].map(([id, e]) => {
+        const r = c.releaseById[id];
+        const a = r ? c.artistById[r.artistId] : undefined;
+        return (
+          <div key={id} className="list-row">
+            <Sleeve src={r?.art} seed={sleeveSeed(r?.title ?? id, a?.name ?? "")} style={{ width: 40, flex: "none" }} />
+            <button type="button" className="link-btn" style={{ flex: "1 1 auto", minWidth: 0, textAlign: "left", textDecoration: "none", color: "var(--ink)" }}
+              onClick={() => r && go({ name: "album", releaseId: id })}>
+              <strong>{r?.title ?? "Taken down"}</strong>
+              <span className="caption muted"> · {a?.name ?? ""} · {r && e.ids.length < r.trackIds.length ? `${e.ids.length} of ${r.trackIds.length} songs` : "every song"} · {formatBytes(e.bytes)}</span>
+            </button>
+            <Button size="sm" variant="ghost" onClick={() => void dl.remove(e.ids)}>Remove</Button>
+          </div>
+        );
+      })}
+      {count > 0 && (sure ? (
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <Button size="sm" onClick={() => void dl.removeAll().then(() => setMsg("Removed all downloads.")).catch((e) => setMsg((e as Error).message)).finally(() => setSure(false))}>Remove all downloads</Button>
+          <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep them</button>
+        </div>
+      ) : (
+        <Button size="sm" variant="ghost" style={{ alignSelf: "flex-start" }} onClick={() => setSure(true)}>Remove all…</Button>
+      ))}
+      {msg && <p className="form-info" role="status">{msg}</p>}
     </section>
   );
 }

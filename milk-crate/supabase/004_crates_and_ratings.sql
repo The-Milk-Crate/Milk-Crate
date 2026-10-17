@@ -76,16 +76,31 @@ create table if not exists public.ratings (
 );
 
 -- Everything above belongs to one person: they see and change only their own rows.
-do $$
-declare t text;
-begin
-  foreach t in array array['crate_items', 'physical_items', 'playlists', 'follows', 'ratings'] loop
-    execute format('alter table public.%I enable row level security', t);
-    execute format('drop policy if exists "your own %s" on public.%I', t, t);
-    execute format('create policy "your own %s" on public.%I for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid())', t, t);
-    execute format('grant select, insert, update, delete on public.%I to authenticated', t);
-  end loop;
-end $$;
+alter table public.crate_items enable row level security;
+drop policy if exists "your own crate_items" on public.crate_items;
+create policy "your own crate_items" on public.crate_items for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.crate_items to authenticated;
+
+alter table public.physical_items enable row level security;
+drop policy if exists "your own physical_items" on public.physical_items;
+create policy "your own physical_items" on public.physical_items for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.physical_items to authenticated;
+
+alter table public.playlists enable row level security;
+drop policy if exists "your own playlists" on public.playlists;
+create policy "your own playlists" on public.playlists for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.playlists to authenticated;
+
+alter table public.follows enable row level security;
+drop policy if exists "your own follows" on public.follows;
+create policy "your own follows" on public.follows for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.follows to authenticated;
+
+alter table public.ratings enable row level security;
+drop policy if exists "your own ratings" on public.ratings;
+create policy "your own ratings" on public.ratings for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.ratings to authenticated;
+
 grant select on public.profiles to anon, authenticated;
 grant insert, update, delete on public.profiles to authenticated;
 

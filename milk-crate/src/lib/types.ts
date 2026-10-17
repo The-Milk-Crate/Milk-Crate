@@ -24,8 +24,10 @@ export interface Artist {
   /** "Durham, NC" */
   place: string;
   city?: string;
-  /** Two-letter state code. */
+  /** State, province or territory code: NC, ON, NSW. */
   state?: string;
+  /** US, CA or AU (artists from before other countries are in the US). */
+  country?: "US" | "CA" | "AU";
   lat?: number;
   lng?: number;
   /** New artists are "pending" until a reviewer approves them; only approved artists are public. */
@@ -78,7 +80,16 @@ export interface Release {
   /** Barcodes of physical editions; scanning one unlocks the digital release. */
   barcodes?: string[];
   trackIds: ID[];
+  /** When it went up on Milk Crate (ISO time). */
+  addedAt?: string;
+  /** When it comes out (ISO time). Missing = out now. In the future = coming soon: its songs stay hidden until then. */
+  releaseAt?: string;
 }
+
+/** When a release is (or was) out: its release date, or when it went up. */
+export const outAt = (r: { releaseAt?: string; addedAt?: string }) => Date.parse(r.releaseAt ?? r.addedAt ?? "") || 0;
+/** Scheduled for later and not out yet. */
+export const isUpcoming = (r: { releaseAt?: string }, now = Date.now()) => !!r.releaseAt && Date.parse(r.releaseAt) > now;
 
 export interface Track {
   id: ID;
@@ -91,6 +102,24 @@ export interface Track {
   src?: string;
   /** How it sounds (tempo, energy, brightness, dynamics), measured at upload. Drives "similar sound", never popularity. */
   sound?: SoundProfile;
+  /** Words, as the artist typed them. */
+  lyrics?: string;
+  /** Who played, wrote and recorded it, one line each ("Drums: Sam Ortiz"). */
+  credits?: string;
+  /** Files from your computer only: what the file's own tags say. */
+  tags?: FileTags;
+}
+
+/** The tags inside an audio file from your computer (artist, album, track number, cover). */
+export interface FileTags {
+  artist?: string;
+  albumArtist?: string;
+  album?: string;
+  trackNo?: number;
+  discNo?: number;
+  year?: number;
+  /** Key of the album cover saved on this computer (see lib/fileTags.ts), when the file has one. */
+  cover?: string;
 }
 
 /** Something an artist sells directly from their page. */

@@ -19,6 +19,8 @@
  * something changed (nothing while paused).
  */
 
+import { swirlBlobs } from "./swirl";
+
 const VERT = `attribute vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
 const FRAG = `
@@ -26,8 +28,8 @@ precision highp float;
 uniform vec2 uOrigin;   // canvas top-left in the window, CSS px
 uniform float uDpr;     // device px per CSS px
 uniform float uHeight;  // canvas height, device px
-uniform vec4 uBlob[4];  // center x, y (CSS px), radius (CSS px), opacity
-uniform vec3 uColor[4];
+uniform vec4 uBlob[12];  // center x, y (CSS px), radius (CSS px), opacity
+uniform vec3 uColor[12];
 uniform vec3 uGround;   // the window background under the swirl
 uniform vec4 uVeil;     // the veil laid over the swirl (rgb, alpha)
 uniform float uOn;      // how faded in the swirl is (0 when nothing plays)
@@ -46,7 +48,7 @@ vec4 hash42(vec2 p) {
 vec3 behind(vec2 q) {
   vec3 L = vec3(0.0);
   float A = 0.0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 12; i++) { // back layer first, then the top one, as the page draws them
     float a = clamp(1.0 - length(q - uBlob[i].xy) / uBlob[i].z, 0.0, 1.0) * uBlob[i].w;
     L = uColor[i] * a + L * (1.0 - a);
     A = a + A * (1.0 - a);
@@ -61,9 +63,19 @@ void main() {
   vec2 cell = floor(uOrigin * uDpr + 0.5) + local;                   // device px in the window
   vec4 h = hash42(cell);
 
-  // Grain strength: most bumps are barely there, a few catch the light.
-  float g = h.x * 2.0 - 1.0;
-  float m = pow(abs(g), 3.4);
+  // Grain strength: dense, single-pixel noise with its clumps taken out. Each
+  // pixel's value has the average of its eight neighbors subtracted, so no
+  // patch of pixels can drift bright or dark together: what's left is only the
+  // finest grain the screen can show (like the micro-texture of real frosted
+  // glass), with no larger blotches. Rescaled to keep its contrast.
+  float around = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      if (x != 0 || y != 0) around += hash42(cell + vec2(float(x), float(y))).x;
+    }
+  }
+  float g = clamp((h.x - around / 8.0) * 2.0 / 1.06, -1.0, 1.0);
+  float m = pow(abs(g), 1.25);
 
   // Each bump bends light from a few pixels to one side, in its own direction.
   float ang = h.y * 6.2831853;
@@ -79,7 +91,7 @@ void main() {
   // Bumps facing the light focus it (a brighter glint of that color);
   // the others throw a small, darker, tinted shadow.
   bool lit = g > 0.0;
-  vec3 col = lit ? min(c * 1.45 + 0.04, 1.0) : c * 0.5;
+  vec3 col = lit ? min(c * 1.22 + 0.02, 1.0) : c * 0.6;
   // Glints need light behind them: they sparkle where the album colors are
   // bright and nearly vanish over dark glass (or when nothing is playing).
   float glow = smoothstep(0.03, 0.45, dot(behind(p), vec3(0.2126, 0.7152, 0.0722)));
@@ -104,7 +116,7 @@ const parseColor = (s: string): [number, number, number, number] | null => {
   return [v[0] / 255, v[1] / 255, v[2] / 255, v.length > 3 ? v[3] : 1];
 };
 
-/** Reads the swirl as it is on screen right now. null if there's no swirl to read. */
+/** The swirl as it is on screen right now (from swirl.ts), plus the backdrop's fade and veil. */
 export function readScene(source: "main" | "immersive"): FrostScene | null {
   const el = document.querySelector<HTMLElement>(source === "immersive" ? ".backdrop.backdrop-immersive" : ".backdrop:not(.backdrop-immersive)");
   const root = getComputedStyle(document.documentElement);
@@ -115,18 +127,7 @@ export function readScene(source: "main" | "immersive"): FrostScene | null {
   const cs = getComputedStyle(el);
   const on = parseFloat(cs.opacity) || 0;
   const veil = parseColor(getComputedStyle(el, "::after").backgroundColor) ?? [0, 0, 0, 0];
-  const blobs: FrostScene["blobs"] = [];
-  const colors: RGB[] = [];
-  el.querySelectorAll<HTMLElement>(".blob").forEach((b, i) => {
-    const r = b.getBoundingClientRect();
-    const bs = getComputedStyle(b);
-    const t = bs.transform.match(/matrix\(([^)]+)\)/);
-    const [ma, mb] = t ? t[1].split(",").map(Number) : [1, 0];
-    const scale = Math.hypot(ma, mb) || 1;
-    blobs.push([r.left + r.width / 2, r.top + r.height / 2, (b.offsetWidth / 2) * scale, parseFloat(bs.opacity) || 0]);
-    const c = parseColor(cs.getPropertyValue(`--swirl-${i + 1}`).trim()) ?? [0.5, 0.5, 0.5, 1];
-    colors.push([c[0], c[1], c[2]]);
-  });
+  const { blobs, colors } = swirlBlobs(source === "immersive");
   return { blobs, colors, ground, veil, on, light };
 }
 
@@ -179,8 +180,11 @@ function setup(canvas: HTMLCanvasElement, source: Surface["source"], saturate: n
   return { canvas, gl, u, source, saturate, lastKey: "" };
 }
 
+/** Swirl blobs the shader reads (the two layers of six in Backdrop). */
+const BLOBS = 12;
+
 /** How strong the grains are (max opacity of light / dark grains). Kept subtle. */
-const STRENGTH = { dark: [0.26, 0.08], light: [0.1, 0.115] } as const;
+const STRENGTH = { dark: [0.14, 0.052], light: [0.058, 0.069] } as const;
 
 function draw(s: Surface, scene: FrostScene) {
   const { canvas, gl, u } = s;
@@ -199,10 +203,10 @@ function draw(s: Surface, scene: FrostScene) {
   gl.viewport(0, 0, w, h);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
-  const blobs = new Float32Array(16);
-  const colors = new Float32Array(12);
-  scene.blobs.slice(0, 4).forEach((b, i) => blobs.set([b[0], b[1], Math.max(1, b[2]), b[3]], i * 4));
-  scene.colors.slice(0, 4).forEach((c, i) => colors.set(c, i * 3));
+  const blobs = new Float32Array(BLOBS * 4);
+  const colors = new Float32Array(BLOBS * 3);
+  scene.blobs.slice(0, BLOBS).forEach((b, i) => blobs.set([b[0], b[1], Math.max(1, b[2]), b[3]], i * 4));
+  scene.colors.slice(0, BLOBS).forEach((c, i) => colors.set(c, i * 3));
   gl.uniform2f(u.uOrigin, rect.left, rect.top);
   gl.uniform1f(u.uDpr, dpr);
   gl.uniform1f(u.uHeight, h);

@@ -10,6 +10,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "./styles/tokens.css";
 import "./styles/components.css";
 import "./styles/app.css";
+import "./styles/shelf.css";
 
 import App from "./App";
 

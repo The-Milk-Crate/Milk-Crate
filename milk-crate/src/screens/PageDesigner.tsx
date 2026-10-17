@@ -199,6 +199,16 @@ function CustomFontTile({ page, name, onPick, onUse }: { page: ArtistPage; name:
 
 function ImageSlot(props: { label: string; hint: string; shape: "wide" | "tall" | "logo"; value?: string; onPick: () => void; onRemove: () => void }) {
   const { label, hint, shape, value, onPick, onRemove } = props;
+  // A photo whose shape doesn't match its slot still goes where it was put; it's just cropped to fit. Say so.
+  const [ratio, setRatio] = useState<number | null>(null);
+  useEffect(() => {
+    setRatio(null);
+    if (!value || shape === "logo") return;
+    const img = new Image();
+    img.onload = () => img.naturalHeight && setRatio(img.naturalWidth / img.naturalHeight);
+    img.src = value;
+  }, [value, shape]);
+  const mismatch = ratio !== null && ((shape === "wide" && ratio < 1) || (shape === "tall" && ratio > 1));
   return (
     <div className="field">
       <span className="catalog eyebrow">{label}</span>
@@ -209,6 +219,11 @@ function ImageSlot(props: { label: string; hint: string; shape: "wide" | "tall" 
         {!value && <><ImagePlus size={20} aria-hidden="true" /><span>Add</span></>}
       </button>
       <span className="caption muted">{hint}</span>
+      {mismatch && (
+        <span className="caption" role="status" style={{ color: "var(--ink)" }}>
+          {shape === "wide" ? "This photo is taller than it is wide, so wide windows will crop it a lot." : "This photo is wider than it is tall, so tall windows will crop it a lot."} It still only shows as your {shape === "wide" ? "wide" : "vertical"} banner.
+        </span>
+      )}
       {value && (
         <span style={{ display: "flex", gap: 12 }}>
           <button type="button" className="link-btn caption" onClick={onPick}>Change</button>

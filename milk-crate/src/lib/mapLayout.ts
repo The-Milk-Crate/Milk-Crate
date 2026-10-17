@@ -1,34 +1,99 @@
 /**
- * Map helpers shared by the Scenes screen: US state outlines (loaded on
- * demand), dot sizes, packing a town's dots together, and placing labels so
- * they never cover a dot or each other.
+ * Map helpers shared by the Scenes screen: state and province outlines for each
+ * country (loaded on demand), dot sizes, packing a town's dots together, and
+ * placing labels so they never cover a dot or each other.
  */
 import { feature, mesh } from "topojson-client";
+import { geoArea } from "d3-geo";
 import type { FeatureCollection, Geometry, MultiLineString } from "geojson";
-import { STATE_NAMES, type Place } from "./geo";
+import { STATE_NAMES, type Country, type Place } from "./geo";
 
 export const STATE_BY_NAME = Object.fromEntries(Object.entries(STATE_NAMES).map(([code, name]) => [name, code]));
 
-export interface StatesData { states: FeatureCollection<Geometry, { name: string }>; borders: MultiLineString }
-let statesData: Promise<StatesData> | null = null;
-export function loadStates() {
-  statesData ??= import("us-atlas/states-10m.json").then((m) => {
+export interface RegionProps { name: string; code: string; country: Country }
+export interface StatesData { states: FeatureCollection<Geometry, RegionProps>; borders: MultiLineString }
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const fromTopo = (topo: any, object: any, props: (p: any) => RegionProps): StatesData => {
+  const fc = feature(topo, object) as unknown as FeatureCollection<Geometry, any>;
+  for (const f of fc.features) {
+    f.properties = props(f.properties ?? {});
+    rewind(f);
+  }
+  return { states: fc as FeatureCollection<Geometry, RegionProps>, borders: mesh(topo, object, (a: unknown, b: unknown) => a !== b) as MultiLineString };
+};
+/**
+ * d3 draws a shape's outline clockwise; drawn the other way round, a shape means "the whole
+ * world except this". Some map data winds the other way, so any shape bigger than half the
+ * globe is turned around.
+ */
+function rewind(f: any) {
+  if (geoArea(f) <= 2 * Math.PI) return;
+  const g = f.geometry;
+  if (g.type === "Polygon") g.coordinates = g.coordinates.map((ring: number[][]) => [...ring].reverse());
+  else if (g.type === "MultiPolygon") g.coordinates = g.coordinates.map((poly: number[][][]) => poly.map((ring) => [...ring].reverse()));
+  // A multipolygon whose parts are wound differently: fix each part on its own.
+  if (g.type === "MultiPolygon" && geoArea(f) > 2 * Math.PI)
+    g.coordinates = g.coordinates.map((poly: number[][][]) => {
+      const part = { type: "Polygon", coordinates: poly };
+      return geoArea(part as any) > 2 * Math.PI ? poly.map((ring) => [...ring].reverse()) : poly;
+    });
+}
+
+const LOADERS: Record<Country, () => Promise<StatesData>> = {
+  // US states from us-atlas; Canada and Australia from Natural Earth (scripts/build-regions.mjs).
+  US: () => import("us-atlas/states-10m.json").then((m) => {
+    const topo = (m.default ?? m) as any;
+    return fromTopo(topo, topo.objects.states, (p) => ({ name: p.name, code: STATE_BY_NAME[p.name] ?? p.name, country: "US" }));
+  }),
+  CA: () => import("../data/regions-ca.json").then((m) => {
+    const topo = (m.default ?? m) as any;
+    return fromTopo(topo, topo.objects.regions, (p) => ({ name: p.name, code: p.code, country: "CA" }));
+  }),
+  AU: () => import("../data/regions-au.json").then((m) => {
+    const topo = (m.default ?? m) as any;
+    return fromTopo(topo, topo.objects.regions, (p) => ({ name: p.name, code: p.code, country: "AU" }));
+  }),
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+const loaded: Partial<Record<Country, Promise<StatesData>>> = {};
+/** One country's states, provinces or territories, and the lines between them. */
+export function loadRegions(country: Country = "US") {
+  return (loaded[country] ??= LOADERS[country]().catch((e) => {
+    delete loaded[country];
+    throw e;
+  }));
+}
+/** The US states (kept for older callers). */
+export const loadStates = () => loadRegions("US");
+
+/** Every country's regions together, for close-up maps near a border (Detroit and Windsor). */
+export async function loadAllRegions(): Promise<StatesData> {
+  const all = await Promise.all((["US", "CA", "AU"] as Country[]).map((c) => loadRegions(c)));
+  return {
+    states: { type: "FeatureCollection", features: all.flatMap((d) => d.states.features) },
+    borders: { type: "MultiLineString", coordinates: all.flatMap((d) => d.borders.coordinates) },
+  };
+}
+
+/** County lines (only the borders between counties), for the close-up town map. Loaded on demand. */
+let countyLines: Promise<MultiLineString> | null = null;
+export function loadCountyLines() {
+  countyLines ??= import("us-atlas/counties-10m.json").then((m) => {
     const topo = (m.default ?? m) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    return {
-      states: feature(topo, topo.objects.states) as unknown as FeatureCollection<Geometry, { name: string }>,
-      borders: mesh(topo, topo.objects.states, (a: unknown, b: unknown) => a !== b) as MultiLineString,
-    };
+    return mesh(topo, topo.objects.counties, (a: unknown, b: unknown) => a !== b) as MultiLineString;
   });
-  return statesData;
+  return countyLines;
 }
 
 
 /* ---------- layout: dot clusters and labels that don't collide ---------- */
 
-/** Dot radius from how many ratings the artist's songs have: more ratings, bigger dot (area grows with the count). */
-export function dotRadius(ratings: number, mode: "scene" | "national"): number {
-  const [min, step, max] = mode === "scene" ? [5, 1.6, 15] : [3.2, 0.9, 8.5];
-  return Math.min(max, min + step * Math.sqrt(Math.max(0, ratings)));
+/** Dot radius from how many times the artist's songs have been streamed: more streams, bigger dot. */
+export function dotRadius(streams: number, mode: "scene" | "national"): number {
+  const [min, step, max] = mode === "scene" ? [5, 2.5, 15] : [3.2, 1.3, 8.5];
+  return Math.min(max, min + step * Math.log10(1 + Math.max(0, streams)));
 }
 
 export interface Dot<T> { item: T; x: number; y: number; r: number }

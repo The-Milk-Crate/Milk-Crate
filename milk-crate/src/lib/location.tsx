@@ -9,7 +9,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useAuth } from "./auth";
 import { useCatalog } from "./catalog";
 import { supabase } from "./supabase";
-import { findPlace, placeFromLabel, sceneFor, sceneWithArtists, usePlaces, type Place, type Scene } from "./geo";
+import { findPlace, isCountry, placeFromLabel, sceneFor, sceneWithArtists, unitsFor, usePlaces, type Place, type Scene, type Units } from "./geo";
 import type { Artist } from "./types";
 
 /** An approved artist and where they're from. */
@@ -33,7 +33,9 @@ const LocationContext = createContext<Location | null>(null);
 function readLocal(): Place | null {
   try {
     const v = JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "null");
-    return v && typeof v.lat === "number" && typeof v.lng === "number" && typeof v.name === "string" && /^[A-Z]{2}$/.test(v.state) ? v : null;
+    return v && typeof v.lat === "number" && typeof v.lng === "number" && typeof v.name === "string" && /^[A-Z]{2,3}$/.test(v.state)
+      ? { ...v, country: isCountry(v.country) ? v.country : "US" } // saved before other countries: US
+      : null;
   } catch {
     return null;
   }
@@ -62,7 +64,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       if (typeof a.lat === "number" && typeof a.lng === "number") {
         const name = a.city ?? a.place.split(",")[0];
         const state = a.state ?? a.place.split(",")[1]?.trim() ?? "";
-        return { name, state, lat: a.lat, lng: a.lng, pop: (places && findPlace(places, name, state)?.pop) ?? 0 };
+        const country = a.country ?? "US";
+        return { name, state, country, lat: a.lat, lng: a.lng, pop: (places && findPlace(places, name, state, country)?.pop) ?? 0 };
       }
       return places ? placeFromLabel(places, a.place) ?? null : null;
     },
@@ -82,12 +85,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (data) {
-        setListenerHome({ name: data.city, state: data.state, lat: data.lat, lng: data.lng, pop: 0 });
+        setListenerHome({ name: data.city, state: data.state, country: isCountry(data.country) ? data.country : "US", lat: data.lat, lng: data.lng, pop: 0 });
         return;
       }
       const pending = readLocal();
       if (pending) {
-        await supabase.from("listeners").upsert({ user_id: auth.userId, city: pending.name, state: pending.state, lat: pending.lat, lng: pending.lng });
+        await saveListener(auth.userId!, pending);
         if (live) setListenerHome(pending);
       } else setListenerHome(null);
     });
@@ -100,8 +103,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const rawHome = auth.kind === "listener" ? listenerHome ?? null : artistHome ?? localHome;
   // Fill in population from the city list (used to rank labels on the map).
   const home = useMemo(
-    () => (rawHome && places ? { ...rawHome, pop: findPlace(places, rawHome.name, rawHome.state)?.pop ?? rawHome.pop } : rawHome),
-    [rawHome?.name, rawHome?.state, rawHome?.lat, rawHome?.lng, places], // eslint-disable-line react-hooks/exhaustive-deps
+    () => (rawHome && places ? { ...rawHome, pop: findPlace(places, rawHome.name, rawHome.state, rawHome.country)?.pop ?? rawHome.pop } : rawHome),
+    [rawHome?.name, rawHome?.state, rawHome?.country, rawHome?.lat, rawHome?.lng, places], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const scene = useMemo(() => (home && places ? sceneFor(home, places) : null), [home, places]);
   const ready = auth.ready && !!places && (auth.kind !== "listener" || listenerHome !== undefined);
@@ -111,8 +114,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       writeLocal(p);
       setLocalHome(p);
       if (auth.kind === "listener" && auth.userId) {
-        const { error } = await supabase.from("listeners").upsert({ user_id: auth.userId, city: p.name, state: p.state, lat: p.lat, lng: p.lng });
-        if (error) throw new Error(/relation|does not exist|schema cache/i.test(error.message) ? "the server needs a one-time update (supabase/003_accounts_and_places.sql)." : error.message);
+        const error = await saveListener(auth.userId, p);
+        if (error) throw new Error(/relation|does not exist|schema cache|country|check constraint/i.test(error.message) ? "the server needs a one-time update (supabase/006_countries.sql)." : error.message);
         setListenerHome(p);
       }
     },
@@ -121,6 +124,19 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Location>(() => ({ places, home, scene, ready, setHome, placeOf }), [places, home, scene, ready, setHome, placeOf]);
   return <LocationContext.Provider value={value}>{children}</LocationContext.Provider>;
+}
+
+/** Saves a listener's city. US cities still save on a server that hasn't added countries yet. */
+async function saveListener(userId: string, p: Place) {
+  const row = { user_id: userId, city: p.name, state: p.state, lat: p.lat, lng: p.lng };
+  const { error } = await supabase.from("listeners").upsert({ ...row, country: p.country });
+  if (error && p.country === "US" && /country/i.test(error.message)) return (await supabase.from("listeners").upsert(row)).error;
+  return error;
+}
+
+/** Miles or kilometres, from the country you live in. */
+export function useUnits(): Units {
+  return unitsFor(useLocation().home?.country);
 }
 
 export function useLocation() {

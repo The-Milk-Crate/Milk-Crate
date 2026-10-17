@@ -22,9 +22,9 @@
   --shadow-lift: 0 12px 32px rgba(0,0,0,0.5);
 }
 [data-theme="light"] {
-  --ground: #f3eee5;
-  --ground-raised: #fffcf6;
-  --ground-sunken: #e9e2d6;
+  --ground: #ebe5da; /* a soft, warm paper: less glare than white */
+  --ground-raised: #f6f2ea;
+  --ground-sunken: #e0d8cb;
   --line: #d6ccbc;
   --line-strong: #8f8576;
   --ink: #1b1714;

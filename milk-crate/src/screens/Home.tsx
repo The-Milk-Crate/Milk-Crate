@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { Search } from "lucide-react";
+import { openSearch } from "../components/SearchPalette";
+import { Tour } from "../components/Tour";
+import { RadioButton } from "../components/RadioButton";
 import type { Go } from "../App";
 import { EmptyCatalog } from "./Artists";
 import { useCatalog } from "../lib/catalog";
@@ -20,14 +23,12 @@ export function Home({ go }: { go: Go }) {
   const lib = useLibrary();
   const { scene } = useLocation();
   const placed = useArtistPlaces();
-  const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
 
   const play = (r: Release) => p.playQueue(r.trackIds.map((id) => c.trackById[id]).filter(Boolean));
   const card = (r: Release, sticker?: string) => {
     const a = c.artistById[r.artistId];
     return (
-      <ReleaseCard key={r.id} title={r.title} artist={a?.name ?? ""} place={a?.place.split(",")[0]} year={r.year} art={r.art}
+      <ReleaseCard key={r.id} trackIds={r.trackIds} title={r.title} artist={a?.name ?? ""} place={a?.place.split(",")[0]} year={r.year} art={r.art}
         sticker={sticker} onOpen={() => go({ name: "album", releaseId: r.id })} onPlay={() => play(r)} />
     );
   };
@@ -51,10 +52,6 @@ export function Home({ go }: { go: Go }) {
   // Recently added to your crate.
   const added = lib.saved.slice(0, 8).map((s) => c.releaseById[s.releaseId]).filter(Boolean);
 
-  const matches = q
-    ? c.releases.filter((r) => r.title.toLowerCase().includes(q) || c.artistById[r.artistId]?.name.toLowerCase().includes(q))
-    : [];
-  const artistMatches = q ? c.artists.filter((a) => a.name.toLowerCase().includes(q) || a.genres.some((g) => g.toLowerCase().includes(q))) : [];
   const hour = new Date().getHours();
   const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
@@ -64,27 +61,18 @@ export function Home({ go }: { go: Go }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <span className="catalog eyebrow">{scene ? `${scene.home.name}, ${scene.home.state}` : "Milk Crate"}</span>
           <h1 className="display-lg">{hello}{lib.displayName ? `, ${lib.displayName}` : ""}</h1>
+          {scene && <div><RadioButton scene={scene} variant="primary" size="sm" /></div>}
         </div>
-        <label className="field" style={{ flex: "0 1 360px", minWidth: 220 }}>
-          <span className="catalog eyebrow">Search</span>
-          <input type="search" placeholder="Artists, albums, genres" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </label>
+        <div className="field" style={{ flex: "0 1 360px", minWidth: 220 }}>
+          <span className="catalog eyebrow" aria-hidden="true">Search</span>
+          <button type="button" className="search-field-btn" onClick={() => openSearch()} aria-label="Search artists, albums, songs and towns" aria-keyshortcuts="Control+K">
+            <Search size={16} strokeWidth={1.75} aria-hidden="true" /> Artists, albums, songs, towns <kbd>{/Mac/i.test(navigator.userAgent) ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
+        </div>
       </header>
 
-      {q ? (
-        <>
-          {artistMatches.length > 0 && (
-            <section className="section">
-              <h2 className="display-md">Artists</h2>
-              <div className="release-grid">{artistMatches.slice(0, 12).map((a) => <ArtistCard key={a.id} artist={a} go={go} />)}</div>
-            </section>
-          )}
-          <section className="section">
-            <h2 className="display-md">Albums matching “{query}”</h2>
-            {matches.length ? <div className="release-grid">{matches.map((r) => card(r))}</div> : <p className="muted">Nothing in the crates matches that yet.</p>}
-          </section>
-        </>
-      ) : (
+      <Tour go={go} />
+      {(
         <>
           <section className="section">
             <div className="section-title" style={{ justifyContent: "space-between" }}>

@@ -14,3 +14,10 @@ describe("updateErrorText", () => {
     expect(updateErrorText("error sending request: connection timed out")).toMatch(/internet connection/);
   });
 });
+
+describe("UpdateBlocked", () => {
+  it("shows its instructions as they are", async () => {
+    const { UpdateBlocked } = await import("./updater");
+    expect(updateErrorText(new UpdateBlocked("Do this."))).toBe("Do this.");
+  });
+});

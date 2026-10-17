@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { STATE_NAMES, placeLabel, searchPlaces, usePlaces, type Place } from "../lib/geo";
+import { placeKey, placeLabel, regionAndCountry, searchPlaces, usePlaces, type Place } from "../lib/geo";
 
-/** Type-ahead picker for a real US city or town. */
+/** Type-ahead picker for a real city or town in the United States, Canada or Australia. */
 export function CityPicker({ label, value, onChange, autoFocus }: { label: string; value: Place | null; onChange: (p: Place) => void; autoFocus?: boolean }) {
   const places = usePlaces();
   const id = useId();
@@ -50,16 +50,16 @@ export function CityPicker({ label, value, onChange, autoFocus }: { label: strin
       {results.length > 0 && (
         <ul id={`${id}-list`} role="listbox" className="city-options">
           {results.map((p, i) => (
-            <li key={placeLabel(p)} id={`${id}-opt-${i}`} role="option" aria-selected={i === active}
+            <li key={placeKey(p)} id={`${id}-opt-${i}`} role="option" aria-selected={i === active}
               onMouseDown={(e) => { e.preventDefault(); choose(p); }} onMouseEnter={() => setActive(i)}>
               <span style={{ fontWeight: 600 }}>{p.name}</span>
-              <span className="muted">, {STATE_NAMES[p.state] ?? p.state}</span>
+              <span className="muted">, {regionAndCountry(p)}</span>
             </li>
           ))}
         </ul>
       )}
       {open && places && text.trim().length > 1 && text !== valueLabel && results.length === 0 && (
-        <span className="caption muted">No US city or town by that name. Try the nearest town with 1,000+ people.</span>
+        <span className="caption muted">No city or town by that name in the United States, Canada or Australia. Try the nearest town with 1,000+ people.</span>
       )}
     </div>
   );

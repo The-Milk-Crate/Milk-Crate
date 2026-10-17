@@ -24,6 +24,7 @@ export interface ArtistRow {
   page: unknown;
   city: string | null;
   state: string | null;
+  country?: string | null;
   lat: number | null;
   lng: number | null;
   status?: string;
@@ -38,6 +39,7 @@ export interface ReleaseRow {
   catalog_number: string | null;
   art_url: string | null;
   created_at: string;
+  release_at?: string | null;
 }
 
 export interface TrackRow {
@@ -49,6 +51,8 @@ export interface TrackRow {
   duration: number;
   audio_url: string;
   sound?: unknown;
+  lyrics?: string | null;
+  credits?: string | null;
 }
 
 export const artistFromRow = (r: ArtistRow): Artist => ({
@@ -58,6 +62,7 @@ export const artistFromRow = (r: ArtistRow): Artist => ({
   place: r.place,
   city: r.city ?? undefined,
   state: r.state ?? undefined,
+  country: r.country === "CA" || r.country === "AU" ? r.country : "US",
   lat: typeof r.lat === "number" ? r.lat : undefined,
   lng: typeof r.lng === "number" ? r.lng : undefined,
   // Servers set up before approval existed have no status column: everyone there is approved.
@@ -80,6 +85,8 @@ export function releasesFromRows(releases: ReleaseRow[], tracks: TrackRow[]): { 
       year: r.year,
       catalogNumber: r.catalog_number ?? undefined,
       art: r.art_url ?? undefined,
+      addedAt: r.created_at,
+      releaseAt: r.release_at ?? undefined,
       trackIds: sortedTracks.filter((t) => t.release_id === r.id).map((t) => t.id),
     })),
     tracks: sortedTracks.map((t) => ({
@@ -90,6 +97,8 @@ export function releasesFromRows(releases: ReleaseRow[], tracks: TrackRow[]): { 
       duration: t.duration,
       src: t.audio_url,
       sound: isSoundProfile(t.sound) ? t.sound : undefined,
+      lyrics: typeof t.lyrics === "string" && t.lyrics.trim() ? t.lyrics : undefined,
+      credits: typeof t.credits === "string" && t.credits.trim() ? t.credits : undefined,
     })),
   };
 }

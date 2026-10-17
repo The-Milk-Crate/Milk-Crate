@@ -33,8 +33,8 @@ Desktop app ──HTTPS──► API (Node/TypeScript or Rust)
 | --- | --- |
 | Artist-forward payouts | User-centric payment: each listener's subscription is split among the artists *they* played, not a global pool. Ledger table per play-minute; monthly payout via Stripe Connect. |
 | Bandcamp × Spotify | Streaming plus a store on every artist page. Merch, vinyl and tickets sold through Stripe Connect with the platform fee capped (target: artist keeps 90%). |
-| Customizable artist page | Artists pick an accent, header image, layout sections; stored as JSON on the artist record and rendered by the app. |
-| Scenes | Every artist has a home scene + neighborhood. Scene pages aggregate artists, releases, venues and shows. Map: MapLibre with OpenStreetMap tiles. |
+| Customizable artist page | ✅ Wide + vertical banners (cross-fade to fit the window), name set in the banner with built-in or uploaded font, color, style, or a logo/hand-drawn lettering; stored as JSON (`artists.page`) and checked before display. Next: layout sections, merch and shows. |
+| Scenes | ✅ Real places: listeners pick their city; their scene is the towns within 35 miles plus their state's larger cities. Artists are placed at their home city on a real map (Census state borders via us-atlas, GeoNames cities), drawn in the app with d3-geo, no tile server or API key. Next: venues and shows. |
 | Physical media | Listeners scan a barcode (UPC/EAN). Look up the release by barcode; if the artist has opted in, the scan or a code printed on the sleeve unlocks the digital release. Otherwise it's catalogued only (Discogs API for metadata). |
 | 1–5 star ratings + weighted shuffle | Done in the app (`src/lib/shuffle.ts`). Ratings sync to the server once accounts exist. |
 | Sonic-profile recommendations | Analyze every upload (tempo, energy, timbre; an audio embedding model such as CLAP or Essentia's models). Store vectors in Postgres with pgvector; recommend nearest neighbors to your 4–5★ tracks. No popularity signal. |

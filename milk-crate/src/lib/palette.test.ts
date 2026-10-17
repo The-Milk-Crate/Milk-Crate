@@ -14,15 +14,15 @@ describe("album cover palettes", () => {
   it("picks the cover's main colors, most prominent first", () => {
     const px = [...fill([220, 40, 40], 600), ...fill([30, 60, 200], 300), ...fill([240, 200, 40], 100)];
     const p = paletteFromPixels(px);
-    expect(p).toHaveLength(4);
+    expect(p).toHaveLength(6);
     expect(hue(p[0])).toBeLessThan(15); // red
     expect(Math.abs(hue(p[1]) - 228)).toBeLessThan(20); // blue
     expect(Math.abs(hue(p[2]) - 50)).toBeLessThan(15); // yellow
   });
   it("fills out single-color covers with shades", () => {
     const p = paletteFromPixels(fill([20, 160, 90], 500));
-    expect(p).toHaveLength(4);
-    expect(new Set(p).size).toBe(4);
+    expect(p).toHaveLength(6);
+    expect(new Set(p).size).toBe(6);
   });
   it("keeps colors glowy, never black or white", () => {
     const p = paletteFromPixels([...fill([5, 5, 30], 500), ...fill([250, 250, 255], 500)]);

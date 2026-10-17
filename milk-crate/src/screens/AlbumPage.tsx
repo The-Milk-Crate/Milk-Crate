@@ -6,18 +6,23 @@ import { usePlayer } from "../lib/player";
 import { FORMAT_LABEL, attempt, useLibrary } from "../lib/library";
 import { formatTime } from "../lib/format";
 import { sleeveSeed } from "../lib/sleeve";
-import type { PhysicalFormat } from "../lib/types";
-import { Button, PlayButton, ReleaseCard, Sleeve, TrackRow } from "../components/ui";
+import { isUpcoming, type PhysicalFormat } from "../lib/types";
+import { formatReleaseDate, untilLabel } from "../components/ReleaseDate";
+import { Button, DownloadedMark, PlayButton, ReleaseCard, Sleeve, TrackRow, useAllDownloaded } from "../components/ui";
 import { AddToPlaylist } from "../components/AddToPlaylist";
+import { ShareButton } from "../components/ShareButton";
+import { ReportButton } from "../components/ReportDialog";
+import { AlbumRating } from "../components/AlbumRating";
 
 const FORMATS: PhysicalFormat[] = ["LP", "7in", "Cassette", "CD"];
 
 /**
- * One album: play it start to finish, save it to your crate, and (below the
- * songs) mark a physical copy you own. Ratings shown are everyone's average;
- * your own ratings live in your crate.
+ * One album: play it start to finish, rate it out of five stars, save it to
+ * your crate, favorite songs (the heart on each row), and (below the songs)
+ * mark a physical copy you own.
  */
 export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
+  const allDownloaded = useAllDownloaded(useCatalog().releaseById[releaseId]?.trackIds);
   const c = useCatalog();
   const p = usePlayer();
   const lib = useLibrary();
@@ -33,6 +38,8 @@ export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
   const saved = lib.isSaved(release.id);
   const owned = lib.physical.filter((x) => x.releaseId === release.id);
   const more = c.releases.filter((r) => r.artistId === release.artistId && r.id !== release.id);
+  const upcoming = isUpcoming(release);
+  const isMine = !!artist && artist.id === c.myProfile?.id;
 
   const addPhysical = (format: PhysicalFormat) => {
     setOwning(false);
@@ -47,21 +54,35 @@ export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
       <header className="album-head">
         <Sleeve src={release.art} seed={sleeveSeed(release.title, artist?.name ?? "")} alt={`${release.title} cover`} style={{ width: 240, flex: "none", boxShadow: "var(--shadow-lift)" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0, flex: "1 1 320px" }}>
-          <span className="catalog eyebrow">{[release.kind, release.year, release.catalogNumber && `CAT# ${release.catalogNumber}`].filter(Boolean).join(" · ")}</span>
+          <span className="catalog eyebrow">{[upcoming ? "Coming soon" : null, release.kind, release.year, release.catalogNumber && `CAT# ${release.catalogNumber}`].filter(Boolean).join(" · ")}</span>
           <h1 className="display-xl" style={{ overflowWrap: "anywhere" }}>{release.title}</h1>
           {artist && (
             <p className="muted">
               <button type="button" className="link-btn" style={{ fontWeight: 650, fontSize: 16 }} onClick={() => go({ name: "artist", artistId: artist.id })}>{artist.name}</button>
-              {" · "}{artist.place} · {tracks.length} {tracks.length === 1 ? "song" : "songs"}, {formatTime(total)}
+              {" · "}{artist.place}{tracks.length ? ` · ${tracks.length} ${tracks.length === 1 ? "song" : "songs"}, ${formatTime(total)}` : ""}
+              {allDownloaded && <> · <DownloadedMark label="Album downloaded" /> Downloaded</>}
             </p>
+          )}
+          {upcoming ? (
+            <p className="coming-banner" role="status">
+              Out {formatReleaseDate(release.releaseAt!)} · {untilLabel(release.releaseAt!)}
+            </p>
+          ) : (
+            <AlbumRating releaseId={release.id} />
           )}
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
             {tracks.length > 0 && <PlayButton size="lg" playing={thisPlaying && p.playing} onClick={() => (thisPlaying ? p.toggle() : p.playQueue(tracks))} />}
             <Button variant={saved ? "ghost" : "primary"} onClick={() => void attempt(() => (saved ? lib.unsave(release.id) : lib.save(release.id)), setSaveMsg)}>
               {saved ? <><Check size={16} aria-hidden="true" /> In your crate</> : <><Plus size={16} aria-hidden="true" /> Add to your crate</>}
             </Button>
-            {tracks.length > 0 && <AddToPlaylist trackIds={tracks.map((t) => t.id)} label="Add all to a playlist" compact={false} />}
+            {tracks.length > 0 && <AddToPlaylist trackIds={tracks.map((t) => t.id)} label="More" compact={false} />}
+            <ShareButton target={{ kind: "album", id: release.id }} label={`${release.title}${artist ? ` by ${artist.name}` : ""}`} />
           </div>
+          {artist && artist.id === c.myProfile?.id ? (
+            <div><button type="button" className="link-btn caption" onClick={() => go({ name: "editRelease", releaseId: release.id })}>Edit this release</button></div>
+          ) : (
+            <div><ReportButton releaseId={release.id} artistId={artist?.id} subject={`${release.title}${artist ? ` by ${artist.name}` : ""}`} go={go} /></div>
+          )}
           {saveMsg && <p className="form-info" role="status">{saveMsg}</p>}
         </div>
       </header>
@@ -69,11 +90,16 @@ export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
       <section className="section">
         <div className="section-title" style={{ justifyContent: "space-between" }}>
           <h2 className="display-md">Songs</h2>
-          <span className="caption muted">Stars are the average from everyone on Milk Crate.</span>
+          <span className="caption muted">{upcoming ? (isMine ? `Only you can hear these until ${formatReleaseDate(release.releaseAt!)}.` : "") : "Tap the heart to put a song in your Favorites."}</span>
         </div>
+        {upcoming && !tracks.length && (
+          <div className="empty">
+            <span>The songs unlock {formatReleaseDate(release.releaseAt!)}. {saved ? "It's in your crate, so it'll be ready." : "Add it to your crate and it'll be ready when it drops."}</span>
+          </div>
+        )}
         <div>
           {tracks.map((t, i) => (
-            <TrackRow key={t.id} index={i + 1} title={t.title} duration={formatTime(t.duration)} average={c.averages[t.id] ?? null}
+            <TrackRow key={t.id} trackId={t.id} index={i + 1} title={t.title} duration={formatTime(t.duration)} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
               playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(tracks, i)} actions={<AddToPlaylist trackIds={[t.id]} />} />
           ))}
         </div>
@@ -105,7 +131,7 @@ export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
           <h2 className="display-md">More from {artist.name}</h2>
           <div className="release-grid">
             {more.map((r) => (
-              <ReleaseCard key={r.id} title={r.title} artist={r.kind} year={r.year} art={r.art} seed={sleeveSeed(r.title, artist.name)}
+              <ReleaseCard key={r.id} trackIds={r.trackIds} title={r.title} artist={r.kind} year={r.year} art={r.art} seed={sleeveSeed(r.title, artist.name)}
                 onOpen={() => go({ name: "album", releaseId: r.id })}
                 onPlay={() => p.playQueue(r.trackIds.map((id) => c.trackById[id]).filter(Boolean))} />
             ))}

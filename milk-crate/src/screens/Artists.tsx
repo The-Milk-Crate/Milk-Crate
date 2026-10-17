@@ -50,7 +50,7 @@ export function Artists({ go }: { go: Go }) {
                 {albums.length > 0 ? (
                   <div className="followed-albums">
                     {albums.map((r) => (
-                      <ReleaseCard key={r.id} title={r.title} artist={r.kind} year={r.year} art={r.art} seed={sleeveSeed(r.title, a.name)}
+                      <ReleaseCard key={r.id} trackIds={r.trackIds} title={r.title} artist={r.kind} year={r.year} art={r.art} seed={sleeveSeed(r.title, a.name)}
                         onOpen={() => go({ name: "album", releaseId: r.id })}
                         onPlay={() => p.playQueue(r.trackIds.map((id) => c.trackById[id]).filter(Boolean))} />
                     ))}
@@ -92,7 +92,7 @@ export function EmptyCatalog({ go, offline, what }: { go: Go; offline?: boolean;
   return (
     <div className="empty">
       <span>{offline ? "Can't reach the Milk Crate server right now. Check your internet connection." : `${what} Make an artist page and be the first.`}</span>
-      {!offline && <Button size="sm" variant="primary" onClick={() => go({ name: "upload" })}>For artists</Button>}
+      {!offline && <Button size="sm" variant="primary" onClick={() => go({ name: "upload" })}>For Artists</Button>}
     </div>
   );
 }

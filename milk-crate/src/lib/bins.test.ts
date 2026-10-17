@@ -3,13 +3,13 @@ import { buildBins, milesLabel } from "./bins";
 import { sceneFor, type Place } from "./geo";
 import type { Artist, Release } from "./types";
 
-const P = (name: string, lat: number, lng: number, pop = 100000): Place => ({ name, state: "NC", lat, lng, pop });
+const P = (name: string, lat: number, lng: number, pop = 100000): Place => ({ name, state: "NC", country: "US", lat, lng, pop });
 const durham = P("Durham", 35.994, -78.8986, 283506);
 const chapelHill = P("Chapel Hill", 35.9132, -79.0558);
 const raleigh = P("Raleigh", 35.7721, -78.6386, 467665);
 const charlotte = P("Charlotte", 35.2271, -80.8431, 874579);
 const hillsborough = P("Hillsborough", 36.0754, -79.0997, 9000);
-const boston: Place = { name: "Boston", state: "MA", lat: 42.36, lng: -71.06, pop: 675647 };
+const boston: Place = { name: "Boston", state: "MA", country: "US", lat: 42.36, lng: -71.06, pop: 675647 };
 const places = [durham, chapelHill, raleigh, charlotte, hillsborough, boston];
 
 const artist = (id: string, name: string): Artist => ({ id, name, place: "", status: "approved", genres: [], bio: "", accent: "#888888", since: 2026, page: {} });

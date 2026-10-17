@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shuffle, weightedShuffle } from "./shuffle";
+import { shuffle, songWeight, weightedShuffle } from "./shuffle";
 import type { Rating } from "./types";
 
 // Small deterministic PRNG so tests are repeatable.
@@ -14,28 +14,33 @@ function mulberry32(seed: number) {
 }
 
 describe("weightedShuffle", () => {
-  const tracks: { id: string; rating: Rating }[] = [
+  // Album stars, plus one favorite song.
+  const tracks: { id: string; rating: Rating; fav?: boolean }[] = [
     { id: "five", rating: 5 },
     { id: "one", rating: 1 },
     { id: "unrated", rating: 0 },
     { id: "three", rating: 3 },
+    { id: "fav", rating: 1, fav: true },
   ];
+  const w = (t: (typeof tracks)[number]) => songWeight(!!t.fav, t.rating);
 
   it("keeps every track exactly once", () => {
-    const out = weightedShuffle(tracks, (t) => t.rating, mulberry32(1));
+    const out = weightedShuffle(tracks, w, mulberry32(1));
     expect(out.map((t) => t.id).sort()).toEqual(tracks.map((t) => t.id).sort());
   });
 
-  it("puts five-star tracks first far more often than one-star tracks", () => {
+  it("puts favorites and five-star albums first far more often than one-star albums", () => {
     const rand = mulberry32(42);
     const firsts: Record<string, number> = {};
     for (let i = 0; i < 5000; i++) {
-      const id = weightedShuffle(tracks, (t) => t.rating, rand)[0].id;
+      const id = weightedShuffle(tracks, w, rand)[0].id;
       firsts[id] = (firsts[id] ?? 0) + 1;
     }
     expect(firsts.five).toBeGreaterThan(firsts.three);
     expect(firsts.three).toBeGreaterThan(firsts.one);
-    expect(firsts.five / (firsts.one ?? 1)).toBeGreaterThan(8);
+    expect(firsts.five / (firsts.one ?? 1)).toBeGreaterThan(6);
+    // A favorite on a one-star album still beats the five-star album's songs.
+    expect(firsts.fav).toBeGreaterThan(firsts.five);
   });
 });
 

@@ -74,6 +74,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       live = false;
     };
   }, [glass, seeThrough]);
+  // Windows: a title bar that matches the app (in every mode), not the system accent color.
+  useEffect(() => {
+    if (!isDesktop() || /Mac/i.test(navigator.userAgent)) return;
+    void colorTitleBar(theme);
+  }, [theme]);
   return (
     <SettingsContext.Provider value={{ theme, setTheme, matchAlbum, setMatchAlbum, glass, setGlass, seeThrough, setSeeThrough, accentColor, setAccentColor, transparency, setTransparency, frostTexture, setFrostTexture }}>
       {children}
@@ -92,7 +97,8 @@ export function useSettings() {
 /** Glass tint opacities at the default transparency, per theme. */
 const TINTS = {
   dark: { veil: 0.4, bar: 0.68, main: 0.56, panel: 0.68, mainSeeThrough: 0.5 },
-  light: { veil: 0.38, bar: 0.66, main: 0.55, panel: 0.6, mainSeeThrough: 0.45 },
+  // Light glass is lighter-handed than dark, so the colors come through and it's easier on the eyes.
+  light: { veil: 0.26, bar: 0.5, main: 0.4, panel: 0.46, mainSeeThrough: 0.34 },
 } as const;
 
 /**
@@ -106,9 +112,30 @@ export function tintScale(transparency: number) {
 }
 
 function applyGlassTints(theme: "dark" | "light", transparency: number) {
-  // Light glass lets bright colors through more, so it doesn't clear quite as far.
-  const k = theme === "light" ? Math.max(0.92, tintScale(transparency)) : tintScale(transparency);
+  // Light glass stays more see-through than dark even fully frosted (at most ×1.25), and doesn't clear
+  // quite as far (bright colors come through light glass more).
+  const k = theme === "light" ? Math.min(1.25, Math.max(0.92, tintScale(transparency))) : tintScale(transparency);
   const root = document.documentElement.style;
   for (const [name, a] of Object.entries(TINTS[theme])) root.setProperty(`--a-${name}`, String(Math.min(0.97, +(a * k).toFixed(3))));
 }
 
+/** COLORREF (0x00BBGGRR) from "#rrggbb". */
+const colorRef = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return ((n & 0xff) << 16) | (n & 0xff00) | ((n >> 16) & 0xff);
+};
+const SYSTEM_DEFAULT = 0xffffffff;
+
+/**
+ * Windows paints the title bar in the system accent color (often bright blue)
+ * when "Show accent color on title bars" is on. Paint it the app's own ground
+ * and ink instead; `null` gives it back to the system.
+ */
+async function colorTitleBar(theme: "dark" | "light" | null) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const [ground, ink] = theme === "light" ? ["#f3eee5", "#1b1714"] : ["#13110f", "#f3ede3"];
+  const args = theme
+    ? { caption: colorRef(ground), text: colorRef(ink), border: colorRef(ground) }
+    : { caption: SYSTEM_DEFAULT, text: SYSTEM_DEFAULT, border: SYSTEM_DEFAULT };
+  await invoke("set_title_bar_colors", args).catch(() => {});
+}

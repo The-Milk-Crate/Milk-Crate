@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milk Crate</title>
+<meta name="description" content="Milk Crate: a nonprofit music app. Listen to the bands around you and far beyond.">
+<meta property="og:title" content="Milk Crate">
+<meta property="og:description" content="Listen on Milk Crate.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#13110f">
+<link rel="icon" href="mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+<!--
+  Milk Crate share page (GitHub Pages). Shared links look like
+    …/?album=<id>   …/?artist=<id>   …/?scene=NC/Durham   …/?scene=CA/ON/Toronto
+  It shows what was shared (read from the Milk Crate server with the public,
+  read-only key the app ships with) and opens it in the app via milkcrate://.
+  Keep SERVER and KEY in step with milk-crate/src/config.ts.
+-->
+<style>
+  :root { --ground: #13110f; --panel: #1d1a17; --ink: #f3ede3; --muted: #b9b0a3; --line: rgba(243, 237, 227, .12); --accent: #cfb1f8; --on-accent: #1b1430; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --ground: #f3eee5; --panel: #fbf8f2; --ink: #1b1714; --muted: #5c544a; --line: rgba(27, 23, 20, .12); --accent: #6c4ab3; --on-accent: #fff; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { min-height: 100vh; background: var(--ground); color: var(--ink); font: 16px/1.5 Archivo, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 24px 16px 48px; }
+  header { width: 100%; max-width: 720px; display: flex; align-items: center; gap: 10px; }
+  header img { width: 28px; height: 28px; }
+  .word { font-family: "Archivo Black", sans-serif; letter-spacing: .02em; text-transform: uppercase; font-size: 18px; color: var(--accent); }
+  main { width: 100%; max-width: 720px; margin-top: 48px; display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .cover { width: 260px; max-width: 100%; aspect-ratio: 1; border-radius: 14px; flex: none; background: var(--panel); background-size: cover; background-position: center; box-shadow: 0 18px 40px rgba(0, 0, 0, .35); display: grid; place-items: center; }
+  .cover.swatch { background-image: none; }
+  .cover.swatch span { font-family: "Archivo Black", sans-serif; font-size: 64px; color: rgba(0, 0, 0, .55); }
+  .info { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: "Archivo Black", sans-serif; font-size: clamp(32px, 6vw, 52px); line-height: 1.02; margin: 0; overflow-wrap: anywhere; }
+  .by { font-size: 18px; font-weight: 600; margin: 0; }
+  .muted { color: var(--muted); }
+  .soon { align-self: flex-start; padding: 4px 12px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 22%, transparent); color: var(--accent); font-weight: 600; font-size: 14px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .note { font-size: 14px; }
+  footer { width: 100%; max-width: 720px; margin-top: auto; padding-top: 64px; font-size: 13px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header><img src="mark.svg" alt=""><span class="word">Milk Crate</span></header>
+<main id="main" aria-live="polite">
+  <div class="info"><span class="eyebrow">Loading…</span></div>
+</main>
+<footer class="muted">
+  Milk Crate is a nonprofit music app for local scenes: real towns on a real map, no charts, no ads.
+  <a href="https://github.com/The-Milk-Crate/Milk-Crate/releases/latest">Get it free for Windows and Mac</a>.
+</footer>
+<script>
+  const SERVER = "https://dpnkngadsewzrkedlwmi.supabase.co";
+  const KEY = "sb_publishable_XU6XAR4PCvNBJbPIlDxiFQ_4mbxrAN_";
+  const DOWNLOAD = "https://github.com/The-Milk-Crate/Milk-Crate/releases/latest";
+  const REGIONS = { CA: "Canada", AU: "Australia" };
+
+  const main = document.getElementById("main");
+  const q = new URLSearchParams(location.search);
+  const isId = (v) => /^[0-9a-f-]{36}$/i.test(v || "");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const safeImg = (u) => (typeof u === "string" && u.startsWith(SERVER + "/storage/v1/object/public/") ? u : null);
+  const safeColor = (c) => (/^#[0-9a-f]{6}$/i.test(c || "") ? c : "#c2b1f8");
+
+  async function get(path) {
+    const res = await fetch(`${SERVER}/rest/v1/${path}`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
+    if (!res.ok) throw new Error(String(res.status));
+    return res.json();
+  }
+
+  function render({ eyebrow, title, by, art, color, letter, soon, deepLink, what }) {
+    document.title = `${title} · Milk Crate`;
+    const cover = art
+      ? `<div class="cover" role="img" aria-label="${esc(title)} cover" style="background-image:url('${esc(art)}')"></div>`
+      : `<div class="cover swatch" aria-hidden="true" style="background:${safeColor(color)}"><span>${esc(letter || "")}</span></div>`;
+    main.innerHTML = `${cover}
+      <div class="info">
+        <span class="eyebrow">${esc(eyebrow)}</span>
+        <h1>${esc(title)}</h1>
+        ${by ? `<p class="by">${esc(by)}</p>` : ""}
+        ${soon ? `<span class="soon">${esc(soon)}</span>` : ""}
+        <div class="actions">
+          <a class="btn primary" href="${esc(deepLink)}">Open in Milk Crate</a>
+          <a class="btn" href="${DOWNLOAD}">Get Milk Crate</a>
+        </div>
+        <p class="note muted">"Open in Milk Crate" opens ${esc(what)} in the app. Don't have it yet? It's free for Windows and Mac.</p>
+      </div>`;
+  }
+  function notFound(msg) {
+    main.innerHTML = `<div class="info"><span class="eyebrow">Milk Crate</span><h1>Milk Crate.</h1>
+      <p class="muted">${esc(msg || "A nonprofit music app. No ads.")}</p>
+      <div class="actions"><a class="btn primary" href="${DOWNLOAD}">Get Milk Crate</a></div></div>`;
+  }
+  const releaseDay = (iso) => new Date(iso).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+
+  (async () => {
+    try {
+      if (isId(q.get("album"))) {
+        const id = q.get("album");
+        const [r] = await get(`releases?id=eq.${id}&select=title,kind,year,art_url,release_at,artists(name,place,accent)`);
+        if (!r) return notFound("This album isn't on Milk Crate any more.");
+        const a = r.artists || {};
+        const soon = r.release_at && Date.parse(r.release_at) > Date.now() ? `Out ${releaseDay(r.release_at)}` : "";
+        render({ eyebrow: [r.kind, r.year, a.place].filter(Boolean).join(" · "), title: r.title, by: a.name, art: safeImg(r.art_url), color: a.accent,
+          letter: (r.title || "?")[0], soon, deepLink: `milkcrate://album/${id}`, what: "the album" });
+      } else if (isId(q.get("artist"))) {
+        const id = q.get("artist");
+        const [a] = await get(`artists?id=eq.${id}&select=name,place,genres,accent`);
+        if (!a) return notFound("This artist isn't on Milk Crate any more.");
+        render({ eyebrow: [a.place, (a.genres || []).slice(0, 2).join(", ")].filter(Boolean).join(" · "), title: a.name, color: a.accent,
+          letter: (a.name || "?")[0], deepLink: `milkcrate://artist/${id}`, what: "their page" });
+      } else if (q.get("scene")) {
+        const parts = q.get("scene").split("/").filter(Boolean);
+        const [country, state, town] = parts.length >= 3 ? parts : ["US", parts[0], parts.slice(1).join("/")];
+        if (!state || !town) return notFound();
+        const where = REGIONS[country] ? `${state}, ${REGIONS[country]}` : state;
+        render({ eyebrow: `The scene · ${where}`, title: town, by: "", color: "#c2b1f8", letter: town[0],
+          deepLink: `milkcrate://scene/${parts.map(encodeURIComponent).join("/")}`, what: `${town}'s bins` });
+      } else notFound();
+    } catch {
+      notFound("Couldn't reach Milk Crate right now. Try again in a minute.");
+    }
+  })();
+</script>
+</body>
+</html>

@@ -4,9 +4,11 @@ import { LIGHT_INK, cssUrl, inkOn, nameStyle, useNameFamily } from "../lib/artis
 
 /**
  * The banner at the top of an artist's page, with their name (or logo) set
- * inside it toward the bottom. Artists can give a wide and a vertical banner;
- * the page shows whichever matches the banner's current shape and
- * cross-fades between them as the window is resized.
+ * inside it toward the bottom. Artists can give a wide and a vertical banner:
+ * the wide one shows whenever the banner is wider than it is tall, the
+ * vertical one whenever it's taller, always as the artist set them (whatever
+ * shape the photos themselves are), cross-fading as the window is resized.
+ * With only one of them, it shows everywhere.
  *
  * `fill` makes the banner fill its parent (used for the previews in the designer).
  */
@@ -14,7 +16,6 @@ export function ArtistBanner({ artist, fill = false, headingLevel = 1 }: { artis
   const { page, accent } = artist;
   const box = useRef<HTMLDivElement>(null);
   const [boxRatio, setBoxRatio] = useState(16 / 9);
-  const [imgRatio, setImgRatio] = useState<{ wide?: number; tall?: number }>({});
   const family = useNameFamily(page);
 
   useEffect(() => {
@@ -30,24 +31,20 @@ export function ArtistBanner({ artist, fill = false, headingLevel = 1 }: { artis
 
   const wide = page.banner;
   const tall = page.bannerTall;
-  // Show the photo whose shape is closest to the banner's shape right now.
-  const distance = (r: number) => Math.abs(Math.log(boxRatio / r));
-  const showTall = wide && tall ? distance(imgRatio.tall ?? 9 / 16) < distance(imgRatio.wide ?? 16 / 9) : !!tall;
+  // The slot decides, not the photo: tall shapes get the vertical banner, wide shapes the wide one.
+  const showTall = !!tall && (!wide || boxRatio < 1);
   const hasPhoto = !!(wide || tall);
   const autoInk = hasPhoto ? LIGHT_INK : inkOn(accent);
   const showLogo = page.nameMode === "logo" && !!page.logo;
   const Heading = headingLevel === 1 ? "h1" : "h2";
-  const ratioOf = (img: HTMLImageElement) => img.naturalWidth / img.naturalHeight;
 
   return (
     <div ref={box} className={`artist-banner${hasPhoto ? "" : " plain"}${fill ? " fill" : ""}`} style={{ background: accent, color: autoInk }}>
       {wide && (
-        <img className={`artist-banner-img${showTall ? "" : " on"}`} src={wide} alt="" aria-hidden="true"
-          onLoad={(e) => { const r = ratioOf(e.currentTarget); setImgRatio((x) => ({ ...x, wide: r })); }} />
+        <img className={`artist-banner-img${showTall ? "" : " on"}`} src={wide} alt="" aria-hidden="true" />
       )}
       {tall && (
-        <img className={`artist-banner-img${showTall ? " on" : ""}`} src={tall} alt="" aria-hidden="true"
-          onLoad={(e) => { const r = ratioOf(e.currentTarget); setImgRatio((x) => ({ ...x, tall: r })); }} />
+        <img className={`artist-banner-img${showTall ? " on" : ""}`} src={tall} alt="" aria-hidden="true" />
       )}
       {hasPhoto && !page.noShade && <div className="artist-banner-shade" aria-hidden="true" />}
       <div className="artist-banner-text">

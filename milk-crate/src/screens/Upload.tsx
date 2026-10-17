@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Trash2, ImagePlus, Music } from "lucide-react";
+import { COUNTRY_NAMES } from "../lib/geo";
+import { Trash2, ImagePlus, Music, Pencil } from "lucide-react";
 import type { Go } from "../App";
 import { formatTime } from "../lib/format";
 import { useCatalog } from "../lib/catalog";
@@ -12,6 +13,8 @@ import { ArtistThumb } from "../components/ArtistBanner";
 import { PageDesigner } from "./PageDesigner";
 import { AuthForm } from "../components/AuthForm";
 import { CityPicker } from "../components/CityPicker";
+import { ReleaseDateField, shortReleaseDate } from "../components/ReleaseDate";
+import { isUpcoming } from "../lib/types";
 import { useLocation } from "../lib/location";
 import type { Place } from "../lib/geo";
 
@@ -39,7 +42,7 @@ function ArtistSignIn() {
   return (
     <div className="screen" style={{ maxWidth: 600 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span className="catalog eyebrow">For artists</span>
+        <span className="catalog eyebrow">For Artists</span>
         <h1 className="display-lg">Put your music in the crate</h1>
         <p className="muted">
           Artist accounts are separate from listener accounts. To keep Milk Crate full of real local artists (not a flood of uploads),
@@ -56,7 +59,7 @@ function ListenerSignedIn() {
   return (
     <div className="screen" style={{ maxWidth: 600 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span className="catalog eyebrow">For artists</span>
+        <span className="catalog eyebrow">For Artists</span>
         <h1 className="display-lg">This is a listener account</h1>
         <p className="muted">
           You're signed in as {auth.email}, a listener account. Artist accounts are separate: sign out, then apply to join as an artist with a different email.
@@ -92,9 +95,11 @@ function ArtistTools({ go }: { go: Go }) {
     try {
       await c.saveProfile({
       name: name.trim(),
-      place: `${city.name}, ${city.state}`,
+      // Outside the US the country is part of the label: "Perth, WA, Australia" (WA is Washington too).
+      place: city.country === "US" ? `${city.name}, ${city.state}` : `${city.name}, ${city.state}, ${COUNTRY_NAMES[city.country]}`,
       city: city.name,
       state: city.state,
+      country: city.country,
       lat: city.lat,
       lng: city.lng,
       genres: genre.split(",").map((g) => g.trim()).filter(Boolean),
@@ -114,6 +119,7 @@ function ArtistTools({ go }: { go: Go }) {
   const [kind, setKind] = useState<Release["kind"]>("EP");
   const [year, setYear] = useState(new Date().getFullYear());
   const [art, setArt] = useState<string | null>(null);
+  const [releaseAt, setReleaseAt] = useState<string | null>(null);
   const [tracks, setTracks] = useState<DraftTrack[]>([]);
   const [rights, setRights] = useState(false);
   const [releaseError, setReleaseError] = useState("");
@@ -141,7 +147,7 @@ function ArtistTools({ go }: { go: Go }) {
     setReleaseError("");
     try {
       await c.publishRelease(
-        { title: title.trim(), kind, year, art: art ?? undefined },
+        { title: title.trim(), kind, year, art: art ?? undefined, releaseAt: releaseAt ?? undefined },
         tracks.map((t) => ({ title: t.title.trim(), duration: t.duration, src: t.src })),
         setProgress,
       );
@@ -151,6 +157,7 @@ function ArtistTools({ go }: { go: Go }) {
     }
     setTitle("");
     setArt(null);
+    setReleaseAt(null);
     setTracks([]);
     setRights(false);
     go({ name: "artist", artistId: me.id });
@@ -162,11 +169,11 @@ function ArtistTools({ go }: { go: Go }) {
   return (
     <div className="screen" style={{ maxWidth: 960 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span className="catalog eyebrow">For artists</span>
+        <span className="catalog eyebrow">For Artists</span>
         <h1 className="display-lg">{approved ? "Put your music in the crate" : me ? "Your application" : "Apply to join Milk Crate"}</h1>
         <p className="muted" style={{ maxWidth: 600 }}>
           {approved
-            ? "Upload a release. Listeners can stream it, rate it, and find you as a dot on your scene's map, in your color."
+            ? "Upload a release. Listeners can stream it, rate the album, favorite its songs, and find you as a dot on your scene's map, in your color."
             : me
               ? "While we review your application, you can polish your profile and design your page. Only you can see them until you're approved."
               : "Step 1: your artist profile. Step 2: tell us where to hear your music. A Milk Crate reviewer will take a look."}
@@ -195,6 +202,7 @@ function ArtistTools({ go }: { go: Go }) {
               <span className="caption muted">{[me.place, me.genres.join(", ")].filter(Boolean).join(" · ")}</span>
             </div>
             <Button size="sm" variant="ghost" onClick={() => go({ name: "artist", artistId: me.id })}>View your page</Button>
+            <Button size="sm" variant="ghost" onClick={() => go({ name: "stats" })}>Your stats</Button>
           </div>
         ) : (
           <>
@@ -273,6 +281,7 @@ function ArtistTools({ go }: { go: Go }) {
                 <input type="number" value={year} min={1900} max={2100} onChange={(e) => setYear(Number(e.target.value))} />
               </label>
             </div>
+            <ReleaseDateField value={releaseAt} onChange={setReleaseAt} />
           </div>
         </div>
 
@@ -315,7 +324,8 @@ function ArtistTools({ go }: { go: Go }) {
 
         {releaseError && <p role="alert" className="form-error">{releaseError}</p>}
         <div>
-          <Button variant="primary" onClick={publish} disabled={!!progress}>{progress || "Publish release"}</Button>
+          <Button variant="primary" onClick={publish} disabled={!!progress}>{progress || (releaseAt ? `Schedule for ${shortReleaseDate(releaseAt)}` : "Publish release")}</Button>
+          {!progress && <p className="caption muted" style={{ marginTop: 8 }}>Add lyrics and credits after publishing, with Edit on the release.</p>}
         </div>
       </section>
 
@@ -334,7 +344,7 @@ function ArtistTools({ go }: { go: Go }) {
             {c.myReleases.map((r) => (
               <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <ReleaseCard title={r.title} artist={r.kind} year={r.year} art={r.art} seed={sleeveSeed(r.title, me?.name ?? "")}
-                  sticker="Yours" stickerTone="crate" onOpen={() => me && go({ name: "artist", artistId: me.id })} />
+                  sticker={isUpcoming(r) ? `Out ${shortReleaseDate(r.releaseAt!)}` : "Yours"} stickerTone={isUpcoming(r) ? "accent" : "crate"} onOpen={() => go({ name: "album", releaseId: r.id })} />
                 {pendingRemove === r.id ? (
                   <div style={{ display: "flex", gap: 8 }}>
                     <Button size="sm" onClick={async () => {
@@ -344,9 +354,14 @@ function ArtistTools({ go }: { go: Go }) {
                     <Button size="sm" variant="ghost" onClick={() => setPendingRemove(null)}>Keep</Button>
                   </div>
                 ) : (
-                  <Button size="sm" variant="ghost" onClick={() => setPendingRemove(r.id)}>
-                    <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" /> Remove
-                  </Button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button size="sm" onClick={() => go({ name: "editRelease", releaseId: r.id })}>
+                      <Pencil size={14} strokeWidth={1.75} aria-hidden="true" /> Edit
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setPendingRemove(r.id)}>
+                      <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" /> Remove
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}
