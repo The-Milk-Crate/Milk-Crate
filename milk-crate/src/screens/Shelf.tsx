@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
 import { useCatalog } from "../lib/catalog";
@@ -125,7 +125,7 @@ const SIZES: Record<ShelfFormat, { w: number; h: number; strip: number; one: str
   vinyl: { w: 260, h: 260, strip: 44, one: "record" },
   "45s": { w: 190, h: 190, strip: 40, one: "45" },
   cds: { w: 232, h: 206, strip: 40, one: "CD" },
-  cassettes: { w: 150, h: 236, strip: 36, one: "tape" },
+  cassettes: { w: 256, h: 164, strip: 44, one: "tape" },
 };
 const GROW = 1.3;
 /** How many on each side are drawn (the rest are hidden behind them anyway). */
@@ -137,6 +137,21 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
     axis: "x", step: size.strip,
     onFlip: () => flipSound(kind === "cds" ? "case" : kind === "cassettes" ? "tape" : "sleeve"),
   });
+  // Arrow keys flip anywhere on the page (not while typing; Alt+arrows go back and forward).
+  const flip = useRef(setIndex);
+  flip.current = setIndex;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if ((e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -1, ArrowDown: 1 }[e.key];
+      if (!step || (e.key.startsWith("ArrowU") || e.key.startsWith("ArrowD")) && !(e.target as HTMLElement)?.closest?.(".flat-stage")) return;
+      e.preventDefault();
+      flip.current((i) => i + step);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const front = items[index];
   if (!front) return null;
   const big = (size.w * GROW - size.w) / 2;
@@ -147,7 +162,9 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
       <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
         <div className="flat-stage" tabIndex={0} role="group" aria-roledescription="stack"
           aria-label={`${items.length} ${size.one}s. Scroll, drag or use the arrow keys to flip.`}
-          style={{ height: stageH }} {...handlers}>
+          style={{ height: stageH }} onWheel={handlers.onWheel} onPointerDown={handlers.onPointerDown} onPointerMove={handlers.onPointerMove}
+          onPointerUp={handlers.onPointerUp} onPointerCancel={handlers.onPointerCancel}
+          onKeyDown={(e) => { if (e.key === "Home" || e.key === "End") handlers.onKeyDown(e); }}>
           {items.map((it, i) => {
             const j = i - index;
             if (Math.abs(j) > SHOWN) return null;
@@ -177,7 +194,7 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
           <button type="button" className="mc-icon-btn flat-step" aria-label="Next" disabled={index >= items.length - 1} onClick={() => setIndex(index + 1)}>
             <ChevronRight size={20} aria-hidden="true" />
           </button>
-          <span className="caption muted">Scroll, drag or use the arrow keys to flip</span>
+          <span className="caption muted">Use the ← → keys, scroll or drag to flip</span>
         </div>
       </div>
       <Holding it={front} go={go} />
@@ -201,6 +218,22 @@ function Cover({ it, kind }: { it: ShelfItem; kind: ShelfFormat }) {
       <span className="cd-case">
         <span className="cd-hinge" />
         <Sleeve src={it.art} seed={it.seed} alt="" />
+      </span>
+    );
+  if (kind === "cassettes")
+    return (
+      <span className="tape">
+        <span className="tape-screw s1" /><span className="tape-screw s2" /><span className="tape-screw s3" /><span className="tape-screw s4" />
+        <span className="tape-label">
+          {/* The album cover, turned sideways to fill the label. */}
+          <span className="tape-art"><Sleeve src={it.art} seed={it.seed} alt="" /></span>
+          <span className="tape-window">
+            <span className="tape-reel full" />
+            <span className="tape-ribbon" />
+            <span className="tape-reel" />
+          </span>
+        </span>
+        <span className="tape-foot"><i /><i /><i /><i /></span>
       </span>
     );
   return <Sleeve src={it.art} seed={it.seed} alt="" />;
