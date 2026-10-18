@@ -1287,8 +1287,11 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 /* The cover makes room: the stage starts after the panel, and the cover (or lyrics) shrinks to fit. */
 .immersive-stage { transition: padding .65s cubic-bezier(.22, 1, .36, 1), max-width .65s cubic-bezier(.22, 1, .36, 1), gap .65s cubic-bezier(.22, 1, .36, 1); }
 .immersive-stage > .mc-sleeve, .immersive-lyrics { transition: width .65s cubic-bezier(.22, 1, .36, 1), box-shadow .65s ease; }
-.immersive.lib-open .immersive-stage { max-width: 100vw; padding-left: 440px; padding-right: 48px; gap: 48px; }
-.immersive.lib-open .immersive-stage > .mc-sleeve, .immersive.lib-open .immersive-lyrics { width: max(220px, min(54vh, calc(100vw - 976px), 560px)); }
+/* Equal space on each side of the cover: panel → cover, cover → card, card → window edge. The panel ends
+   400px in (16px margin + 384px wide) and the card is 440px wide; the rest is split three ways. */
+.immersive.lib-open { --lib-cover: max(220px, min(54vh, calc(100vw - 984px), 560px)); --lib-gap: calc((100vw - 841px - var(--lib-cover)) / 3); }
+.immersive.lib-open .immersive-stage { max-width: 100vw; padding-left: calc(400px + var(--lib-gap)); padding-right: var(--lib-gap); gap: var(--lib-gap); }
+.immersive.lib-open .immersive-stage > .mc-sleeve, .immersive.lib-open .immersive-lyrics { width: var(--lib-cover); }
 .immersive.lib-open .immersive-stage > .mc-sleeve { box-shadow: 0 22px 60px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .1); }
 /* A frosted sheen sweeps across the cover while it resizes, and the cover frosts over for a moment. */
 .immersive-stage > .mc-sleeve::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
