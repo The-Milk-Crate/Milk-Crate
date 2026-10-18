@@ -30,8 +30,10 @@ pub fn write(path: &Path, samples: &[i32], tags: &Tags, cover: Option<(&str, &[u
     let mut sink = flacenc::bitsink::ByteSink::new();
     stream.write(&mut sink).map_err(|e| format!("Couldn't encode FLAC: {e:?}"))?;
 
+    let mut bytes = sink.as_slice().to_vec();
+    fix_min_block_size(&mut bytes);
     let part = path.with_extension("flac.part");
-    std::fs::write(&part, sink.as_slice()).map_err(|e| format!("Couldn't save {}: {e}", path.display()))?;
+    std::fs::write(&part, &bytes).map_err(|e| format!("Couldn't save {}: {e}", path.display()))?;
     let tagged = (|| {
         let mut tag = metaflac::Tag::read_from_path(&part).map_err(|e| e.to_string())?;
         let mut set = |k: &str, v: &str| {
@@ -63,6 +65,40 @@ pub fn write(path: &Path, samples: &[i32], tags: &Tags, cover: Option<(&str, &[u
         return Err(format!("Couldn't tag {}: {e}", path.display()));
     }
     std::fs::rename(&part, path).map_err(|e| format!("Couldn't save {}: {e}", path.display()))
+}
+
+/// The encoder counts a song's short last block in STREAMINFO's "minimum block size". When that
+/// block is under 16 samples the header looks invalid to some decoders (Windows' WebView2 among
+/// them: the song sat at 0:00 in Milk Crate while other players were fine). The spec leaves the
+/// last block out of the minimum, so it's set to the maximum (every other block's size).
+/// Returns true if it changed anything.
+pub fn fix_min_block_size(head: &mut [u8]) -> bool {
+    // "fLaC", then the STREAMINFO block header (4 bytes), then min (2 bytes) and max (2 bytes).
+    if head.len() < 12 || &head[..4] != b"fLaC" || head[4] & 0x7f != 0 {
+        return false;
+    }
+    let min = u16::from_be_bytes([head[8], head[9]]);
+    let max = u16::from_be_bytes([head[10], head[11]]);
+    if min >= 16 || max < 16 {
+        return false;
+    }
+    head[8] = head[10];
+    head[9] = head[11];
+    true
+}
+
+/// Repairs a FLAC file saved before `fix_min_block_size` existed, in place (two bytes of its header).
+/// Returns true if the file was changed.
+pub fn repair_file(path: &Path) -> std::io::Result<bool> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let mut f = std::fs::OpenOptions::new().read(true).write(true).open(path)?;
+    let mut head = [0u8; 12];
+    if f.read(&mut head)? < 12 || !fix_min_block_size(&mut head) {
+        return Ok(false);
+    }
+    f.seek(SeekFrom::Start(8))?;
+    f.write_all(&head[8..10])?;
+    Ok(true)
 }
 
 /// A name that's safe as a file or folder on Windows and Mac.
@@ -98,6 +134,30 @@ pub fn track_file(n: u32, title: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn short_last_block_is_left_out_of_the_minimum() {
+        let mut h = *b"fLaC\x00\x00\x00\x22\x00\x04\x10\x00";
+        assert!(super::fix_min_block_size(&mut h));
+        assert_eq!(&h[8..12], &[0x10, 0x00, 0x10, 0x00]);
+        assert!(!super::fix_min_block_size(&mut h), "already fine");
+        let mut not_flac = *b"RIFF\x00\x00\x00\x22\x00\x04\x10\x00";
+        assert!(!super::fix_min_block_size(&mut not_flac));
+    }
+
+    #[test]
+    fn written_files_have_a_valid_minimum() {
+        // 4096 * 3 + 4 samples per channel: the last block is 4 samples long.
+        let n = 4096 * 3 + 4;
+        let samples: Vec<i32> = (0..n * 2).map(|i| ((i as f64 * 0.01).sin() * 8000.0) as i32).collect();
+        let dir = std::env::temp_dir().join(format!("cdrip-minblk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.flac");
+        super::write(&path, &samples, &super::Tags { title: "t".into(), track: 1, tracks: 1, disc: 1, discs: 1, ..Default::default() }, None).unwrap();
+        let b = std::fs::read(&path).unwrap();
+        assert!(u16::from_be_bytes([b[8], b[9]]) >= 16);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     use super::*;
 
     #[test]

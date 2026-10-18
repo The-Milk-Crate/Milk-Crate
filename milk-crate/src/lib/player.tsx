@@ -20,7 +20,7 @@ import { shuffle, songWeight, weightedShuffle } from "./shuffle";
 import { load, save, usePersistentState } from "./storage";
 import { useAuth } from "./auth";
 import { mergeHistory, useAccountHistory, type Play } from "./history";
-import { isDesktop, isPersistable, readLocalSong } from "./localFiles";
+import { isDesktop, isPersistable, readLocalSong, repairFlacFiles } from "./localFiles";
 import { computerKey, fileArtist, loadComputerTracks } from "./fileTags";
 import type { Track } from "./types";
 import { attempt, useLibrary } from "./library";
@@ -42,6 +42,8 @@ const QUEUE_KEY = "mc.queue";
 /** A CD ripped on this computer: its album in Your Computer, and when it was ripped. */
 export interface RippedCd { key: string; at: number }
 const rippedKey = (userId?: string) => (userId ? `mc.rippedCds.${userId}` : "mc.rippedCds");
+
+const FLAC_FIX_KEY = "mc.flacHeaderFix1";
 
 interface PlayerState {
   current?: Track;
@@ -190,6 +192,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const localTracks = useMemo(() => [...stored, ...sessionTracks], [stored, sessionTracks]);
 
+  // Once: fix the header of FLAC files ripped before Milk Crate wrote it correctly
+  // (a song with a very short last block wouldn't play). Only two bytes change, only when needed.
+  const swept = useRef(false);
+  useEffect(() => {
+    if (swept.current || !stored.length || load<boolean>(FLAC_FIX_KEY, false)) return;
+    swept.current = true;
+    const paths = stored.filter((t) => t.id.startsWith("local:")).map((t) => t.id.slice(6));
+    void repairFlacFiles(paths).then(() => save(FLAC_FIX_KEY, true));
+  }, [stored]);
+
   // Remember what's played (once per track start).
   const currentId = current?.id;
   useEffect(() => {
@@ -259,6 +271,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (rescued || !live) return;
           rescued = true;
           window.clearTimeout(timer);
+          // Fix the file on disk too (if it needs it), so next time it plays straight away.
+          void repairFlacFiles([path]);
           void readLocalSong(path).then((url) => {
             if (!live) { URL.revokeObjectURL(url); return; }
             blobUrl.current = url;

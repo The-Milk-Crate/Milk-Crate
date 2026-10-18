@@ -19,11 +19,27 @@ async fn read_audio_file(path: String) -> Result<tauri::ipc::Response, String> {
     if !AUDIO.contains(&ext.as_str()) {
         return Err("Not a song file".into());
     }
-    let bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(&p))
+    let mut bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(&p))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("Couldn't read {path}: {e}"))?;
+    cdrip::flac::fix_min_block_size(&mut bytes);
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Repairs the header of FLAC files ripped before the fix in `cdrip::flac::fix_min_block_size`
+/// (a song with a very short last block wouldn't play). Returns the files it changed.
+#[tauri::command]
+async fn repair_flac_files(paths: Vec<String>) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .filter(|p| p.to_ascii_lowercase().ends_with(".flac"))
+            .filter(|p| cdrip::flac::repair_file(std::path::Path::new(p)).unwrap_or(false))
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -162,6 +178,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_title_bar_colors,
             read_audio_file,
+            repair_flac_files,
             cd::cd_discs,
             cd::cd_lookup,
             cd::cd_cover,

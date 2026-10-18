@@ -71,6 +71,13 @@ export async function readLocalSong(path: string): Promise<string> {
   return URL.createObjectURL(new Blob([bytes], { type: MIME[ext] ?? "audio/*" }));
 }
 
+/** Desktop: fixes the header of FLAC files that some decoders refuse (see repair_flac_files). Returns the ones fixed. */
+export async function repairFlacFiles(paths: string[]): Promise<string[]> {
+  if (!isDesktop() || !paths.length) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string[]>("repair_flac_files", { paths }).catch(() => []);
+}
+
 /** Object URLs from browser dev mode don't survive a reload, so only desktop tracks are persisted. */
 export const isPersistable = (track: Track) => !track.src?.startsWith("blob:");
 
