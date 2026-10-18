@@ -9,6 +9,7 @@ import { formatTime } from "../lib/format";
 import { sleeveSeed } from "../lib/sleeve";
 import { KIND_LABEL, buildCrate, byRecentlyPlayed, type CrateEntry } from "../lib/crate";
 import { fileArtist, useFileCover } from "../lib/fileTags";
+import { useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
 import type { Track } from "../lib/types";
 import { Button, PlayButton, ReleaseCard, Sleeve, Sticker, TrackRow, useAllDownloaded, DownloadedMark } from "../components/ui";
 import { AddToPlaylist } from "../components/AddToPlaylist";
@@ -88,16 +89,18 @@ function CrateHome({ go }: { go: Go }) {
   const singles = crate.filter((e) => e.kind !== "album");
   const favorites = useFavoriteTracks();
   const recent = useRecentSongs();
+  // CDs you ripped count as albums too (they play from this computer).
+  const ripped = useRippedAlbums();
   const everything = useMemo(() => {
     const ids = new Set([...crate.flatMap((e) => e.trackIds), ...lib.favorites]);
-    return [...ids].map((id) => c.trackById[id]).filter(Boolean);
-  }, [crate, lib.favorites, c.trackById]);
+    return [...[...ids].map((id) => c.trackById[id]).filter(Boolean), ...ripped.flatMap((a) => a.tracks)];
+  }, [crate, lib.favorites, c.trackById, ripped]);
 
   return (
     <div className="screen">
       <header className="screen-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span className="catalog eyebrow">{plural(albums.length, "album")} · {plural(singles.length, "single")} · {plural(favorites.length, "favorite")}</span>
+          <span className="catalog eyebrow">{plural(albums.length + ripped.length, "album")} · {plural(singles.length, "single")} · {plural(favorites.length, "favorite")}</span>
           <h1 className="display-lg">Your Crate</h1>
         </div>
         <Button variant="primary" onClick={() => p.shuffleAll(everything)} disabled={!everything.length}>
@@ -112,8 +115,9 @@ function CrateHome({ go }: { go: Go }) {
         </div>
       )}
 
-      <CrateShelf title="Albums" count={albums.length} onOpen={() => go({ name: "crate", tab: "albums" })}>
+      <CrateShelf title="Albums" count={albums.length + ripped.length} onOpen={() => go({ name: "crate", tab: "albums" })}>
         {albums.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
+        {ripped.slice(0, Math.max(0, 12 - albums.length)).map((a) => <RippedTile key={a.key} album={a} go={go} />)}
       </CrateShelf>
 
       <CrateShelf title="Singles" count={singles.length} onOpen={() => go({ name: "crate", tab: "singles" })}>
@@ -194,6 +198,14 @@ function EntryTile({ entry: e, go }: { entry: CrateEntry; go: Go }) {
   );
 }
 
+/** A CD you ripped (Your Computer album), in the Albums row. */
+function RippedTile({ album: a, go }: { album: RippedAlbum; go: Go }) {
+  const p = usePlayer();
+  const cover = useFileCover(a.cover);
+  return <Tile art={cover} seed={sleeveSeed(a.title, a.artist)} title={a.title} sub={a.artist} sticker="CD"
+    onOpen={() => go({ name: "computer", album: a.key })} onPlay={() => p.playQueue(a.tracks)} />;
+}
+
 function SongTile({ track: t, onPlay }: { track: Track; onPlay: () => void }) {
   const c = useCatalog();
   const r = c.releaseById[t.releaseId];
@@ -237,10 +249,20 @@ function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
   const [sort, setSort] = usePersistentState<EntrySort>(`mc.crateSort.${kind}`, "played");
   const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
   const artistOf = (e: CrateEntry) => c.artistById[e.release.artistId]?.name ?? "";
-  const list = crate.filter((e) => (kind === "albums" ? e.kind === "album" : e.kind !== "album"));
-  if (sort === "added") list.sort((a, b) => b.addedAt - a.addedAt);
-  if (sort === "artist") list.sort((a, b) => byName(artistOf(a), artistOf(b)) || byName(a.release.title, b.release.title));
-  if (sort === "title") list.sort((a, b) => byName(a.release.title, b.release.title));
+  const ripped = useRippedAlbums();
+  const covers = useFileCovers(ripped.map((a) => a.cover));
+  // Albums in your crate and CDs you ripped, sorted together.
+  type Item = { crate: CrateEntry; cd?: undefined } | { cd: RippedAlbum; crate?: undefined };
+  const list: Item[] = [
+    ...crate.filter((e) => (kind === "albums" ? e.kind === "album" : e.kind !== "album")).map((e) => ({ crate: e })),
+    ...(kind === "albums" ? ripped.map((a) => ({ cd: a })) : []),
+  ];
+  const titleOf = (x: Item) => (x.crate ? x.crate.release.title : x.cd!.title);
+  const nameOf = (x: Item) => (x.crate ? artistOf(x.crate) : x.cd!.artist);
+  const addedOf = (x: Item) => (x.crate ? x.crate.addedAt : x.cd!.rippedAt);
+  if (sort === "added") list.sort((a, b) => addedOf(b) - addedOf(a));
+  if (sort === "artist") list.sort((a, b) => byName(nameOf(a), nameOf(b)) || byName(titleOf(a), titleOf(b)));
+  if (sort === "title") list.sort((a, b) => byName(titleOf(a), titleOf(b)));
 
   if (!list.length)
     return (
@@ -264,7 +286,16 @@ function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
         <span className="caption muted">{plural(list.length, kind === "albums" ? "album" : "single")}</span>
       </div>
       <div className="release-grid">
-        {list.map((e) => {
+        {list.map((x) => {
+          if (x.cd) {
+            const a = x.cd;
+            return (
+              <ReleaseCard key={`cd:${a.key}`} title={a.title} artist={a.artist} year={a.year} art={a.cover ? covers[a.cover] : undefined}
+                seed={sleeveSeed(a.title, a.artist)} sticker="CD" stickerTone="sticker"
+                onOpen={() => go({ name: "computer", album: a.key })} onPlay={() => p.playQueue(a.tracks)} />
+            );
+          }
+          const e = x.crate;
           const formats = lib.physical.filter((x) => x.releaseId === e.release.id).map((x) => (x.format === "7in" ? '7"' : x.format));
           const sticker = e.kind !== "album" ? KIND_LABEL[e.kind] : formats.length ? formats.join(" + ") : undefined;
           const tracks = tracksOf(e, c.trackById);

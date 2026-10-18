@@ -9,6 +9,7 @@ import { usePersistentState } from "../lib/storage";
 import { SHELF_SECTIONS, flipSound, ownedSections, setShelfSounds, shelfSoundsOn, sortShelf, spineColor, useFlipper, type ShelfSort } from "../lib/shelf";
 import type { PhysicalFormat, Release, Track } from "../lib/types";
 import { Button, PlayButton, Sleeve } from "../components/ui";
+import { useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
 
 /** One thing on your shelf, with what's needed to draw and play it. */
 interface ShelfItem {
@@ -22,12 +23,16 @@ interface ShelfItem {
   /** Paper and label color, for things with no cover. */
   color: string;
   tracks: Track[];
+  /** A CD you ripped: its album in Your Computer (local only, never shared). */
+  ripped?: RippedAlbum;
 }
 
 function useShelfItems(format?: PhysicalFormat): ShelfItem[] {
   const c = useCatalog();
   const lib = useLibrary();
-  return useMemo(() => lib.physical.filter((x) => !format || x.format === format).map((item) => {
+  const ripped = useRippedAlbums();
+  const covers = useFileCovers(ripped.map((a) => a.cover));
+  const owned = useMemo(() => lib.physical.filter((x) => !format || x.format === format).map((item) => {
     const release = item.releaseId ? c.releaseById[item.releaseId] : undefined;
     const a = release ? c.artistById[release.artistId] : undefined;
     const title = release?.title ?? item.title;
@@ -39,6 +44,14 @@ function useShelfItems(format?: PhysicalFormat): ShelfItem[] {
       tracks: (release?.trackIds ?? []).map((id) => c.trackById[id]).filter(Boolean),
     };
   }), [lib.physical, format, c.releaseById, c.artistById, c.trackById]);
+  const cds = useMemo(() => (format && format !== "CD" ? [] : ripped.map((a): ShelfItem => {
+    const seed = sleeveSeed(a.title, a.artist);
+    return {
+      item: { id: `ripped:${a.key}`, format: "CD", artistName: a.artist, title: a.title, note: "", addedAt: new Date(a.rippedAt).toISOString() },
+      title: a.title, artist: a.artist, year: a.year, art: a.cover ? covers[a.cover] : undefined, seed, color: spineColor(seed), tracks: a.tracks, ripped: a,
+    };
+  })), [ripped, covers, format]);
+  return useMemo(() => [...owned, ...cds], [owned, cds]);
 }
 
 /**
@@ -48,9 +61,8 @@ function useShelfItems(format?: PhysicalFormat): ShelfItem[] {
  * when you have something in them.
  */
 export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
-  const lib = useLibrary();
   const all = useShelfItems();
-  const sections = ownedSections(lib.physical.map((x) => x.format));
+  const sections = ownedSections(all.map((x) => x.item.format));
   const current = sections.find((s) => s.id === format) ?? sections[0];
   const [adding, setAdding] = useState(false);
   const [sounds, setSounds] = useState(shelfSoundsOn);
@@ -254,18 +266,20 @@ function Holding({ it, go }: { it: ShelfItem; go: Go }) {
       <h2 className="display-md shelf-holding-title">{it.title}</h2>
       <span className="muted">{it.artist}</span>
       {it.item.note && <span className="caption muted">{it.item.note}</span>}
+      {it.ripped && <span className="caption muted">Ripped to this computer · only you can see it</span>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
         {it.tracks.length > 0 ? (
           <>
             <PlayButton playing={playing} onClick={() => (it.tracks.some((t) => t.id === p.current?.id) ? p.toggle() : p.playQueue(it.tracks))} />
             {it.release && <Button size="sm" onClick={() => go({ name: "album", releaseId: it.release!.id })}>Album page</Button>}
+            {it.ripped && <Button size="sm" onClick={() => go({ name: "computer", album: it.ripped!.key })}>Open album</Button>}
           </>
         ) : (
           <span className="caption muted">{it.release ? "Coming soon on Milk Crate" : "Not on Milk Crate yet"}</span>
         )}
         {sure ? (
           <>
-            <Button size="sm" variant="ghost" onClick={() => void attempt(() => lib.removePhysical(it.item.id))}>Take it off your shelf</Button>
+            <Button size="sm" variant="ghost" onClick={() => (it.ripped ? p.removeRippedCd(it.ripped.key) : void attempt(() => lib.removePhysical(it.item.id)))}>Take it off your shelf</Button>
             <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep it</button>
           </>
         ) : (

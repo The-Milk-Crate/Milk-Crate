@@ -176,7 +176,7 @@ async function saveCover(key: string, blob: Blob): Promise<boolean> {
   return true;
 }
 
-async function getCover(key: string): Promise<string | null> {
+export async function getCover(key: string): Promise<string | null> {
   if (memo.has(key)) return memo.get(key)!;
   try {
     const db = await openDb();

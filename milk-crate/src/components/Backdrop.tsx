@@ -5,7 +5,7 @@ import { useCatalog } from "../lib/catalog";
 import { useSettings } from "../lib/settings";
 import { paletteFromImage, paletteFromSleeve } from "../lib/palette";
 import { sleeveSeed } from "../lib/sleeve";
-import { fileArtist } from "../lib/fileTags";
+import { fileArtist, getCover } from "../lib/fileTags";
 
 /**
  * Behind the frosted glass: once something plays, the album cover's colors
@@ -25,14 +25,20 @@ export function Backdrop({ immersive = false }: { immersive?: boolean }) {
   const t = p.current;
   const release = t ? c.releaseById[t.releaseId] : undefined;
   const artistName = t ? c.artistById[t.artistId]?.name ?? fileArtist(t) : "";
-  const key = !t ? null : release?.art ? `art:${release.art}` : release ? `sleeve:${sleeveSeed(release.title, artistName)}` : `track:${t.title}`;
+  // Your computer's songs (ripped CDs included) use the cover inside the file.
+  const key = !t ? null : release?.art ? `art:${release.art}` : release ? `sleeve:${sleeveSeed(release.title, artistName)}` : t.tags?.cover ? `file:${t.tags.cover}` : `track:${t.title}`;
   const [colors, setColors] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!key || !glass) return;
     let live = true;
     const fallback = () => paletteFromSleeve(key);
-    if (key.startsWith("art:")) {
+    if (key.startsWith("file:")) {
+      getCover(key.slice(5))
+        .then((url) => (url ? paletteFromImage(url) : []))
+        .then((p) => live && setColors(p.length ? p : fallback()))
+        .catch(() => live && setColors(fallback()));
+    } else if (key.startsWith("art:")) {
       paletteFromImage(key.slice(4))
         .then((p) => live && setColors(p.length ? p : fallback()))
         .catch(() => live && setColors(fallback()));

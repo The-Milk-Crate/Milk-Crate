@@ -39,6 +39,9 @@ export type { Play } from "./history";
 const HISTORY_LIMIT = 500;
 /** The queue (song ids and where you were), so it's still there after a restart. */
 const QUEUE_KEY = "mc.queue";
+/** A CD ripped on this computer: its album in Your Computer, and when it was ripped. */
+export interface RippedCd { key: string; at: number }
+const rippedKey = (userId?: string) => (userId ? `mc.rippedCds.${userId}` : "mc.rippedCds");
 
 interface PlayerState {
   current?: Track;
@@ -107,6 +110,10 @@ interface PlayerActions {
   /** Saves new details (tags read from the files) for files already added. */
   updateLocalTracks: (tracks: Track[]) => void;
   removeLocalTrack: (trackId: string) => void;
+  /** CDs ripped on this computer (by Your Computer album key), newest first. Kept on this computer only. */
+  rippedCds: RippedCd[];
+  addRippedCd: (key: string) => void;
+  removeRippedCd: (key: string) => void;
   setVolume: (v: number) => void;
   setMuted: (m: boolean) => void;
   setEqOn: (on: boolean) => void;
@@ -155,6 +162,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const stored = computer.tracks;
   const setStored = useCallback((f: (s: Track[]) => Track[]) => setComputer((c) => ({ ...c, tracks: f(c.tracks) })), []);
   const [sessionTracks, setSessionTracks] = useState<Track[]>([]);
+  // Ripped CDs: like Your Computer, each account on this computer has its own list, and it never leaves it.
+  const [ripped, setRipped] = useState(() => ({ user: auth.userId, cds: load<RippedCd[]>(rippedKey(auth.userId), []) }));
+  if (ripped.user !== auth.userId) setRipped({ user: auth.userId, cds: load<RippedCd[]>(rippedKey(auth.userId), []) });
+  useEffect(() => save(rippedKey(ripped.user), ripped.cds), [ripped]);
 
   const dl = useDownloads();
   const [radio, setRadio] = useState<{ name: string; fill: (avoid: Set<string>, lastArtist?: string) => Track[] } | null>(null);
@@ -592,6 +603,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setSessionTracks(swap);
       setQueue(swap);
     },
+    rippedCds: ripped.cds,
+    addRippedCd: (key: string) => setRipped((r) => ({ ...r, cds: [{ key, at: Date.now() }, ...r.cds.filter((c) => c.key !== key)] })),
+    removeRippedCd: (key: string) => setRipped((r) => ({ ...r, cds: r.cds.filter((c) => c.key !== key) })),
     removeLocalTrack: (trackId: string) => {
       setStored((s) => s.filter((t) => t.id !== trackId));
       setSessionTracks((s) => s.filter((t) => t.id !== trackId));
