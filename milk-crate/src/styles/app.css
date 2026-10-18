@@ -874,3 +874,33 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 :root[data-scroll-accent="on"] .mc-scroll-thumb:hover, :root[data-scroll-accent="on"] .mc-scroll-thumb.is-dragging { background-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 :root[data-scroll-accent="on"][data-theme="light"] .mc-scroll-thumb { background: linear-gradient(rgba(255, 255, 255, .3), rgba(255, 255, 255, 0)), color-mix(in srgb, var(--accent) 55%, transparent); }
 @media (prefers-reduced-transparency: reduce) { .mc-scroll-thumb { -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* Your Computer › Rip a CD (src/components/CdRipper.tsx) */
+.cd-ripper { display: flex; flex-direction: column; gap: var(--space-4); }
+.cd-ripper-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cd-ripper-wait { display: flex; align-items: center; gap: 8px; margin: 0; }
+.cd-ripper-empty { display: flex; align-items: center; gap: 12px; }
+.cd-ripper-album { display: flex; flex-wrap: wrap; gap: var(--space-6); align-items: flex-start; }
+.cd-ripper-cover { position: relative; width: 180px; flex: none; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.cd-ripper-cover .mc-sleeve, .cd-ripper-cover > svg { width: 180px; }
+.cd-ripper-cover .link-btn { display: inline-flex; align-items: center; gap: 6px; }
+.cd-ripper-cover-busy { position: absolute; top: 0; left: 0; width: 180px; aspect-ratio: 1; display: grid; place-items: center; border-radius: var(--radius-md); background: rgba(12, 10, 9, .45); color: #f3ede3; }
+.cd-ripper-fields { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.cd-ripper-fields .caption.muted { margin: 0; }
+.cd-ripper-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.cd-ripper-tracks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cd-ripper-track { display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-radius: var(--radius-sm); }
+.cd-ripper-track > .numeral:first-child { width: 22px; flex: none; }
+.cd-ripper-track > .numeral:last-child { flex: none; width: 44px; text-align: right; }
+.cd-ripper-track input { flex: 1 1 0; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: inherit; }
+.cd-ripper-track input:hover:not(:disabled) { border-color: var(--line); }
+.cd-ripper-track input:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; background: var(--ground-sunken); }
+.cd-ripper-track input.cd-ripper-track-artist { flex: 0 1 220px; color: var(--ink-muted); }
+.cd-ripper-track.now { background: var(--accent-soft); }
+.cd-ripper-track.now input { color: var(--accent); }
+.cd-ripper-track.done > .numeral:first-child { color: var(--accent); }
+.cd-ripper-progress { display: flex; flex-direction: column; gap: 6px; }
+.cd-ripper-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.spin { animation: mc-spin 1s linear infinite; }
+@keyframes mc-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }

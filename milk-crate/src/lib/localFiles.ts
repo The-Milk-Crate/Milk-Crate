@@ -55,6 +55,12 @@ export async function pickAudioFiles(): Promise<Track[]> {
   });
 }
 
+/** Desktop: tracks for files already on this computer (e.g. a CD that was just ripped). */
+export async function tracksFromPaths(paths: string[]): Promise<Track[]> {
+  const { convertFileSrc } = await import("@tauri-apps/api/core");
+  return paths.map((p) => toTrack(convertFileSrc(p), p));
+}
+
 /** Object URLs from browser dev mode don't survive a reload, so only desktop tracks are persisted. */
 export const isPersistable = (track: Track) => !track.src?.startsWith("blob:");
 

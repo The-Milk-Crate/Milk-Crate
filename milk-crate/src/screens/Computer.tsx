@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FolderPlus, Lock, Shuffle, X } from "lucide-react";
+import { Disc3, FolderPlus, Lock, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
 import { useLibrary } from "../lib/library";
-import { pickAudioFiles } from "../lib/localFiles";
+import { pickAudioFiles, tracksFromPaths } from "../lib/localFiles";
+import { canRip } from "../lib/cd";
+import { CdRipper } from "../components/CdRipper";
 import { fileArtist, groupComputer, tagTrack, useFileCover, type ComputerAlbum } from "../lib/fileTags";
 import { formatTime } from "../lib/format";
 import type { Track } from "../lib/types";
@@ -36,6 +38,17 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
   const { albums, songs } = useMemo(() => groupComputer(p.localTracks), [p.localTracks]);
   const [work, setWork] = useState<{ done: number; total: number } | null>(null);
   const [msg, setMsg] = useState("");
+  const [ripOpen, setRipOpen] = useState(false);
+
+  // A ripped CD: its new files join Your Computer, tags (names, cover) read from the files.
+  const addRipped = async (paths: string[]) => {
+    const tracks = await tracksFromPaths(paths);
+    // Ripping the same CD again: refresh what's there instead of adding duplicates.
+    const known = new Set(tracks.map((t) => t.id));
+    p.localTracks.filter((t) => known.has(t.id)).forEach((t) => p.removeLocalTrack(t.id));
+    tracks.forEach((t) => tried.current.add(t.id));
+    p.addLocalTracks(await tagAll(tracks, () => {}));
+  };
 
   // Files added before tags were read: read them once.
   const tried = useRef(new Set<string>());
@@ -80,6 +93,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
           {p.localTracks.length > 1 && <Button onClick={() => p.shuffleAll(p.localTracks)}><Shuffle size={16} aria-hidden="true" /> Shuffle</Button>}
+          {canRip() && <Button onClick={() => setRipOpen(true)} disabled={ripOpen}><Disc3 size={16} aria-hidden="true" /> Rip a CD</Button>}
           <Button variant="primary" onClick={() => void add()} disabled={!!work}><FolderPlus size={16} aria-hidden="true" /> Add audio files</Button>
         </div>
       </header>
@@ -91,12 +105,13 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
           {lib.signedIn ? " Each account on this computer has its own list." : " Sign in and they'll be kept with your account on this computer."}
         </span>
       </p>
+      {ripOpen && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
       {work && <p className="form-info" role="status">Reading tags… {work.done} of {work.total}</p>}
       {msg && !work && <p className="form-info" role="status">{msg}</p>}
 
       {!p.localTracks.length && (
         <div className="empty">
-          <span>No files yet. Add MP3, FLAC, WAV, M4A or OGG files and they're sorted into albums and songs by their tags (artist, album, track number and cover art).</span>
+          <span>No files yet. Add MP3, FLAC, WAV, M4A or OGG files and they're sorted into albums and songs by their tags (artist, album, track number and cover art).{canRip() ? " Or rip a CD: it's saved as FLAC with the names and cover filled in." : ""}</span>
         </div>
       )}
 

@@ -1,0 +1,144 @@
+//! Saving a ripped track as a tagged FLAC file, and where it goes.
+
+use flacenc::component::BitRepr;
+use flacenc::error::Verify;
+use metaflac::block::PictureType;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Tags {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub track: u32,
+    pub tracks: u32,
+    pub disc: u32,
+    pub discs: u32,
+    pub year: Option<String>,
+    pub release_id: Option<String>,
+    pub disc_id: Option<String>,
+}
+
+/// Encodes 16-bit stereo 44.1 kHz samples (interleaved L, R) to `path`, with tags and cover.
+/// Writes to a temporary name first, so a half-written file never shows up as a song.
+pub fn write(path: &Path, samples: &[i32], tags: &Tags, cover: Option<(&str, &[u8])>) -> Result<(), String> {
+    let config = flacenc::config::Encoder::default().into_verified().map_err(|e| format!("{e:?}"))?;
+    let source = flacenc::source::MemSource::from_samples(samples, 2, 16, 44_100);
+    let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size).map_err(|e| format!("Couldn't encode FLAC: {e:?}"))?;
+    let mut sink = flacenc::bitsink::ByteSink::new();
+    stream.write(&mut sink).map_err(|e| format!("Couldn't encode FLAC: {e:?}"))?;
+
+    let part = path.with_extension("flac.part");
+    std::fs::write(&part, sink.as_slice()).map_err(|e| format!("Couldn't save {}: {e}", path.display()))?;
+    let tagged = (|| {
+        let mut tag = metaflac::Tag::read_from_path(&part).map_err(|e| e.to_string())?;
+        let mut set = |k: &str, v: &str| {
+            if !v.trim().is_empty() {
+                tag.set_vorbis(k, vec![v.trim()]);
+            }
+        };
+        set("TITLE", &tags.title);
+        set("ARTIST", &tags.artist);
+        set("ALBUM", &tags.album);
+        set("ALBUMARTIST", &tags.album_artist);
+        set("TRACKNUMBER", &tags.track.to_string());
+        set("TRACKTOTAL", &tags.tracks.to_string());
+        if tags.discs > 1 {
+            set("DISCNUMBER", &tags.disc.to_string());
+            set("DISCTOTAL", &tags.discs.to_string());
+        }
+        set("DATE", tags.year.as_deref().unwrap_or(""));
+        set("MUSICBRAINZ_ALBUMID", tags.release_id.as_deref().unwrap_or(""));
+        set("MUSICBRAINZ_DISCID", tags.disc_id.as_deref().unwrap_or(""));
+        set("ENCODER", "Milk Crate");
+        if let Some((mime, data)) = cover {
+            tag.add_picture(mime, PictureType::CoverFront, data.to_vec());
+        }
+        tag.write_to_path(&part).map_err(|e| e.to_string())
+    })();
+    if let Err(e) = tagged {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!("Couldn't tag {}: {e}", path.display()));
+    }
+    std::fs::rename(&part, path).map_err(|e| format!("Couldn't save {}: {e}", path.display()))
+}
+
+/// A name that's safe as a file or folder on Windows and Mac.
+pub fn safe_name(s: &str, fallback: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.trim().trim_end_matches(['.', ' ']).trim();
+    let mut out: String = trimmed.chars().take(120).collect();
+    // Names Windows keeps for itself.
+    let upper = out.to_uppercase();
+    let stem = upper.split('.').next().unwrap_or("");
+    if ["CON", "PRN", "AUX", "NUL"].contains(&stem) || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    if out.is_empty() { fallback.to_string() } else { out }
+}
+
+/// Music › Milk Crate › Artist › Album (Disc 2 for a multi-disc set).
+pub fn album_dir(music: &Path, artist: &str, album: &str, disc: u32, discs: u32) -> PathBuf {
+    let mut dir = music.join("Milk Crate").join(safe_name(artist, "Unknown Artist")).join(safe_name(album, "Unknown Album"));
+    if discs > 1 {
+        dir = dir.join(format!("Disc {disc}"));
+    }
+    dir
+}
+
+/// "01 Song Title.flac"
+pub fn track_file(n: u32, title: &str) -> String {
+    format!("{n:02} {}.flac", safe_name(title, &format!("Track {n:02}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names() {
+        assert_eq!(safe_name("AC/DC: Live?", "x"), "AC_DC_ Live_");
+        assert_eq!(safe_name("  Trailing dots... ", "x"), "Trailing dots");
+        assert_eq!(safe_name("con", "x"), "_con");
+        assert_eq!(safe_name("   ", "Unknown"), "Unknown");
+        assert_eq!(track_file(3, "Wash Your Tongue"), "03 Wash Your Tongue.flac");
+        assert_eq!(track_file(12, ""), "12 Track 12.flac");
+        let d = album_dir(Path::new("/m"), "Pamelo", "Cavities", 2, 2);
+        assert_eq!(d, Path::new("/m/Milk Crate/Pamelo/Cavities/Disc 2"));
+    }
+
+    #[test]
+    fn writes_a_tagged_flac_that_reads_back() {
+        let dir = std::env::temp_dir().join(format!("cdrip-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("01 Test.flac");
+        // One second of a 440 Hz tone, stereo.
+        let samples: Vec<i32> = (0..44_100)
+            .flat_map(|i| {
+                let v = ((i as f64 * 440.0 * std::f64::consts::TAU / 44_100.0).sin() * 12_000.0) as i32;
+                [v, -v]
+            })
+            .collect();
+        let tags = Tags { title: "Test".into(), artist: "Pamelo".into(), album: "Cavities".into(), album_artist: "Pamelo".into(), track: 1, tracks: 9, disc: 1, discs: 1, year: Some("2024".into()), release_id: Some("rel".into()), disc_id: Some("id".into()) };
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+        write(&path, &samples, &tags, Some(("image/jpeg", &jpeg))).unwrap();
+        assert!(!path.with_extension("flac.part").exists());
+        let tag = metaflac::Tag::read_from_path(&path).unwrap();
+        let vc = tag.vorbis_comments().unwrap();
+        assert_eq!(vc.title().unwrap()[0], "Test");
+        assert_eq!(vc.album().unwrap()[0], "Cavities");
+        assert_eq!(vc.track(), Some(1));
+        assert!(vc.get("DISCNUMBER").is_none());
+        let pic = tag.pictures().next().unwrap();
+        assert_eq!(pic.mime_type, "image/jpeg");
+        assert_eq!(pic.data, jpeg);
+        let info = tag.get_streaminfo().unwrap();
+        assert_eq!((info.num_channels, info.sample_rate, info.total_samples), (2, 44_100, 44_100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

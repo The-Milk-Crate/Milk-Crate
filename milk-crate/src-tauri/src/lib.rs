@@ -34,6 +34,72 @@ fn set_title_bar_colors(window: tauri::WebviewWindow, caption: u32, text: u32, b
     Ok(())
 }
 
+/// CD ripping (Your Computer › Rip a CD). The work happens in the cdrip crate; these run it off the
+/// main thread and report progress to the app with "cd-rip-progress" events.
+mod cd {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use tauri::{async_runtime::spawn_blocking, Emitter, Manager};
+
+    static CANCEL: AtomicBool = AtomicBool::new(false);
+
+    fn joined<T>(r: Result<Result<T, String>, tauri::Error>) -> Result<T, String> {
+        r.map_err(|e| e.to_string())?
+    }
+
+    /// Audio CDs in the drives right now.
+    #[tauri::command]
+    pub async fn cd_discs() -> Vec<cdrip::DiscInfo> {
+        spawn_blocking(|| cdrip::discs().iter().map(|d| d.info()).collect()).await.unwrap_or_default()
+    }
+
+    /// Albums on MusicBrainz that match the disc (best first). Empty when it isn't known.
+    #[tauri::command]
+    pub async fn cd_lookup(id: String) -> Result<Vec<cdrip::musicbrainz::Match>, String> {
+        joined(spawn_blocking(move || cdrip::musicbrainz::lookup(&cdrip::find(&id)?.toc)).await)
+    }
+
+    /// The album's front cover as a data URL, if the Cover Art Archive has one.
+    #[tauri::command]
+    pub async fn cd_cover(release_id: String) -> Option<String> {
+        spawn_blocking(move || cdrip::musicbrainz::cover(&release_id).map(|(m, b)| cdrip::data_url(&m, &b))).await.ok().flatten()
+    }
+
+    /// Rips into Music › Milk Crate › Artist › Album. Returns the saved files in track order.
+    #[tauri::command]
+    pub async fn cd_rip(app: tauri::AppHandle, id: String, plan: cdrip::Plan) -> Result<Vec<String>, String> {
+        CANCEL.store(false, Ordering::Relaxed);
+        let music = app.path().audio_dir().map_err(|e| format!("Couldn't find your Music folder: {e}"))?;
+        joined(
+            spawn_blocking(move || {
+                let disc = cdrip::find(&id)?;
+                // At most about 100 updates per rip, plus one per track.
+                let last = Mutex::new((0usize, -1f32));
+                let report = |p: cdrip::Progress| {
+                    let mut l = last.lock().unwrap();
+                    if p.at != l.0 || p.overall - l.1 >= 0.01 || p.track >= 1.0 {
+                        *l = (p.at, p.overall);
+                        let _ = app.emit("cd-rip-progress", p);
+                    }
+                };
+                let files = cdrip::rip(&disc, &plan, &music, &report, &CANCEL)?;
+                Ok(files.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
+            })
+            .await,
+        )
+    }
+
+    #[tauri::command]
+    pub fn cd_cancel() {
+        CANCEL.store(true, Ordering::Relaxed);
+    }
+
+    #[tauri::command]
+    pub async fn cd_eject(id: String) -> Result<(), String> {
+        joined(spawn_blocking(move || cdrip::find(&id)?.eject()).await)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -52,7 +118,15 @@ pub fn run() {
     }
     builder
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![set_title_bar_colors])
+        .invoke_handler(tauri::generate_handler![
+            set_title_bar_colors,
+            cd::cd_discs,
+            cd::cd_lookup,
+            cd::cd_cover,
+            cd::cd_rip,
+            cd::cd_cancel,
+            cd::cd_eject
+        ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
