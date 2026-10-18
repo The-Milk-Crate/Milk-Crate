@@ -19,7 +19,7 @@ import { Upload } from "./screens/Upload";
 import { Account } from "./screens/Account";
 import { Review } from "./screens/Review";
 import { EditRelease } from "./screens/EditRelease";
-import { Settings } from "./screens/Settings";
+import { Settings, SettingsFrame } from "./screens/Settings";
 import { Policies, type PolicyDoc } from "./screens/Policies";
 import { Inbox } from "./screens/Inbox";
 import { ArtistStats } from "./screens/ArtistStats";
@@ -50,7 +50,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 /** Your Crate's pages. No tab: the overview (recent albums, singles, favorites and plays). */
 export type CrateTab = "albums" | "singles" | "songs" | "favorites" | "history" | "playlists";
 export type ShelfFormat = "vinyl" | "45s" | "cds" | "cassettes";
-export type SettingsTab = "appearance" | "sound" | "downloads" | "updates";
+export type SettingsTab = "appearance" | "sound" | "downloads" | "updates" | "feedback";
 export type Route =
   | { name: "home" }
   | { name: "crate"; tab?: CrateTab; releaseId?: string; playlistId?: string }
@@ -87,14 +87,15 @@ function Screen({ route, go }: { route: Route; go: Go }) {
       return <AlbumPage go={go} releaseId={route.releaseId} key={route.releaseId} />;
     case "scenes":
       return <Scenes go={go} explore={route.explore} key={route.explore ? `${route.explore.name}|${route.explore.state}|${route.explore.country ?? "US"}` : "home"} />;
+    // Account, For Artists and Review are tabs of Settings.
     case "account":
-      return <Account go={go} />;
+      return <SettingsFrame go={go} at="account"><Account go={go} /></SettingsFrame>;
     case "upload":
-      return <Upload go={go} />;
+      return <SettingsFrame go={go} at="upload" wide><Upload go={go} /></SettingsFrame>;
     case "editRelease":
       return <EditRelease go={go} releaseId={route.releaseId} key={route.releaseId} />;
     case "review":
-      return <Review go={go} />;
+      return <SettingsFrame go={go} at="review" wide><Review go={go} /></SettingsFrame>;
     case "settings":
       return <Settings go={go} tab={route.tab ?? "appearance"} />;
     case "policies":

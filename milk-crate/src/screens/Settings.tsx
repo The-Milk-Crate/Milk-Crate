@@ -1,5 +1,7 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import type { Go, SettingsTab } from "../App";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { Go, Route, SettingsTab } from "../App";
+import { useAuth } from "../lib/auth";
+import { FeedbackForm } from "../components/FeedbackDialog";
 import { DEFAULT_TRANSPARENCY, useSettings } from "../lib/settings";
 import { isDesktop } from "../lib/localFiles";
 import { usePlayer } from "../lib/player";
@@ -24,41 +26,71 @@ function Switch({ label, hint, on, onChange, tag }: { label: string; hint: strin
   );
 }
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "appearance", label: "Appearance" },
-  { id: "sound", label: "Sound" },
-  { id: "downloads", label: "Downloads" },
-  { id: "updates", label: "Updates" },
-];
+/** A tab of Settings: one of its own sections, or a page (Account, For Artists, Review) shown inside it. */
+type FrameTab = SettingsTab | "account" | "upload" | "review";
 
-/** Settings: how the app looks and sounds, and updates. Saved on this computer. */
-export function Settings({ go, tab }: { go: Go; tab: SettingsTab }) {
+/**
+ * Settings, with a tab for each part: how the app looks and sounds, downloads and updates, then
+ * your account, For Artists (artist accounts), Review (reviewers) and feedback for the team.
+ */
+export function SettingsFrame({ go, at, wide = false, children }: { go: Go; at: FrameTab; wide?: boolean; children: ReactNode }) {
+  const auth = useAuth();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     appVersion().then(setVersion).catch(() => {});
   }, []);
+  const tabs: { id: FrameTab; label: string; to: Route }[] = [
+    { id: "appearance", label: "Appearance", to: { name: "settings", tab: "appearance" } },
+    { id: "sound", label: "Sound", to: { name: "settings", tab: "sound" } },
+    { id: "downloads", label: "Downloads", to: { name: "settings", tab: "downloads" } },
+    { id: "updates", label: "Updates", to: { name: "settings", tab: "updates" } },
+    { id: "account", label: auth.session ? "Account" : "Sign in", to: { name: "account" } },
+    ...(auth.session && auth.kind === "artist" ? [{ id: "upload" as const, label: "For Artists", to: { name: "upload" } as Route }] : []),
+    ...(auth.isAdmin ? [{ id: "review" as const, label: "Review", to: { name: "review" } as Route }] : []),
+    { id: "feedback", label: "Send Feedback", to: { name: "settings", tab: "feedback" } },
+  ];
+  const own = !["account", "upload", "review"].includes(at);
 
   return (
-    <div className="screen" style={{ maxWidth: 680 }}>
+    <div className="screen" style={{ maxWidth: wide ? 960 : 680 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="catalog eyebrow">{version ? `Milk Crate ${version}` : "Milk Crate"}</span>
         <h1 className="display-lg">Settings</h1>
       </header>
       <div role="tablist" aria-label="Settings" className="segmented">
-        {TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" id={`settings-${t.id}`} className="chip" aria-selected={tab === t.id} aria-pressed={tab === t.id}
-            aria-controls="settings-panel" onClick={() => go({ name: "settings", tab: t.id })}>
+        {tabs.map((t) => (
+          <button key={t.id} type="button" role="tab" id={`settings-${t.id}`} className="chip" aria-selected={at === t.id} aria-pressed={at === t.id}
+            aria-controls="settings-panel" onClick={() => go(t.to)}>
             {t.label}
           </button>
         ))}
       </div>
-      <div id="settings-panel" role="tabpanel" aria-labelledby={`settings-${tab}`} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        {tab === "appearance" && <Appearance />}
-        {tab === "sound" && <Sound />}
-        {tab === "downloads" && <Downloads go={go} />}
-        {tab === "updates" && <Updates />}
+      <div id="settings-panel" role="tabpanel" aria-labelledby={`settings-${at}`} className={own ? undefined : "settings-embed"}
+        style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        {children}
       </div>
     </div>
+  );
+}
+
+/** Settings' own sections. Saved on this computer. */
+export function Settings({ go, tab }: { go: Go; tab: SettingsTab }) {
+  return (
+    <SettingsFrame go={go} at={tab}>
+      {tab === "appearance" && <Appearance />}
+      {tab === "sound" && <Sound />}
+      {tab === "downloads" && <Downloads go={go} />}
+      {tab === "updates" && <Updates />}
+      {tab === "feedback" && (
+        <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <h2 className="display-md">Tell the Milk Crate team</h2>
+            <p className="caption muted">An idea, a problem, anything. Works without an account.</p>
+          </div>
+          <FeedbackForm />
+        </section>
+      )}
+    </SettingsFrame>
   );
 }
 

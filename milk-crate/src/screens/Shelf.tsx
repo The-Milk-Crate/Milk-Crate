@@ -1,6 +1,6 @@
 import { accentForHue, hueFromImage } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, ImagePlus, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
@@ -10,7 +10,7 @@ import { usePersistentState } from "../lib/storage";
 import { SHELF_SECTIONS, flipSound, ownedSections, setShelfSounds, shelfSoundsOn, sortShelf, spineColor, useFlipper, type ShelfSort } from "../lib/shelf";
 import type { PhysicalFormat, Release, Track } from "../lib/types";
 import { Button, PlayButton, Sleeve } from "../components/ui";
-import { changeRippedCover, useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
+import { useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
 
 /** One thing on your shelf, with what's needed to draw and play it. */
 interface ShelfItem {
@@ -312,27 +312,19 @@ function Holding({ it, go }: { it: ShelfItem; go: Go }) {
   const lib = useLibrary();
   const playing = p.playing && it.tracks.some((t) => t.id === p.current?.id);
   const [sure, setSure] = useState(false);
-  const [coverMsg, setCoverMsg] = useState("");
-  useEffect(() => { setSure(false); setCoverMsg(""); }, [it.item.id]);
+  useEffect(() => { setSure(false); }, [it.item.id]);
   return (
     <div className="shelf-holding" aria-live="polite">
       <span className="catalog eyebrow">{FORMAT_LABEL[it.item.format]}{it.year ? ` · ${it.year}` : ""}</span>
       <h2 className="display-md shelf-holding-title">{it.title}</h2>
       <span className="muted">{it.artist}</span>
       {it.item.note && <span className="caption muted">{it.item.note}</span>}
-      {it.ripped && <span className="caption muted">Ripped to this computer · only you can see it</span>}
-      {coverMsg && <span className="form-error" role="alert">{coverMsg}</span>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
         {it.tracks.length > 0 ? (
           <>
             <PlayButton playing={playing} onClick={() => (it.tracks.some((t) => t.id === p.current?.id) ? p.toggle() : p.playQueue(it.tracks))} />
             {it.release && <Button size="sm" onClick={() => go({ name: "album", releaseId: it.release!.id })}>Album page</Button>}
-            {it.ripped && <Button size="sm" onClick={() => go({ name: "computer", album: it.ripped!.key })}>Open album</Button>}
-            {it.ripped && (
-              <Button size="sm" variant="ghost" onClick={() => { setCoverMsg(""); void changeRippedCover(it.ripped!, p.updateLocalTracks).then((e) => setCoverMsg(e ?? "")); }}>
-                <ImagePlus size={14} aria-hidden="true" /> Change cover
-              </Button>
-            )}
+            {it.ripped && <Button size="sm" onClick={() => go({ name: "computer", album: it.ripped!.key })}>Album page</Button>}
           </>
         ) : (
           <span className="caption muted">{it.release ? "Coming soon on Milk Crate" : "Not on Milk Crate yet"}</span>

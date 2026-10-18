@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePlayer } from "./player";
 import { getCover, groupComputer, replaceCover, type ComputerAlbum } from "./fileTags";
-import { imageAsDataUrl } from "./cd";
+import { dataUrlToBlob, imageAsDataUrl } from "./cd";
 import { isDesktop, pickImage } from "./localFiles";
 
 export interface RippedAlbum extends ComputerAlbum {
@@ -47,6 +47,14 @@ export function useFileCovers(keys: (string | undefined)[]): Record<string, stri
  * see it too) and everywhere Milk Crate shows the album. Returns an error to show, or null.
  */
 export async function changeRippedCover(album: ComputerAlbum, updateTracks: (tracks: ComputerAlbum["tracks"]) => void): Promise<string | null> {
+  try {
+    return await setRippedCover(album, updateTracks);
+  } catch (e) {
+    return `Couldn't change the cover: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+async function setRippedCover(album: ComputerAlbum, updateTracks: (tracks: ComputerAlbum["tracks"]) => void): Promise<string | null> {
   const src = await pickImage();
   if (!src) return null;
   const url = await imageAsDataUrl(src).catch(() => null);
@@ -61,7 +69,11 @@ export async function changeRippedCover(album: ComputerAlbum, updateTracks: (tra
     }
   }
   const key = album.cover ?? album.key;
-  await replaceCover(key, await (await fetch(url)).blob());
+  try {
+    await replaceCover(key, dataUrlToBlob(url));
+  } catch {
+    return "The picture was saved into the album's files, but Milk Crate couldn't show it. Try a different picture.";
+  }
   // An album that had no cover: its songs now point at the new one.
   if (!album.cover) updateTracks(album.tracks.map((t) => ({ ...t, tags: { ...t.tags, cover: key } })));
   return null;

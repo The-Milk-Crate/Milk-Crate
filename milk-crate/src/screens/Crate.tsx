@@ -424,7 +424,7 @@ function Songs({ go, favoritesFirst }: { go: Go; favoritesFirst: boolean }) {
             <TrackRow key={t.id} trackId={t.id} index={i + 1} title={t.title} artist={[artistOf(t), albumOf(t)].filter(Boolean).join(" · ")}
               duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
               playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(tracks, i)}
-              actions={t.id.startsWith("local:") ? undefined : <AddToPlaylist trackIds={[t.id]} />} />
+              actions={<AddToPlaylist trackIds={[t.id]} />} />
           ))}
         </div>
       )}

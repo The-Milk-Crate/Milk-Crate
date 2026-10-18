@@ -82,7 +82,7 @@ export async function ripDisc(id: string, plan: RipPlan, onProgress: (p: RipProg
 
 /** A picture file the listener picked, as a data URL (JPEG or PNG only: those are what FLAC players show). */
 export async function imageAsDataUrl(src: string): Promise<string | null> {
-  const blob = await (await fetch(src)).blob();
+  const blob = src.startsWith("data:") ? dataUrlToBlob(src) : await (await fetch(src)).blob();
   const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
   const jpeg = head[0] === 0xff && head[1] === 0xd8;
   const png = head[0] === 0x89 && head[1] === 0x50;
@@ -93,6 +93,22 @@ export async function imageAsDataUrl(src: string): Promise<string | null> {
     r.onerror = () => resolve(null);
     r.readAsDataURL(blob);
   });
+}
+
+/**
+ * A data: URL as a Blob, without fetch() (the desktop app's content security policy doesn't let
+ * fetch read data: URLs, so that silently failed when changing a ripped CD's cover).
+ */
+export function dataUrlToBlob(url: string): Blob {
+  const comma = url.indexOf(",");
+  const head = url.slice(5, comma);
+  const body = url.slice(comma + 1);
+  const type = head.split(";")[0] || "application/octet-stream";
+  if (!/;base64$/i.test(head)) return new Blob([decodeURIComponent(body)], { type });
+  const bin = atob(body);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type });
 }
 
 /** Where an album goes, for telling the listener (mirrors the Rust side's folder naming). */
