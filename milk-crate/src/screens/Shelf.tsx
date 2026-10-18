@@ -1,3 +1,4 @@
+import { accentForHue, hueFromImage } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, ImagePlus, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
@@ -136,7 +137,7 @@ function ShelfSection({ current, sections, go }: { current: (typeof SHELF_SECTIO
 const SIZES: Record<ShelfFormat, { w: number; h: number; strip: number; one: string }> = {
   vinyl: { w: 260, h: 260, strip: 44, one: "record" },
   "45s": { w: 190, h: 190, strip: 40, one: "45" },
-  cds: { w: 232, h: 206, strip: 40, one: "CD" },
+  cds: { w: 222, h: 206, strip: 40, one: "CD" },
   cassettes: { w: 256, h: 164, strip: 44, one: "tape" },
 };
 const GROW = 1.3;
@@ -258,7 +259,7 @@ function Cover({ it, kind }: { it: ShelfItem; kind: ShelfFormat }) {
   if (kind === "cds")
     return (
       <span className="cd-case">
-        <span className="cd-hinge" />
+        <CdRidge art={it.art} fallback={it.color} />
         <Sleeve src={it.art} seed={it.seed} alt="" />
       </span>
     );
@@ -279,6 +280,29 @@ function Cover({ it, kind }: { it: ShelfItem; kind: ShelfFormat }) {
       </span>
     );
   return <Sleeve src={it.art} seed={it.seed} alt="" />;
+}
+
+const ridgeHues = new Map<string, Promise<number | null>>();
+
+/**
+ * The jewel case's hinge, as a strip of frosted glass: the cover's edge blurred behind it,
+ * tinted with a color from the cover (the same one the app's accent would take from it).
+ */
+function CdRidge({ art, fallback }: { art?: string; fallback: string }) {
+  const [tint, setTint] = useState<string | null>(null);
+  useEffect(() => {
+    if (!art) { setTint(null); return; }
+    let live = true;
+    if (!ridgeHues.has(art)) ridgeHues.set(art, hueFromImage(art).catch(() => null));
+    void ridgeHues.get(art)!.then((h) => live && setTint(h == null ? null : accentForHue(h, "dark").accent));
+    return () => { live = false; };
+  }, [art]);
+  const color = art ? tint ?? "#b9b2a8" : fallback;
+  return (
+    <span className="cd-hinge" style={{ "--ridge": color } as CSSProperties}>
+      {art && <span className="cd-hinge-blur" style={{ backgroundImage: `url("${art}")` }} />}
+    </span>
+  );
 }
 
 /* ---------- The one you're on: title, play, remove ---------- */

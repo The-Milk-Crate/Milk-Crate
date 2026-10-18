@@ -917,8 +917,8 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .eq-pop {
   position: fixed; z-index: 60; width: min(440px, calc(100vw - 24px)); box-sizing: border-box; padding: 18px 20px 16px;
   display: flex; flex-direction: column; gap: 14px; color: var(--ink);
-  border-radius: var(--panel-radius, 18px); background: var(--glass-solid, var(--ground-raised));
-  -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4);
+  border-radius: var(--panel-radius, 18px); background: color-mix(in srgb, var(--glass-solid, var(--ground-raised)) 58%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6); backdrop-filter: blur(28px) saturate(1.6);
   box-shadow: inset 0 1px 0 var(--panel-shine), inset 0 0 0 1px var(--panel-edge), 0 24px 60px rgba(0, 0, 0, .5);
   animation: eq-pop-in .32s cubic-bezier(.2, 1.35, .45, 1) both;
 }
@@ -987,5 +987,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .win-btn:hover { opacity: 1; background: color-mix(in srgb, var(--ink) 12%, transparent); }
 .win-btn.is-close:hover { background: #c42b1c; color: #fff; }
 .win-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; opacity: 1; }
-:root[data-platform="mac"] .shell-side .sidebar { padding-top: calc(var(--space-6) + 24px); }
-:root[data-platform="mac"] .side-collapsed .shell-side .sidebar { padding-top: calc(var(--space-6) + 34px); }
+/* Mac: the red, yellow and green buttons sit inside the sidebar's top-left corner
+   (placed by trafficLightPosition in src-tauri/tauri.macos.conf.json), with the logo below them. */
+:root[data-platform="mac"] .shell-side .sidebar { padding-top: calc(var(--space-6) + 30px); }
+:root[data-platform="mac"] .side-collapsed .shell-side .sidebar { padding-top: calc(var(--space-6) + 30px); }

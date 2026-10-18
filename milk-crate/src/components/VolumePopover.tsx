@@ -31,7 +31,7 @@ export function VolumePopover({ anchor, onClose }: { anchor: RefObject<HTMLEleme
       const btn = anchor.current?.getBoundingClientRect();
       if (!bar || !btn) return;
       const W = 64;
-      setPlace({ left: Math.min(window.innerWidth - W - 8, btn.left + btn.width / 2 - W / 2), bottom: window.innerHeight - bar.top + 10 });
+      setPlace({ left: Math.min(window.innerWidth - W - 8, btn.left + btn.width / 2 - W / 2), bottom: window.innerHeight - bar.top + 22 });
     };
     measure();
     window.addEventListener("resize", measure);

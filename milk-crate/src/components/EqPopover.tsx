@@ -65,7 +65,7 @@ export function EqPopover({ anchor, onClose, onMore }: { anchor: RefObject<HTMLE
       const right = Math.max(12, window.innerWidth - bar.right + 16);
       const width = Math.min(440, window.innerWidth - 24);
       const x = width - (window.innerWidth - right - (btn.left + btn.width / 2));
-      setPlace({ right, bottom: window.innerHeight - bar.top + 10, origin: `${Math.max(0, Math.min(width, x))}px 100%` });
+      setPlace({ right, bottom: window.innerHeight - bar.top + 22, origin: `${Math.max(0, Math.min(width, x))}px 100%` });
     };
     measure();
     window.addEventListener("resize", measure);
