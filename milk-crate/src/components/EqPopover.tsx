@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { usePlayer } from "../lib/player";
 import { EQ_BANDS, EQ_MAX_DB, EQ_PRESETS, FLAT } from "../lib/audioOut";
+import { Button } from "./ui";
 
 /** One band: an upright track that fills from 0 dB toward the knob. Drag it, use the arrow keys, or double-click for 0. */
 function EqSlider({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange: (db: number) => void }) {
@@ -120,8 +121,8 @@ export function EqPopover({ anchor, onClose, onMore }: { anchor: RefObject<HTMLE
         </div>
       </div>
       <div className="eq-pop-foot">
-        <button type="button" className="link-btn caption" disabled={!p.eqOn} onClick={() => p.setEqGains(FLAT)}>Reset to flat</button>
-        <button type="button" className="link-btn caption muted" onClick={() => { onClose(); onMore(); }}>More sound settings ›</button>
+        <Button size="sm" disabled={!p.eqOn} onClick={() => p.setEqGains(FLAT)}>Reset to flat</Button>
+        <Button size="sm" variant="ghost" onClick={() => { onClose(); onMore(); }}>More sound settings</Button>
       </div>
     </div>,
     document.body,

@@ -51,9 +51,9 @@ export function Welcome({ go }: { go: Go }) {
         <section className="welcome-form">
           {auth.session ? (
             <>
-              <p className="caption muted" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <p className="caption muted" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 Signed in as {auth.email}
-                <button type="button" className="link-btn" onClick={() => auth.signOut()}>Sign out</button>
+                <Button size="sm" onClick={() => auth.signOut()}>Sign out</Button>
               </p>
               {cityStep}
             </>
@@ -81,10 +81,10 @@ export function Welcome({ go }: { go: Go }) {
               )}
             </>
           )}
-          <p className="caption muted welcome-artist">
-            Make music? Artist accounts are separate from listener accounts, and new artists are reviewed before their music goes live.{" "}
-            <button type="button" className="link-btn" onClick={() => go({ name: "upload" })}>Apply to join as an artist</button>
-          </p>
+          <div className="welcome-artist" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
+            <p className="caption muted" style={{ margin: 0 }}>Make music? Artist accounts are separate from listener accounts, and new artists are reviewed before their music goes live.</p>
+            <Button size="sm" onClick={() => go({ name: "upload" })}>Apply to join as an artist</Button>
+          </div>
         </section>
       </div>
     </div>

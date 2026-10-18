@@ -8,6 +8,7 @@ import { COUNTRY_NAMES, placeKey, regionName, type Place } from "../lib/geo";
 import { loadAllRegions, loadCountyLines, type StatesData } from "../lib/mapLayout";
 import type { Bin } from "../lib/bins";
 import type { Artist } from "../lib/types";
+import { Button } from "./ui";
 
 /** The frame never gets shorter than this (px), so a small window scrolls rather than squashing the map. */
 const MIN_FRAME_PX = 2 * 136 + 40;
@@ -176,7 +177,7 @@ export function TownMap({ bin, bins, sceneWord, go, onClose, onOpenTown }: {
           <h2 className="display-md">{place.name}</h2>
           <span className="caption muted">{n} {n === 1 ? "artist" : "artists"} in {sceneWord} scene</span>
         </div>
-        <button type="button" className="link-btn" style={{ fontWeight: 600 }} onClick={onClose}>Back to the bin</button>
+        <Button onClick={onClose}>Back to the bin</Button>
       </div>
       <div ref={frame} className="town-map-frame" style={frameH ? { height: frameH } : undefined}>
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" className="town-map-land" role="img" aria-label={`Map around ${place.name}, ${stateName}, with ${place.name} circled`}>

@@ -180,7 +180,7 @@ function ArtistTools({ go }: { go: Go }) {
         </p>
         <p className="caption muted" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           Signed in as {auth.email}
-          <button type="button" className="link-btn" onClick={() => auth.signOut()}>Sign out</button>
+          <Button size="sm" onClick={() => auth.signOut()}>Sign out</Button>
         </p>
         {c.status === "offline" && (
           <p role="alert" className="form-error">Can't reach the Milk Crate server right now{c.error ? ` (${c.error})` : ""}. Check your connection, or that the database setup in supabase/schema.sql has been run.</p>

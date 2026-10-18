@@ -205,7 +205,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
             <span className="caption muted">{nextDisc.album} keeps its name, artist and cover, and the songs go in a Disc {nextDisc.disc} folder beside the others.</span>
           </div>
           {disc && disc.discId === nextDisc.after && <Button size="sm" onClick={eject}>Eject</Button>}
-          <button type="button" className="link-btn caption" onClick={() => setRip({ nextDisc: null })}>That's all of them</button>
+          <Button size="sm" variant="ghost" onClick={() => setRip({ nextDisc: null })}>That's all of them</Button>
         </div>
       )}
       {disc === undefined && <p className="muted cd-ripper-wait"><LoaderCircle className="spin" size={16} aria-hidden="true" /> Checking your CD drive…</p>}
@@ -225,9 +225,9 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
             <div className="cd-ripper-cover">
               <Sleeve src={draft.cover ?? undefined} seed={`${draft.album}|${draft.artist}|${disc.discId}`} alt={draft.album ? `${draft.album} cover` : "Cover"} />
               {coverBusy && <span className="cd-ripper-cover-busy"><LoaderCircle className="spin" size={20} aria-hidden="true" /></span>}
-              <button type="button" className="link-btn caption" onClick={() => void chooseCover()} disabled={ripping}>
+              <Button size="sm" onClick={() => void chooseCover()} disabled={ripping}>
                 <ImagePlus size={14} aria-hidden="true" /> {draft.cover ? "Change cover" : "Add a cover"}
-              </button>
+              </Button>
             </div>
             <div className="cd-ripper-fields">
               <span className="catalog eyebrow">

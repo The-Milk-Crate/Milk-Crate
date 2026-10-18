@@ -4,6 +4,7 @@ import { useCatalog } from "../lib/catalog";
 import { supabase } from "../lib/supabase";
 import { formatTime } from "../lib/format";
 import { isCountry, placeLabelFrom, type Country } from "../lib/geo";
+import { Button } from "../components/ui";
 
 interface TrackStat { trackId: string; plays: number; plays30: number; listeners: number }
 interface TownStat { city: string | null; state: string | null; country: Country; plays: number; listeners: number }
@@ -29,7 +30,7 @@ export function ArtistStats({ go }: { go: Go }) {
     });
   }, [me]);
 
-  if (!me) return <div className="screen"><p className="muted">Stats are for artist accounts. <button type="button" className="link-btn" onClick={() => go({ name: "upload" })}>Go to For Artists</button></p></div>;
+  if (!me) return <div className="screen"><p className="muted">Stats are for artist accounts.</p><Button onClick={() => go({ name: "upload" })}>Go to For Artists</Button></div>;
 
   const byTrack = new Map((tracks ?? []).map((t) => [t.trackId, t]));
   const total = (tracks ?? []).reduce((a, t) => ({ plays: a.plays + t.plays, plays30: a.plays30 + t.plays30 }), { plays: 0, plays30: 0 });

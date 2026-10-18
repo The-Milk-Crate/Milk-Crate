@@ -62,7 +62,7 @@ export function Scenes({ go, explore }: { go: Go; explore?: { name: string; stat
           </span>
           <h1 className="display-lg">{national ? "Every Scene" : scene.home.name}</h1>
           {!national && !exploring && (
-            <span className="caption"><button type="button" className="link-btn" onClick={() => go({ name: "account" })}>Change your city</button></span>
+            <div><Button size="sm" onClick={() => go({ name: "account" })}>Change your city</Button></div>
           )}
           {!national && <div style={{ marginTop: 6 }}><RadioButton scene={scene} /></div>}
         </div>

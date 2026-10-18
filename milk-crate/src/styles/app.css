@@ -26,6 +26,9 @@ input, textarea { user-select: text; }
 h1, h2, h3, p { margin: 0; }
 /* Links follow the accent: the playing album's color, or the accent you picked when album colors are off. */
 a { color: var(--link); }
+/* A title you can click (a playlist name, an artist name): looks like text, never like a link. */
+.text-btn { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.text-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
 button { font: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -181,9 +184,6 @@ button { font: inherit; }
 }
 .upload-tracks input:hover { border-color: var(--line-strong); }
 .form-info { color: var(--ink); background: var(--dairy-soft); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); }
-.link-btn { border: 0; background: none; padding: 0; color: var(--link); font: inherit; text-decoration: underline; cursor: pointer; }
-.link-btn:hover { color: var(--ink); }
-.link-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Update available (desktop app) */
 .update-card {
@@ -471,7 +471,7 @@ button { font: inherit; }
 .immersive-artist { font-size: 18px; line-height: 24px; font-weight: 650; color: var(--ink); }
 .immersive-link { padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
 button.catalog.immersive-link { color: var(--ink-muted); }
-.immersive-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.immersive-link:hover { opacity: .85; }
 .immersive-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
 .immersive-seek { margin-top: 14px; margin-bottom: 14px; }
 .immersive-controls { display: flex; align-items: center; justify-content: center; gap: 24px; width: 100%; }
@@ -513,7 +513,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .immersive:focus { outline: none; }
 
 .setting-tag { margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); vertical-align: 1px; }
-.scene-head .link-btn { color: var(--link); }
 
 /* ================= Scenes: crate dividers ================= */
 .scenes { gap: var(--space-6); }
@@ -578,7 +577,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
   box-shadow: 0 -8px 24px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .45); }
 .flip-front .mc-sleeve { width: 100%; }
 .bin-title { text-align: left; text-decoration: none; color: var(--ink); font-size: 17px; line-height: 22px; font-weight: 650; }
-.bin-title:hover { text-decoration: underline; }
 .bin-artists { flex: 999 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .bin-artist { display: flex; align-items: center; gap: 12px; padding: 10px; border: 0; border-radius: 8px; background: var(--glass-panel, var(--ground-raised)); color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
 .bin-artist:hover { background: var(--accent-soft); }
@@ -643,7 +641,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .report-reason { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid var(--line); cursor: pointer; }
 .report-reason.on { border-color: var(--accent); background: var(--accent-soft); }
 .report-reason input { margin-top: 3px; accent-color: var(--accent); }
-.report-link { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-muted); }
 .danger-zone { border: 1px solid rgba(232, 93, 74, .45); }
 .danger-btn { color: #ffb3a7; border-color: rgba(232, 93, 74, .6); }
 [data-theme="light"] .danger-btn { color: #a3271a; }
@@ -889,7 +886,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .cd-ripper-album { display: flex; flex-wrap: wrap; gap: var(--space-6); align-items: flex-start; }
 .cd-ripper-cover { position: relative; width: 180px; flex: none; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .cd-ripper-cover .mc-sleeve, .cd-ripper-cover > svg { width: 180px; }
-.cd-ripper-cover .link-btn { display: inline-flex; align-items: center; gap: 6px; }
 .cd-ripper-cover-busy { position: absolute; top: 0; left: 0; width: 180px; aspect-ratio: 1; display: grid; place-items: center; border-radius: var(--radius-md); background: rgba(12, 10, 9, .45); color: #f3ede3; }
 .cd-ripper-fields { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .cd-ripper-fields .caption.muted { margin: 0; }
@@ -1200,7 +1196,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .link-receive, .link-send { display: flex; flex-direction: column; gap: var(--space-4); }
 .link-step { display: flex; flex-direction: column; gap: 8px; }
 .link-step-head { display: flex; justify-content: space-between; align-items: center; }
-.link-step-head .link-btn { display: inline-flex; align-items: center; gap: 4px; }
 .link-peers { display: flex; flex-wrap: wrap; gap: 8px; }
 .link-peer { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: none; color: var(--ink); cursor: pointer; text-align: left; }
 .link-peer.on { border-color: var(--accent); background: var(--accent-soft); }

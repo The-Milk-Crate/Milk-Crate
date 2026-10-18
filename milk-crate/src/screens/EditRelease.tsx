@@ -114,8 +114,8 @@ export function EditRelease({ releaseId, go }: { releaseId: string; go: Go }) {
             <Button size="sm" disabled={busy} onClick={async () => { const a = await pickImage(); if (a) setArt(a); }}>
               <ImagePlus size={16} strokeWidth={1.75} aria-hidden="true" /> {shownArt ? "Change cover" : "Add cover art"}
             </Button>
-            {shownArt && <button type="button" className="link-btn caption" disabled={busy} onClick={() => setArt(null)}>Remove cover (use a made-up sleeve)</button>}
-            {art !== undefined && <button type="button" className="link-btn caption" disabled={busy} onClick={() => setArt(undefined)}>Undo cover change</button>}
+            {shownArt && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setArt(null)}>Remove cover (use a made-up sleeve)</Button>}
+            {art !== undefined && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setArt(undefined)}>Undo cover change</Button>}
           </div>
           <div style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
             <label className="field">
@@ -156,8 +156,8 @@ export function EditRelease({ releaseId, go }: { releaseId: string; go: Go }) {
                   <input aria-label={`Song ${i + 1} title`} value={r.title} onChange={(e) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, title: e.target.value } : x)))} />
                   {!r.id && <span className="caption edit-note">New song</span>}
                   {r.id && r.src && (
-                    <span className="caption edit-note">
-                      New audio: {r.fileName} · <button type="button" className="link-btn caption" onClick={() => undoReplace(r)}>keep the old file</button>
+                    <span className="caption edit-note" style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      New audio: {r.fileName} <Button size="sm" onClick={() => undoReplace(r)}>Keep the old file</Button>
                     </span>
                   )}
                 </span>
@@ -193,7 +193,7 @@ export function EditRelease({ releaseId, go }: { releaseId: string; go: Go }) {
                 Removing {removed.map((r) => `"${r.title}"`).join(", ")} when you save. {removed.length === 1 ? "Its" : "Their"} streams and favorites go too.
               </span>
               {removed.map((r) => (
-                <button key={r.key} type="button" className="link-btn caption" onClick={() => undoRemove(r)}><Undo2 size={12} aria-hidden="true" /> Keep "{r.title}"</button>
+                <Button key={r.key} size="sm" style={{ alignSelf: "flex-start" }} onClick={() => undoRemove(r)}><Undo2 size={14} aria-hidden="true" /> Keep "{r.title}"</Button>
               ))}
             </div>
           )}

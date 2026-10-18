@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, Lock, Shuffle, X } from "lucide-react";
+import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
-import { useLibrary } from "../lib/library";
 import { isDesktop, pickAudioFiles } from "../lib/localFiles";
 import { canRip } from "../lib/cd";
 import { CdRipper } from "../components/CdRipper";
@@ -24,7 +23,6 @@ import { Button, PlayButton, ReleaseCard, Sleeve, TrackRow } from "../components
  */
 export function Computer({ go, album }: { go: Go; album?: string }) {
   const p = usePlayer();
-  const lib = useLibrary();
   const { albums, songs } = useMemo(() => groupComputer(p.localTracks), [p.localTracks]);
   const [work, setWork] = useState<{ done: number; total: number } | null>(null);
   const [msg, setMsg] = useState("");
@@ -83,13 +81,6 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
         </div>
       </header>
 
-      <p className="caption muted private-note">
-        <Lock size={13} aria-hidden="true" />
-        <span>
-          These play straight from the files on this computer. Nothing is uploaded, and no one else can see them.
-          {lib.signedIn ? " Each account on this computer has its own list." : " Sign in and they'll be kept with your account on this computer."}
-        </span>
-      </p>
       {ripOpen && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
       {linkOpen && <ComputerLink onClose={() => setLinkOpen(false)} />}
       {work && <p className="form-info" role="status">Reading tags… {work.done} of {work.total}</p>}
@@ -162,7 +153,7 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
             {sure ? (
               <>
                 <Button variant="ghost" onClick={() => { a.tracks.forEach((t) => p.removeLocalTrack(t.id)); go({ name: "computer" }); }}>Take it off the list</Button>
-                <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep it</button>
+                <Button onClick={() => setSure(false)}>Keep it</Button>
               </>
             ) : (
               <Button variant="ghost" onClick={() => setSure(true)}>Remove…</Button>

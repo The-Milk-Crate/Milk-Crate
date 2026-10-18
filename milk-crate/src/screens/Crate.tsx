@@ -444,7 +444,7 @@ function History() {
         {p.history.length > 0 && (sure ? (
           <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <Button size="sm" onClick={() => void p.clearHistory().then(() => setMsg("History cleared.")).catch((e) => setMsg((e as Error).message)).finally(() => setSure(false))}>Clear it all</Button>
-            <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep it</button>
+            <Button size="sm" variant="ghost" onClick={() => setSure(false)}>Keep it</Button>
           </span>
         ) : (
           <Button size="sm" variant="ghost" onClick={() => setSure(true)}><Trash2 size={14} aria-hidden="true" /> Clear history</Button>
@@ -490,7 +490,7 @@ function PlaylistRow({ pl, go }: { pl: Playlist; go: Go }) {
           <div className="list-row">
             <PlaylistCover playlist={pl} style={{ width: 48, flex: "none" }} />
             <PlayButton playing={false} onClick={() => p.playQueue(tracks)} />
-            <button type="button" className="link-btn" style={{ flex: "1 1 auto", textAlign: "left", textDecoration: "none", color: "var(--ink)", fontWeight: 650 }}
+            <button type="button" className="text-btn" style={{ flex: "1 1 auto", fontWeight: 650 }}
               onClick={() => go({ name: "crate", playlistId: pl.id })}>{pl.name}</button>
             <span className="caption muted">{tracks.length} {tracks.length === 1 ? "song" : "songs"} · {formatTime(tracks.reduce((s, t) => s + (t.duration || 0), 0))}</span>
           </div>

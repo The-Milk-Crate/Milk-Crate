@@ -91,7 +91,6 @@ export function Home({ go }: { go: Go }) {
           <section className="section">
             <div className="section-title" style={{ justifyContent: "space-between" }}>
               <h2 className="display-md">In your rotation</h2>
-              {rotation.length > 0 && <button type="button" className="link-btn" onClick={() => go({ name: "crate" })}>Your crate</button>}
             </div>
             {rotation.length ? <div className="release-grid">{rotation.map(rotationCard)}</div> : <p className="muted">Play some music and the albums you keep coming back to show up here.</p>}
           </section>
@@ -109,7 +108,6 @@ export function Home({ go }: { go: Go }) {
             <section className="section">
               <div className="section-title" style={{ justifyContent: "space-between" }}>
                 <h2 className="display-md">Discover</h2>
-                <button type="button" className="link-btn" onClick={() => go({ name: "scenes" })}>Explore your scene</button>
               </div>
               <div className="release-grid">{discover.map((d) => <ArtistCard key={d.artist.id} artist={d.artist} line={d.line} go={go} />)}</div>
             </section>

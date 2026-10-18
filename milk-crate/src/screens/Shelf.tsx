@@ -225,12 +225,6 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
   useEffect(() => {
     if (playingAt >= 0) flip.current(playingAt);
   }, [playingId, items]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Flipped away to look at others while one plays: back to it after a few seconds of no flipping.
-  useEffect(() => {
-    if (!p.playing || playingAt < 0 || index === playingAt) return;
-    const t = window.setTimeout(() => flip.current(playingAt), 4000);
-    return () => window.clearTimeout(t);
-  }, [index, playingAt, p.playing]);
   const front = items[index];
   if (!front) return null;
   const big = (size.w * GROW - size.w) / 2;
@@ -418,7 +412,7 @@ function Holding({ it, go }: { it: ShelfItem; go: Go }) {
         {sure ? (
           <>
             <Button size="sm" variant="ghost" onClick={() => (it.ripped ? p.removeRippedCd(it.ripped.key) : void attempt(() => lib.removePhysical(it.item.id)))}>Take it off your shelf</Button>
-            <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep it</button>
+            <Button size="sm" onClick={() => setSure(false)}>Keep it</Button>
           </>
         ) : (
           <button type="button" className="mc-icon-btn" aria-label={`Remove ${it.title} from your shelf`} title="Remove from your shelf" onClick={() => setSure(true)}>
@@ -487,7 +481,7 @@ function AddToShelf({ defaultFormat = "LP", onAdded, intro }: { defaultFormat?: 
             </div>
           )}
           {q.length > 1 && matches.length === 0 && <p className="caption muted">Not on Milk Crate yet.</p>}
-          <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => setManual(true)}>Not on Milk Crate? Add it by hand</button>
+          <Button size="sm" style={{ alignSelf: "flex-start" }} onClick={() => setManual(true)}>Not on Milk Crate? Add it by hand</Button>
         </>
       ) : (
         <>

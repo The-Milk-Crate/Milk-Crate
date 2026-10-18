@@ -58,7 +58,7 @@ export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
           <h1 className="display-xl" style={{ overflowWrap: "anywhere" }}>{release.title}</h1>
           {artist && (
             <p className="muted">
-              <button type="button" className="link-btn" style={{ fontWeight: 650, fontSize: 16 }} onClick={() => go({ name: "artist", artistId: artist.id })}>{artist.name}</button>
+              <button type="button" className="text-btn" style={{ fontWeight: 650, fontSize: 16, color: "var(--ink)" }} onClick={() => go({ name: "artist", artistId: artist.id })}>{artist.name}</button>
               {" · "}{artist.place}{tracks.length ? ` · ${tracks.length} ${tracks.length === 1 ? "song" : "songs"}, ${formatTime(total)}` : ""}
               {allDownloaded && <> · <DownloadedMark label="Album downloaded" /> Downloaded</>}
             </p>
@@ -79,7 +79,7 @@ export function AlbumPage({ releaseId, go }: { releaseId: string; go: Go }) {
             <ShareButton target={{ kind: "album", id: release.id }} label={`${release.title}${artist ? ` by ${artist.name}` : ""}`} />
           </div>
           {artist && artist.id === c.myProfile?.id ? (
-            <div><button type="button" className="link-btn caption" onClick={() => go({ name: "editRelease", releaseId: release.id })}>Edit this release</button></div>
+            <div><Button size="sm" onClick={() => go({ name: "editRelease", releaseId: release.id })}>Edit this release</Button></div>
           ) : (
             <div><ReportButton releaseId={release.id} artistId={artist?.id} subject={`${release.title}${artist ? ` by ${artist.name}` : ""}`} go={go} /></div>
           )}

@@ -174,8 +174,8 @@ function ReportCard({ report: r, onDone, go }: { report: Report; onDone: () => v
         {r.contactEmail && (<><dt>Reporter</dt><dd className="selectable">{r.contactEmail}</dd></>)}
       </dl>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        {release && <button type="button" className="link-btn" onClick={() => go({ name: "album", releaseId: release.id })}>Open the release</button>}
-        {artist && <button type="button" className="link-btn" onClick={() => go({ name: "artist", artistId: artist.id })}>Open {artist.name}</button>}
+        {release && <Button size="sm" onClick={() => go({ name: "album", releaseId: release.id })}>Open the release</Button>}
+        {artist && <Button size="sm" onClick={() => go({ name: "artist", artistId: artist.id })}>Open {artist.name}</Button>}
         {!release && r.releaseId && <span className="caption muted">The release is already gone.</span>}
       </div>
       <label className="field">
@@ -235,7 +235,7 @@ function FeedbackList() {
       {open.map(card)}
       {done.length > 0 && (
         <>
-          <div><button type="button" className="link-btn" aria-expanded={showDone} onClick={() => setShowDone((v) => !v)}>{showDone ? "Hide" : "Show"} {done.length} handled</button></div>
+          <div><Button aria-expanded={showDone} onClick={() => setShowDone((v) => !v)}>{showDone ? "Hide" : "Show"} {done.length} handled</Button></div>
           {showDone && done.map(card)}
         </>
       )}

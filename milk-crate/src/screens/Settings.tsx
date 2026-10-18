@@ -179,7 +179,7 @@ function Slider({ label, hint, value, onChange, left, right, fallback }: {
     <div className="setting-row setting-slider">
       <span style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
         <span style={{ fontWeight: 600 }}>{label}</span>
-        {value !== fallback && <button type="button" className="link-btn caption" onClick={() => onChange(fallback)}>Reset</button>}
+        {value !== fallback && <Button size="sm" variant="ghost" onClick={() => onChange(fallback)}>Reset</Button>}
       </span>
       <span className="caption muted">{hint}</span>
       <input type="range" className="volume-slider" min={0} max={100} step={1} value={value} aria-label={label} aria-valuetext={`${value}%`}
@@ -245,7 +245,7 @@ function Equalizer() {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <span className="caption muted">Hz. Double-click a slider to reset it.</span>
-          <button type="button" className="link-btn caption" disabled={!p.eqOn} onClick={() => p.setEqGains(FLAT)}>Reset to flat</button>
+          <Button size="sm" disabled={!p.eqOn} onClick={() => p.setEqGains(FLAT)}>Reset to flat</Button>
         </div>
       </div>
     </section>
@@ -336,7 +336,7 @@ function Downloads({ go }: { go: Go }) {
         return (
           <div key={id} className="list-row">
             <Sleeve src={r?.art} seed={sleeveSeed(r?.title ?? id, a?.name ?? "")} style={{ width: 40, flex: "none" }} />
-            <button type="button" className="link-btn" style={{ flex: "1 1 auto", minWidth: 0, textAlign: "left", textDecoration: "none", color: "var(--ink)" }}
+            <button type="button" className="text-btn" style={{ flex: "1 1 auto", minWidth: 0 }}
               onClick={() => r && go({ name: "album", releaseId: id })}>
               <strong>{r?.title ?? "Taken down"}</strong>
               <span className="caption muted"> · {a?.name ?? ""} · {r && e.ids.length < r.trackIds.length ? `${e.ids.length} of ${r.trackIds.length} songs` : "every song"} · {formatBytes(e.bytes)}</span>
@@ -348,7 +348,7 @@ function Downloads({ go }: { go: Go }) {
       {count > 0 && (sure ? (
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <Button size="sm" onClick={() => void dl.removeAll().then(() => setMsg("Removed all downloads.")).catch((e) => setMsg((e as Error).message)).finally(() => setSure(false))}>Remove all downloads</Button>
-          <button type="button" className="link-btn caption" onClick={() => setSure(false)}>Keep them</button>
+          <Button size="sm" variant="ghost" onClick={() => setSure(false)}>Keep them</Button>
         </div>
       ) : (
         <Button size="sm" variant="ghost" style={{ alignSelf: "flex-start" }} onClick={() => setSure(true)}>Remove all…</Button>

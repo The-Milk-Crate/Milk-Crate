@@ -164,18 +164,18 @@ export function AuthForm(props: {
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
         <Button variant="primary" type="submit" disabled={busy}>{label}</Button>
         {mode === "signin" && (
-          <button type="button" className="link-btn" onClick={() => { setMode("reset"); setMessage(null); }}>Forgot your password?</button>
+          <Button variant="ghost" onClick={() => { setMode("reset"); setMessage(null); }}>Forgot your password?</Button>
         )}
         {(mode === "reset" || mode === "resetCode") && (
           <>
-            {mode === "resetCode" && <button type="button" className="link-btn" disabled={busy} onClick={() => { setMode("reset"); setMessage(null); }}>Send a new code</button>}
-            <button type="button" className="link-btn" onClick={() => { setMode("signin"); setMessage(null); }}>Back to sign in</button>
+            {mode === "resetCode" && <Button disabled={busy} onClick={() => { setMode("reset"); setMessage(null); }}>Send a new code</Button>}
+            <Button variant="ghost" onClick={() => { setMode("signin"); setMessage(null); }}>Back to sign in</Button>
           </>
         )}
         {mode === "confirm" && (
           <>
-            <button type="button" className="link-btn" disabled={busy} onClick={resend}>Send a new code</button>
-            <button type="button" className="link-btn" onClick={() => { setMode("signin"); setMessage(null); }}>Back</button>
+            <Button disabled={busy} onClick={resend}>Send a new code</Button>
+            <Button variant="ghost" onClick={() => { setMode("signin"); setMessage(null); }}>Back</Button>
           </>
         )}
       </div>

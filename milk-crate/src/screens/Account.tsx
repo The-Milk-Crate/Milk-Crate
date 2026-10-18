@@ -72,16 +72,17 @@ export function Account({ go }: { go: Go }) {
         <>
           <SignInDetails />
           <DeleteAccount isArtist={isArtist} />
-          <p className="caption muted">
-            <button type="button" className="link-btn" onClick={() => go({ name: "policies", doc: "terms" })}>Terms</button> ·{" "}
-            <button type="button" className="link-btn" onClick={() => go({ name: "policies", doc: "privacy" })}>Privacy</button> ·{" "}
-            <button type="button" className="link-btn" onClick={() => go({ name: "policies", doc: "copyright" })}>Copyright and takedowns</button>
-          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "terms" })}>Terms</Button>
+            <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "privacy" })}>Privacy</Button>
+            <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "copyright" })}>Copyright and takedowns</Button>
+          </div>
         </>
       ) : (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="display-md">Listener account</h2>
-          <p className="muted">Keep your city (and soon your ratings and crate) with you on any computer. Making music? Artist accounts are separate: <button type="button" className="link-btn" onClick={() => go({ name: "upload" })}>apply here</button>.</p>
+          <p className="muted">Keep your city (and soon your ratings and crate) with you on any computer. Making music? Artist accounts are separate.</p>
+          <div><Button size="sm" onClick={() => go({ name: "upload" })}>Apply as an artist</Button></div>
           <AuthForm kind="listener" askName signUpLabel="Create account" initialMode="signin" />
         </section>
       )}
@@ -208,7 +209,7 @@ function SignInDetails() {
         <Note msg={emailMsg} />
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <Button type="submit" disabled={busy || (!pendingEmail && (!email.trim() || !current))}>{pendingEmail ? "Confirm new email" : "Change email"}</Button>
-          {pendingEmail && <button type="button" className="link-btn" onClick={() => { setPendingEmail(null); setEmailMsg(null); }}>Cancel</button>}
+          {pendingEmail && <Button variant="ghost" onClick={() => { setPendingEmail(null); setEmailMsg(null); }}>Cancel</Button>}
         </div>
       </form>
       <form style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--line)", paddingTop: 16 }} onSubmit={(e) => { e.preventDefault(); void savePassword(); }}>
@@ -241,7 +242,7 @@ function SignOutEverywhere() {
         {sure ? (
           <>
             <Button onClick={() => void auth.signOutEverywhere().then((e) => e && setMsg({ kind: "error", text: e }))}>Yes, sign out everywhere</Button>
-            <button type="button" className="link-btn" onClick={() => setSure(false)}>Cancel</button>
+            <Button variant="ghost" onClick={() => setSure(false)}>Cancel</Button>
           </>
         ) : (
           <Button variant="ghost" onClick={() => setSure(true)}>Sign out everywhere</Button>
@@ -286,7 +287,7 @@ function DeleteAccount({ isArtist }: { isArtist: boolean }) {
           <Note msg={msg} />
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <button type="submit" className="mc-btn danger-btn" disabled={typed !== "DELETE" || !current || busy}>{busy ? "Deleting…" : "Delete my account"}</button>
-            <button type="button" className="link-btn" onClick={() => { setOpen(false); setTyped(""); setCurrent(""); }}>Cancel</button>
+            <Button variant="ghost" onClick={() => { setOpen(false); setTyped(""); setCurrent(""); }}>Cancel</Button>
           </div>
         </form>
       ) : (

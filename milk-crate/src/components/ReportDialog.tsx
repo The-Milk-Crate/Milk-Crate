@@ -5,14 +5,14 @@ import { useAuth } from "../lib/auth";
 import { REASONS, submitReport, type ReportReason } from "../lib/reports";
 import { Button } from "./ui";
 
-/** A small "Report" link that opens the report form for a release or an artist. */
+/** A small "Report" button that opens the report form for a release or an artist. */
 export function ReportButton(props: { releaseId?: string; artistId?: string; subject: string; go: Go }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="link-btn caption report-link" onClick={() => setOpen(true)}>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
         <Flag size={13} strokeWidth={1.9} aria-hidden="true" /> Report
-      </button>
+      </Button>
       {open && <ReportDialog {...props} onClose={() => setOpen(false)} />}
     </>
   );
@@ -97,7 +97,7 @@ function ReportDialog({ releaseId, artistId, subject, go, onClose }: { releaseId
             {error && <p role="alert" className="form-error">{error}</p>}
             <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
               <Button variant="primary" type="submit" disabled={busy}>{busy ? "Sending…" : "Send report"}</Button>
-              <button type="button" className="link-btn" onClick={() => { onClose(); go({ name: "policies", doc: "copyright" }); }}>How takedowns work</button>
+              <Button variant="ghost" onClick={() => { onClose(); go({ name: "policies", doc: "copyright" }); }}>How takedowns work</Button>
             </div>
           </form>
         )}

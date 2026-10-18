@@ -7,6 +7,7 @@ import { formatTime } from "../lib/format";
 import type { Track } from "../lib/types";
 import { HistoryCover, HistoryList } from "./HistoryList";
 import { fileArtist } from "../lib/fileTags";
+import { Button } from "./ui";
 
 /**
  * What's playing and what's next. Drag songs (or use the arrows) to reorder,
@@ -76,14 +77,19 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           <ul className="queue-list">{row(p.current, p.index, true)}</ul>
           <div className="queue-sub">
             <span className="catalog eyebrow">{p.radio ? `Up next · from ${p.radio}` : `Up next${upNext.length ? ` · ${upNext.length}` : ""}`}</span>
-            {upNext.length > 0 && <button type="button" className="link-btn caption" onClick={p.clearUpNext}>Clear</button>}
+            {upNext.length > 0 && <Button size="sm" variant="ghost" onClick={p.clearUpNext}>Clear</Button>}
           </div>
           {upNext.length ? (
             <ul className="queue-list">{upNext.map(({ t, i }) => row(t, i))}</ul>
           ) : (
             <p className="caption muted">Nothing after this one. Use "Play next" or "Add to queue" from any song's menu.</p>
           )}
-          {p.radio && <p className="caption muted">{p.radio} keeps adding songs as it goes. <button type="button" className="link-btn caption" onClick={p.stopRadio}>Stop the radio</button></p>}
+          {p.radio && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+              <p className="caption muted" style={{ margin: 0 }}>{p.radio} keeps adding songs as it goes.</p>
+              <Button size="sm" onClick={p.stopRadio}>Stop the radio</Button>
+            </div>
+          )}
           {!p.radio && p.repeat === "all" && p.queue.length > 1 && <p className="caption muted">Then it starts again from the top.</p>}
         </>
       ) : (

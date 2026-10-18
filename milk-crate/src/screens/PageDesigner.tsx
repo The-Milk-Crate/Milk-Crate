@@ -192,7 +192,7 @@ function CustomFontTile({ page, name, onPick, onUse }: { page: ArtistPage; name:
         <span className="font-tile-sample" style={{ fontFamily: family }}>{name}</span>
         <span className="caption muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{page.fontName || "Your font"}</span>
       </button>
-      <button type="button" className="link-btn caption" onClick={onPick}>Replace</button>
+      <Button size="sm" onClick={onPick}>Replace</Button>
     </div>
   );
 }
@@ -226,8 +226,8 @@ function ImageSlot(props: { label: string; hint: string; shape: "wide" | "tall" 
       )}
       {value && (
         <span style={{ display: "flex", gap: 12 }}>
-          <button type="button" className="link-btn caption" onClick={onPick}>Change</button>
-          <button type="button" className="link-btn caption" onClick={onRemove}>Remove</button>
+          <Button size="sm" onClick={onPick}>Change</Button>
+          <Button size="sm" variant="ghost" onClick={onRemove}>Remove</Button>
         </span>
       )}
     </div>

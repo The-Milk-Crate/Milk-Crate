@@ -168,7 +168,7 @@ function Send({ account }: { account: string }) {
       <div className="link-step">
         <div className="link-step-head">
           <span className="catalog eyebrow">1 · To</span>
-          <button type="button" className="link-btn caption" onClick={look} disabled={looking}><RefreshCw size={12} aria-hidden="true" /> Look again</button>
+          <Button size="sm" onClick={look} disabled={looking}><RefreshCw size={14} aria-hidden="true" /> Look again</Button>
         </div>
         {looking && !peers?.length ? (
           <p className="muted cd-ripper-wait"><LoaderCircle className="spin" size={16} aria-hidden="true" /> Looking for your other computers…</p>

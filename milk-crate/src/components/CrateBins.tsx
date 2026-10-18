@@ -123,7 +123,7 @@ function FullBin({ bin, front, setFront, go, next, onNext }: {
           </button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <button type="button" className="link-btn bin-title" onClick={() => go({ name: "album", releaseId: record.id })}>{record.title}</button>
+          <strong className="bin-title">{record.title}</strong>
           <span className="caption">{[recordArtist?.name, bin.place.name, record.year].filter(Boolean).join(" · ")}</span>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
@@ -147,7 +147,7 @@ function FullBin({ bin, front, setFront, go, next, onNext }: {
             </button>
           );
         })}
-        {next && <button type="button" className="link-btn" style={{ alignSelf: "flex-start", marginTop: 4, fontWeight: 600 }} onClick={onNext}>Next bin: {next.place.name}</button>}
+        {next && <Button style={{ alignSelf: "flex-start", marginTop: 4 }} onClick={onNext}>Next bin: {next.place.name}</Button>}
       </div>
     </div>
   );
@@ -197,7 +197,7 @@ function EmptyBin({ bin, go, next, onNext }: { bin: Bin; go: Go; next: Bin | nul
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
           {next && <Button variant="primary" onClick={onNext}>Flip to {next.place.name}</Button>}
-          <button type="button" className="link-btn" style={{ fontWeight: 600 }} onClick={() => go({ name: "upload" })}>Make music in {name}? Apply as an artist</button>
+          <Button onClick={() => go({ name: "upload" })}>Make music in {name}? Apply as an artist</Button>
         </div>
       </div>
     </div>
