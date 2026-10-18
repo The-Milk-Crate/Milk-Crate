@@ -29,7 +29,7 @@ export function ComputerLink({ onClose }: { onClose: () => void }) {
           </div>
           {mode === "send" ? <Send account={userId} /> : <Receive account={userId} />}
           <p className="caption muted">
-            Both computers need Milk Crate open and to be on the same network (the same Wi-Fi, or a cable between them). The CDs go straight across and are never uploaded. The first time, your computer may ask whether Milk Crate can use the network: allow it.
+            Both computers need Milk Crate open and to be on the same network (the same Wi-Fi, or a cable between them). The CDs go straight across, encrypted with a key made from the code, and are never uploaded. The first time, your computer may ask whether Milk Crate can use the network: allow it.
           </p>
         </>
       )}

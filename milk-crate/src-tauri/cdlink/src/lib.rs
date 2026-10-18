@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hasher};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +20,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub mod media;
+mod secure;
+use secure::{Channel, Failure};
 
 pub const DISCOVERY_PORT: u16 = 47820;
 pub const TRANSFER_PORT: u16 = 47821;
@@ -56,9 +58,6 @@ pub struct FileEntry {
 
 #[derive(Serialize, Deserialize)]
 struct Offer {
-    v: u32,
-    code: String,
-    account: String,
     from: String,
     files: Vec<FileEntry>,
     /// Only asking which of these the receiver already has (nothing is sent).
@@ -303,36 +302,35 @@ enum Refused {
     Other(String),
 }
 
-fn reply(stream: &mut TcpStream, r: &Reply) {
-    // (Reply's `have` is only filled in where it means something.)
-    let mut line = serde_json::to_vec(r).unwrap_or_default();
-    line.push(b'\n');
-    let _ = stream.write_all(&line);
+fn reply(ch: &mut Channel, r: &Reply) {
+    let _ = ch.send(&serde_json::to_vec(r).unwrap_or_default());
 }
 
-fn receive_one(mut stream: TcpStream, code: &str, account: &str, root: &Path, stop: &AtomicBool, on_event: &dyn Fn(ReceiveEvent)) -> Result<(), Refused> {
+fn receive_one(stream: TcpStream, code: &str, account: &str, root: &Path, stop: &AtomicBool, on_event: &dyn Fn(ReceiveEvent)) -> Result<(), Refused> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
-    let mut reader = BufReader::new(stream.try_clone().map_err(|e| Refused::Other(e.to_string()))?);
-    let mut line = Vec::new();
-    (&mut reader).take(1 << 20).read_until(b'\n', &mut line).map_err(|_| Refused::Quiet)?;
-    let offer: Offer = serde_json::from_slice(&line).map_err(|_| Refused::Quiet)?;
-    let no = |stream: &mut TcpStream, e: &str| reply(stream, &Reply { ok: false, error: Some(e.into()), have: vec![] });
-    if offer.code.trim() != code {
-        no(&mut stream, "That code doesn't match. Check the code on the other computer.");
-        return Err(Refused::WrongCode);
-    }
-    if offer.account != account {
-        no(&mut stream, "Both computers need to be signed in to the same Milk Crate account.");
-        return Err(Refused::Quiet);
-    }
+    // The encrypted connection: only a sender with this code (and this account) gets one.
+    let mut ch = match Channel::accept(stream, code, account) {
+        Ok(c) => c,
+        Err(Failure::NoMatch) => return Err(Refused::WrongCode),
+        Err(_) => return Err(Refused::Quiet),
+    };
+    let offer: Offer = match ch.recv() {
+        Ok(b) => serde_json::from_slice(&b).map_err(|_| Refused::Quiet)?,
+        Err(Failure::NoMatch) => {
+            ch.refuse();
+            return Err(Refused::WrongCode);
+        }
+        Err(_) => return Err(Refused::Quiet),
+    };
+    let no = |ch: &mut Channel, e: &str| reply(ch, &Reply { ok: false, error: Some(e.into()), have: vec![] });
     let total: u64 = offer.files.iter().map(|f| f.size).sum();
     if offer.files.is_empty() || offer.files.len() > MAX_FILES || total > MAX_TOTAL || offer.files.iter().any(|f| f.size > MAX_FILE) {
-        no(&mut stream, "That's more than can be sent at once.");
+        no(&mut ch, "That's more than can be sent at once.");
         return Err(Refused::Quiet);
     }
     let targets: Option<Vec<PathBuf>> = offer.files.iter().map(|f| safe_target(root, &f.rel)).collect();
     let Some(targets) = targets else {
-        no(&mut stream, "Some of those files aren't songs or covers.");
+        no(&mut ch, "Some of those files aren't songs or covers.");
         return Err(Refused::Quiet);
     };
     // Already here (same name, same size): sent before, so not again.
@@ -340,20 +338,19 @@ fn receive_one(mut stream: TcpStream, code: &str, account: &str, root: &Path, st
         .filter(|(_, (f, t))| std::fs::metadata(t).map(|m| m.is_file() && m.len() == f.size).unwrap_or(false))
         .map(|(i, _)| i).collect();
     if offer.check {
-        reply(&mut stream, &Reply { ok: true, error: None, have });
+        reply(&mut ch, &Reply { ok: true, error: None, have });
         return Ok(());
     }
-    // A sender from before version 2 sends everything anyway.
-    let skip: std::collections::HashSet<usize> = if offer.v >= 2 { have.iter().copied().collect() } else { Default::default() };
-    reply(&mut stream, &Reply { ok: true, error: None, have: if offer.v >= 2 { have.clone() } else { vec![] } });
+    let skip: std::collections::HashSet<usize> = have.iter().copied().collect();
+    reply(&mut ch, &Reply { ok: true, error: None, have: have.clone() });
     let total: u64 = offer.files.iter().enumerate().filter(|(i, _)| !skip.contains(i)).map(|(_, f)| f.size).sum();
     on_event(ReceiveEvent::Incoming { from: offer.from.clone(), files: offer.files.len() - skip.len(), bytes: total });
+    ch.set_timeout(60);
 
     let mut done = 0u64;
     // Everything this computer now has from the offer (ones it already had too, so the app lists them).
     let mut saved: Vec<String> = skip.iter().map(|&i| targets[i].to_string_lossy().to_string()).collect();
     let mut last = Instant::now();
-    let mut buf = vec![0u8; 256 * 1024];
     for (i, (f, target)) in offer.files.iter().zip(&targets).enumerate() {
         if skip.contains(&i) {
             continue;
@@ -368,15 +365,17 @@ fn receive_one(mut stream: TcpStream, code: &str, account: &str, root: &Path, st
         let mut out = std::fs::File::create(&part).map_err(|e| Refused::Other(format!("Couldn't save {}: {e}", target.display())))?;
         let mut left = f.size;
         while left > 0 {
-            let want = buf.len().min(left as usize);
-            let n = reader.read(&mut buf[..want]).map_err(|e| Refused::Other(format!("The other computer stopped sending: {e}")))?;
-            if n == 0 {
-                let _ = std::fs::remove_file(&part);
-                return Err(Refused::Other("The other computer stopped sending.".into()));
-            }
-            out.write_all(&buf[..n]).map_err(|e| Refused::Other(format!("Couldn't save {}: {e}", target.display())))?;
-            left -= n as u64;
-            done += n as u64;
+            let piece = match ch.recv() {
+                Ok(p) if !p.is_empty() && p.len() as u64 <= left => p,
+                _ => {
+                    drop(out);
+                    let _ = std::fs::remove_file(&part);
+                    return Err(Refused::Other("The other computer stopped sending.".into()));
+                }
+            };
+            out.write_all(&piece).map_err(|e| Refused::Other(format!("Couldn't save {}: {e}", target.display())))?;
+            left -= piece.len() as u64;
+            done += piece.len() as u64;
             if last.elapsed() > Duration::from_millis(150) {
                 last = Instant::now();
                 on_event(ReceiveEvent::Progress { done, total, file: f.rel.clone() });
@@ -386,7 +385,7 @@ fn receive_one(mut stream: TcpStream, code: &str, account: &str, root: &Path, st
         std::fs::rename(&part, target).map_err(|e| Refused::Other(format!("Couldn't save {}: {e}", target.display())))?;
         saved.push(target.to_string_lossy().to_string());
     }
-    reply(&mut stream, &Reply { ok: true, error: None, have: vec![] });
+    reply(&mut ch, &Reply { ok: true, error: None, have: vec![] });
     on_event(ReceiveEvent::Progress { done: total, total, file: String::new() });
     on_event(ReceiveEvent::Done { from: offer.from, files: saved });
     Ok(())
@@ -436,46 +435,54 @@ fn entries(paths: &[PathBuf]) -> Result<Vec<(PathBuf, FileEntry)>, String> {
         .collect::<Result<_, String>>()
 }
 
-fn connect(addr: &str, offer: &Offer) -> Result<(TcpStream, BufReader<TcpStream>, Reply), String> {
+const NO_MATCH_TEXT: &str = "That code doesn't match (or that computer is signed in to a different account). Check the code on the other computer.";
+
+fn failure_text(f: Failure) -> String {
+    match f {
+        Failure::NoMatch => NO_MATCH_TEXT.into(),
+        Failure::OldVersion => "Update Milk Crate on both computers, then try again.".into(),
+        Failure::Io(_) => "The other computer didn't answer.".into(),
+    }
+}
+
+fn read_reply(ch: &mut Channel) -> Result<Reply, String> {
+    let b = ch.recv().map_err(failure_text)?;
+    serde_json::from_slice(&b).map_err(|_| "The other computer didn't answer.".to_string())
+}
+
+/// Connects (encrypted), makes the offer and reads the answer.
+fn connect(addr: &str, code: &str, account: &str, offer: &Offer) -> Result<(Channel, Reply), String> {
     let addr: SocketAddr = addr.parse().map_err(|_| "That computer's address doesn't look right.".to_string())?;
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(|_| "Couldn't reach that computer. Is it still waiting to receive?".to_string())?;
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(|_| "Couldn't reach that computer. Is it still waiting to receive?".to_string())?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
-    let mut line = serde_json::to_vec(offer).map_err(|e| e.to_string())?;
-    line.push(b'\n');
-    stream.write_all(&line).map_err(|e| e.to_string())?;
-    let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
-    let r = read_reply(&mut reader)?;
+    let mut ch = Channel::open(stream, code, account).map_err(failure_text)?;
+    ch.send(&serde_json::to_vec(offer).map_err(|e| e.to_string())?)?;
+    let r = read_reply(&mut ch)?;
     if !r.ok {
         return Err(r.error.unwrap_or_else(|| "The other computer said no.".into()));
     }
-    Ok((stream, reader, r))
-}
-
-fn read_reply(reader: &mut BufReader<TcpStream>) -> Result<Reply, String> {
-    let mut l = String::new();
-    reader.read_line(&mut l).map_err(|_| "The other computer didn't answer.".to_string())?;
-    serde_json::from_str(&l).map_err(|_| "The other computer didn't answer.".to_string())
+    Ok((ch, r))
 }
 
 /// Which of these files the other computer already has (sent before). Needs its code, like sending.
 pub fn check(addr: &str, code: &str, account: &str, from: &str, paths: &[PathBuf]) -> Result<Vec<bool>, String> {
     let files = entries(paths)?;
-    let offer = Offer { v: 2, code: code.trim().into(), account: account.into(), from: from.into(), files: files.iter().map(|(_, f)| f.clone()).collect(), check: true };
-    let (_, _, r) = connect(addr, &offer)?;
+    let offer = Offer { from: from.into(), files: files.iter().map(|(_, f)| f.clone()).collect(), check: true };
+    let (_, r) = connect(addr, code, account, &offer)?;
     Ok((0..files.len()).map(|i| r.have.contains(&i)).collect())
 }
 
-/// Sends these files to a computer that's receiving (`code`: the 6 digits it shows). Files it
-/// already has aren't sent again.
+/// Sends these files to a computer that's receiving (`code`: the 6 digits it shows), encrypted.
+/// Files it already has aren't sent again.
 pub fn send(addr: &str, code: &str, account: &str, from: &str, paths: &[PathBuf], on_progress: &dyn Fn(SendProgress), cancel: &AtomicBool) -> Result<Sent, String> {
     let files = entries(paths)?;
-    let offer = Offer { v: 2, code: code.trim().into(), account: account.into(), from: from.into(), files: files.iter().map(|(_, f)| f.clone()).collect(), check: false };
-    let (mut stream, mut reader, r) = connect(addr, &offer)?;
+    let offer = Offer { from: from.into(), files: files.iter().map(|(_, f)| f.clone()).collect(), check: false };
+    let (mut ch, r) = connect(addr, code, account, &offer)?;
     let skip: std::collections::HashSet<usize> = r.have.into_iter().collect();
     let total: u64 = files.iter().enumerate().filter(|(i, _)| !skip.contains(i)).map(|(_, (_, f))| f.size).sum();
     let mut done = 0u64;
     let mut last = Instant::now();
-    let mut buf = vec![0u8; 256 * 1024];
+    let mut buf = vec![0u8; secure::CHUNK];
     for (i, (path, f)) in files.iter().enumerate() {
         if skip.contains(&i) {
             continue;
@@ -491,7 +498,7 @@ pub fn send(addr: &str, code: &str, account: &str, from: &str, paths: &[PathBuf]
             if n == 0 {
                 return Err(format!("{} changed while sending.", path.display()));
             }
-            stream.write_all(&buf[..n]).map_err(|_| "The connection to the other computer dropped.".to_string())?;
+            ch.send(&buf[..n])?;
             left -= n as u64;
             done += n as u64;
             if last.elapsed() > Duration::from_millis(150) {
@@ -500,7 +507,7 @@ pub fn send(addr: &str, code: &str, account: &str, from: &str, paths: &[PathBuf]
             }
         }
     }
-    let r = read_reply(&mut reader)?;
+    let r = read_reply(&mut ch)?;
     if !r.ok {
         return Err(r.error.unwrap_or_else(|| "The other computer couldn't save them.".into()));
     }
@@ -557,10 +564,11 @@ mod tests {
         let files = with_covers(&[song.clone()]);
         let never = AtomicBool::new(false);
 
-        let err = send(&addr, "000000x", &acct, "Laptop", &files, &|_| {}, &never).unwrap_err();
-        assert!(err.contains("code"), "{err}");
+        let wrong = if rx.code == "000000" { "111111" } else { "000000" };
+        let err = send(&addr, wrong, &acct, "Laptop", &files, &|_| {}, &never).unwrap_err();
+        assert!(err.contains("code doesn't match"), "{err}");
         let err = send(&addr, &rx.code, &account_tag("someone else"), "Laptop", &files, &|_| {}, &never).unwrap_err();
-        assert!(err.contains("same Milk Crate account"), "{err}");
+        assert!(err.contains("different account"), "{err}");
 
         assert_eq!(check(&addr, &rx.code, &acct, "Laptop", &files).unwrap(), vec![false, false]);
         let sent = send(&addr, &rx.code, &acct, "Laptop", &files, &|_| {}, &never).unwrap();
@@ -576,6 +584,28 @@ mod tests {
         assert!(ev.iter().any(|e| matches!(e, ReceiveEvent::Done { files, .. } if files.len() == 2)));
         drop(rx);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn nothing_readable_goes_over_the_wire() {
+        // Everything after the handshake is encrypted: the song's bytes never appear as they are.
+        use std::net::TcpListener;
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let seen = std::thread::spawn(move || {
+            let (s, _) = l.accept().unwrap();
+            let mut ch = Channel::accept(s.try_clone().unwrap(), "123456", "acct").ok().unwrap();
+            let got = ch.recv().ok().unwrap();
+            (got, s)
+        });
+        let s = TcpStream::connect(addr).unwrap();
+        let tap = s.try_clone().unwrap();
+        let mut ch = Channel::open(s, "123456", "acct").ok().unwrap();
+        let secret = b"SECRET SONG BYTES SECRET SONG BYTES".to_vec();
+        ch.send(&secret).unwrap();
+        let (got, _keep) = seen.join().unwrap();
+        assert_eq!(got, secret);
+        drop(tap);
     }
 
     #[test]

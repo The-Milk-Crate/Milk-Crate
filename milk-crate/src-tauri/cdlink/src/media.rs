@@ -6,6 +6,7 @@
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const AUDIO: [(&str, &str); 8] = [
@@ -48,9 +49,65 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
+/// A FLAC file decoded to WAV, which every player can play (the Mac's web view may not play FLAC).
+/// The last few are kept, since a player asks for a song in many byte ranges.
+fn wav_of(path: &std::path::Path) -> Result<Arc<Vec<u8>>, String> {
+    static CACHE: Mutex<Vec<(PathBuf, Arc<Vec<u8>>)>> = Mutex::new(Vec::new());
+    if let Some((_, w)) = CACHE.lock().unwrap().iter().find(|(p, _)| p == path) {
+        return Ok(w.clone());
+    }
+    let wav = Arc::new(decode_to_wav(path)?);
+    let mut c = CACHE.lock().unwrap();
+    c.retain(|(p, _)| p != path);
+    c.push((path.to_path_buf(), wav.clone()));
+    if c.len() > 3 {
+        c.remove(0);
+    }
+    Ok(wav)
+}
+
+/// Decodes a FLAC file into a WAV file in memory (16- or 24-bit PCM, as the FLAC is).
+pub fn decode_to_wav(path: &std::path::Path) -> Result<Vec<u8>, String> {
+    let mut r = claxon::FlacReader::open(path).map_err(|e| e.to_string())?;
+    let info = r.streaminfo();
+    let ch = info.channels as u16;
+    let bits = if info.bits_per_sample <= 16 { 16u16 } else { 24 };
+    let bytes = (bits / 8) as usize;
+    let frames = info.samples.unwrap_or(0) as usize;
+    let mut data = Vec::with_capacity(frames * ch as usize * bytes);
+    let shift = if info.bits_per_sample <= 16 { 16 - info.bits_per_sample } else { 24u32.saturating_sub(info.bits_per_sample) };
+    for s in r.samples() {
+        let v = s.map_err(|e| e.to_string())? << shift;
+        if bits == 16 {
+            data.extend_from_slice(&(v as i16).to_le_bytes());
+        } else {
+            data.extend_from_slice(&v.to_le_bytes()[..3]);
+        }
+    }
+    let rate = info.sample_rate;
+    let block = ch as u32 * bytes as u32;
+    let mut w = Vec::with_capacity(44 + data.len());
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&ch.to_le_bytes());
+    w.extend_from_slice(&rate.to_le_bytes());
+    w.extend_from_slice(&(rate * block).to_le_bytes());
+    w.extend_from_slice(&(block as u16).to_le_bytes());
+    w.extend_from_slice(&bits.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    w.extend_from_slice(&data);
+    Ok(w)
+}
+
 /// The file a request path names, if the token matches and it's an audio file.
+/// "/TOKEN/wav/…" asks for a FLAC file as WAV.
 pub fn file_for(request_path: &str, token: &str) -> Option<(PathBuf, &'static str)> {
     let rest = request_path.strip_prefix('/')?.strip_prefix(token)?.strip_prefix('/')?;
+    let rest = rest.strip_prefix("wav/").unwrap_or(rest);
     let rest = rest.split(['?', '#']).next()?;
     let path = PathBuf::from(percent_decode(rest)?);
     if !path.is_absolute() {
@@ -108,11 +165,25 @@ fn serve(stream: TcpStream, token: &str) -> std::io::Result<()> {
             write!(out, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
             return Ok(());
         };
-        let Ok(mut f) = std::fs::File::open(&file) else {
-            write!(out, "HTTP/1.1 404 Not Found\r\n{cors}Content-Length: 0\r\nConnection: close\r\n\r\n")?;
-            return Ok(());
+        // As WAV (decoded), or the file as it is.
+        let as_wav = path.strip_prefix('/').and_then(|p| p.strip_prefix(token)).is_some_and(|p| p.starts_with("/wav/")) && mime == "audio/flac";
+        enum Body { Mem(Arc<Vec<u8>>), File(std::fs::File) }
+        let (mut body, len, mime) = if as_wav {
+            match wav_of(&file) {
+                Ok(w) => { let n = w.len() as u64; (Body::Mem(w), n, "audio/wav") }
+                Err(_) => {
+                    write!(out, "HTTP/1.1 415 Unsupported Media Type\r\n{cors}Content-Length: 0\r\nConnection: close\r\n\r\n")?;
+                    return Ok(());
+                }
+            }
+        } else {
+            let Ok(f) = std::fs::File::open(&file) else {
+                write!(out, "HTTP/1.1 404 Not Found\r\n{cors}Content-Length: 0\r\nConnection: close\r\n\r\n")?;
+                return Ok(());
+            };
+            let n = f.metadata()?.len();
+            (Body::File(f), n, mime)
         };
-        let len = f.metadata()?.len();
         let (status, start, end) = match range.as_deref().map(|r| parse_range(r, len)) {
             Some(Some((s, e))) => ("206 Partial Content", s, e),
             Some(None) => {
@@ -127,8 +198,13 @@ fn serve(stream: TcpStream, token: &str) -> std::io::Result<()> {
         if method == "HEAD" || count == 0 {
             continue;
         }
-        f.seek(SeekFrom::Start(start))?;
-        std::io::copy(&mut (&mut f).take(count), &mut out)?;
+        match &mut body {
+            Body::Mem(w) => out.write_all(&w[start as usize..=end as usize])?,
+            Body::File(f) => {
+                f.seek(SeekFrom::Start(start))?;
+                std::io::copy(&mut f.take(count), &mut out)?;
+            }
+        }
         out.flush()?;
     }
 }
@@ -156,6 +232,33 @@ mod tests {
         assert!(file_for(p, "other").is_none());
         assert!(file_for("/tok/%2Fetc%2Fpasswd", "tok").is_none());
         assert!(file_for("/tok/relative.flac", "tok").is_none());
+    }
+
+    #[test]
+    fn flac_decodes_to_wav() {
+        // A real FLAC from the ripper's own encoder would need cdrip; a hand-made tiny one is enough
+        // to check the WAV header is right: write PCM, encode with flac if it's installed, else skip.
+        let dir = std::env::temp_dir().join(format!("cdlink-wav-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("t.wav");
+        let pcm: Vec<i16> = (0..44100).map(|i| ((i as f32 * 0.05).sin() * 8000.0) as i16).collect();
+        let mut w = Vec::new();
+        for s in &pcm { w.extend_from_slice(&s.to_le_bytes()); w.extend_from_slice(&s.to_le_bytes()); }
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&(36 + w.len() as u32).to_le_bytes());
+        file.extend_from_slice(b"WAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00\x44\xac\x00\x00\x10\xb1\x02\x00\x04\x00\x10\x00data");
+        file.extend_from_slice(&(w.len() as u32).to_le_bytes());
+        file.extend_from_slice(&w);
+        std::fs::write(&wav, &file).unwrap();
+        let flac = dir.join("t.flac");
+        let ok = std::process::Command::new("ffmpeg").args(["-v", "error", "-y", "-i"]).arg(&wav).arg(&flac).status().map(|s| s.success()).unwrap_or(false);
+        if ok {
+            let out = decode_to_wav(&flac).unwrap();
+            assert_eq!(&out[..4], b"RIFF");
+            assert_eq!(out.len(), file.len());
+            assert_eq!(&out[44..], &file[44..]);
+        }
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

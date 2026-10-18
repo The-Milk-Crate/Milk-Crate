@@ -72,11 +72,16 @@ let mediaBase: Promise<string | null> | null = null;
  * server (macOS's web view doesn't reliably play audio from the built-in file protocol); elsewhere
  * the file protocol URL the track already has.
  */
-export async function playableSrc(track: { id: string; src?: string }): Promise<string | undefined> {
+export async function playableSrc(track: { id: string; src?: string }, { raw = false } = {}): Promise<string | undefined> {
   if (!track.id.startsWith("local:") || !onMac()) return track.src;
   mediaBase ??= import("@tauri-apps/api/core").then(({ invoke }) => invoke<string>("media_base")).catch(() => null);
   const base = await mediaBase;
-  return base ? base + encodeURIComponent(track.id.slice(6)) : track.src;
+  if (!base) return track.src;
+  const path = track.id.slice(6);
+  // FLAC plays as WAV, decoded by the app: the Mac's web view may not play FLAC itself.
+  // (`raw`: the file as it is, for reading its tags and cover.)
+  const wav = !raw && /\.flac$/i.test(path);
+  return `${base}${wav ? "wav/" : ""}${encodeURIComponent(path)}`;
 }
 
 /** Desktop: reads a song file through the app (not the webview) and returns a blob URL for it. */

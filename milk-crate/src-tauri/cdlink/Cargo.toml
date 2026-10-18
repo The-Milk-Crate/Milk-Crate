@@ -6,3 +6,11 @@ edition = "2024"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The transfer is encrypted: a key both computers work out from the 6-digit code (SPAKE2, so the
+# code can't be guessed from what's overheard), then ChaCha20-Poly1305.
+spake2 = "0.4"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+claxon = "0.4"
