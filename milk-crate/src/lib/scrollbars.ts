@@ -293,6 +293,13 @@ let pointer: { x: number; y: number } | null = null;
 const isTyping = (n: EventTarget | null) =>
   n instanceof Element && !!n.closest("input, textarea, select, [contenteditable=''], [contenteditable='true'], [role='slider'], [role='listbox'], [role='menu']");
 
+/** The sideways row the wheel was last flipping through, and how far it's been spun past the row's end. */
+let held: { area: Element; at: number; extra: number } | null = null;
+/** A pause this long (between wheel clicks) at a row's end lets the page scroll. */
+const HOLD_PAUSE_MS = 350;
+/** ...or spinning this much further past the end (about six wheel clicks). */
+const HOLD_EXTRA_PX = 600;
+
 function onWheel(e: WheelEvent) {
   if (e.defaultPrevented || e.ctrlKey) return;
   // Already sideways (trackpad swipe, Shift+wheel): the system handles it.
@@ -309,11 +316,23 @@ function onWheel(e: WheelEvent) {
       return;
     }
     if (ax.x) {
-      // At either end, let the wheel move the page instead.
-      if (!canMove(area as HTMLElement, "x", dy)) return;
-      e.preventDefault();
-      push(area as HTMLElement, dy, 0);
-      return;
+      const now = performance.now();
+      if (canMove(area as HTMLElement, "x", dy)) {
+        held = { area, at: now, extra: 0 };
+        e.preventDefault();
+        push(area as HTMLElement, dy, 0);
+        return;
+      }
+      // At an end. If you were just flipping through this row, the row holds on to the wheel a moment
+      // longer (until you pause, or keep spinning a good while), so the page doesn't take off at once.
+      if (held && held.area === area && now - held.at < HOLD_PAUSE_MS && held.extra < HOLD_EXTRA_PX) {
+        held.at = now;
+        held.extra += Math.abs(dy);
+        e.preventDefault();
+        return;
+      }
+      held = null;
+      return; // the page scrolls
     }
     if (area !== n) return;
   }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, ImagePlus, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
 import { useCatalog } from "../lib/catalog";
@@ -143,8 +143,37 @@ const GROW = 1.3;
 /** How many on each side are drawn (the rest are hidden behind them anyway). */
 const SHOWN = 10;
 
+/**
+ * How much bigger than the base sizes the stack is drawn: it grows to fill the space it has
+ * (wide and tall windows get big records), never smaller than the base and at most 1.75×.
+ */
+function useStackScale(kind: ShelfFormat) {
+  const box = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const base = SIZES[kind];
+    const fit = () => {
+      // Room for the one you're on (grown) and strips of two neighbors each side; the rest tuck out of view.
+      const byWidth = el.clientWidth / (base.w * GROW + base.strip * 4);
+      // Leave room above for the page header and tabs, below for the controls and the player.
+      const byHeight = (window.innerHeight - 420) / (base.h * GROW + 40);
+      setScale(Math.max(1, Math.min(1.75, byWidth, byHeight)));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    window.addEventListener("resize", fit);
+    return () => { ro.disconnect(); window.removeEventListener("resize", fit); };
+  }, [kind]);
+  return { box, scale };
+}
+
 function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat; go: Go }) {
-  const size = SIZES[kind];
+  const { box, scale } = useStackScale(kind);
+  const base = SIZES[kind];
+  const size = { ...base, w: Math.round(base.w * scale), h: Math.round(base.h * scale), strip: Math.round(base.strip * scale) };
   const { index, setIndex, wasDrag, handlers } = useFlipper(items.length, {
     axis: "x", step: size.strip,
     onFlip: () => flipSound(kind === "cds" ? "case" : kind === "cassettes" ? "tape" : "sleeve"),
@@ -172,7 +201,7 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
 
   return (
     <div className="flat-dig">
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+      <div ref={box} style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
         <div className="flat-stage" tabIndex={0} role="group" aria-roledescription="stack"
           aria-label={`${items.length} ${size.one}s. Scroll, drag or use the arrow keys to flip.`}
           style={{ height: stageH }} onWheel={handlers.onWheel} onPointerDown={handlers.onPointerDown} onPointerMove={handlers.onPointerMove}

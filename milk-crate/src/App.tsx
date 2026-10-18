@@ -39,6 +39,7 @@ import { QueuePanel } from "./components/QueuePanel";
 import { SearchPalette } from "./components/SearchPalette";
 import { FeedbackDialog } from "./components/FeedbackDialog";
 import { HoldOn } from "./components/HoldOn";
+import { WindowChrome } from "./components/WindowChrome";
 import { leaveGuard } from "./lib/leaveGuard";
 import { usePersistentState } from "./lib/storage";
 import { listenForLinks } from "./lib/share";
@@ -123,6 +124,7 @@ export default function App() {
     <PlayerProvider>
       <Shell />
       <UpdatePrompt />
+      <WindowChrome />
     </PlayerProvider>
     </DownloadsProvider>
     </LibraryProvider>
