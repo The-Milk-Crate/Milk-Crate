@@ -13,8 +13,8 @@ const SECTION: Partial<Record<Route["name"], Route["name"]>> = { album: "artist"
 
 /** Opened like a folder under Your Crate while you're in it. */
 const CRATE_FOLDER: NavItem[] = [
-  { name: "computer", label: "Your Computer", Icon: Monitor },
   { name: "shelf", label: "Your Shelf", Icon: Disc3 },
+  { name: "computer", label: "Your Computer", Icon: Monitor },
 ];
 
 /** The main navigation. Collapses to an icon rail (labels show as tooltips). */
