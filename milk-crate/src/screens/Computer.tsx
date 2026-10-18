@@ -6,6 +6,7 @@ import { useLibrary } from "../lib/library";
 import { pickAudioFiles, tracksFromPaths } from "../lib/localFiles";
 import { canRip } from "../lib/cd";
 import { CdRipper } from "../components/CdRipper";
+import { useRip } from "../lib/ripSession";
 import { AddToPlaylist } from "../components/AddToPlaylist";
 import { changeRippedCover } from "../lib/ripped";
 import { albumKey, fileArtist, groupComputer, tagTrack, useFileCover, type ComputerAlbum } from "../lib/fileTags";
@@ -40,7 +41,8 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
   const { albums, songs } = useMemo(() => groupComputer(p.localTracks), [p.localTracks]);
   const [work, setWork] = useState<{ done: number; total: number } | null>(null);
   const [msg, setMsg] = useState("");
-  const [ripOpen, setRipOpen] = useState(false);
+  // Open stays open while you browse elsewhere, so a rip in progress is here when you come back.
+  const [ripOpen, setRipOpen] = useRip("open");
 
   // A ripped CD: its new files join Your Computer, tags (names, cover) read from the files.
   const addRipped = async (paths: string[]) => {
@@ -54,6 +56,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
     // It's a CD you own: it goes on Your Shelf and in Your Crate › Albums too (on this computer only).
     const key = tagged.map(albumKey).find(Boolean);
     if (key) p.addRippedCd(key);
+    return key;
   };
 
   // Files added before tags were read: read them once.

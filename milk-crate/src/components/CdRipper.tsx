@@ -1,21 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Disc3, ImagePlus, LoaderCircle, Lock, X } from "lucide-react";
-import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUrl, lookupDisc, ripDisc, type CdMatch, type Disc, type RipProgress, type Ripped } from "../lib/cd";
+import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUrl, lookupDisc, ripDisc, type CdMatch, type Disc } from "../lib/cd";
 import { pickImage } from "../lib/localFiles";
-import { setLeaveGuard } from "../lib/leaveGuard";
+import { ripState, useRip, setRip, type Draft } from "../lib/ripSession";
 import { formatTime } from "../lib/format";
 import { Button, Sleeve } from "./ui";
 
-type Found = "looking" | "found" | "unknown" | "offline";
-
-interface Draft {
-  album: string;
-  artist: string;
-  year: string;
-  titles: string[];
-  artists: string[];
-  cover: string | null;
-}
 
 const blank = (d: Disc): Draft => ({
   album: "",
@@ -40,25 +30,26 @@ const fromMatch = (m: CdMatch): Draft => ({
  * Your Computer › Rip a CD: finds the audio CD, fills in the album from MusicBrainz (names, order,
  * cover), lets you fix anything, then saves each song as a tagged FLAC in Music › Milk Crate.
  */
-export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped: (files: string[]) => Promise<void> }) {
-  const [disc, setDisc] = useState<Disc | null | undefined>(undefined);
-  const [matches, setMatches] = useState<CdMatch[]>([]);
-  const [pick, setPick] = useState(0);
-  const [found, setFound] = useState<Found>("looking");
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [coverBusy, setCoverBusy] = useState(false);
-  const [progress, setProgress] = useState<RipProgress | null>(null);
-  const [ripping, setRipping] = useState(false);
-  const [done, setDone] = useState<{ count: number; folder: string; skipped: Ripped["skipped"] } | null>(null);
-  const [error, setError] = useState("");
-  const [notes, setNotes] = useState<string[]>([]);
+export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped: (files: string[]) => Promise<string | undefined> }) {
+  // All of this lives outside the page (src/lib/ripSession.ts), so a rip carries on while you
+  // browse the rest of the app, and it's all still here when you come back.
+  const [disc, setDisc] = useRip("disc");
+  const [matches, setMatches] = useRip("matches");
+  const [pick, setPick] = useRip("pick");
+  const [found, setFound] = useRip("found");
+  const [draft, setDraft] = useRip("draft");
+  const [coverBusy, setCoverBusy] = useRip("coverBusy");
+  const [progress] = useRip("progress");
+  const [ripping] = useRip("ripping");
+  const [done, setDone] = useRip("done");
+  const [error, setError] = useRip("error");
+  const [notes, setNotes] = useRip("notes");
 
-  // While ripping, leaving the page asks first; going anyway cancels the rip and deletes its files.
+  // On screen: a rip that finishes now needs no notice.
   useEffect(() => {
-    if (!ripping) return;
-    setLeaveGuard({ onProceed: () => void cancelRip(true) });
-    return () => setLeaveGuard(null);
-  }, [ripping]);
+    setRip({ shown: true, notice: null });
+    return () => setRip({ shown: false });
+  }, []);
 
   // Watch the drives until there's a CD (and notice when it's taken out).
   const discId = disc?.discId;
@@ -79,9 +70,10 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
     return () => { live = false; clearInterval(timer); };
   }, []);
 
-  // A new disc: look it up.
+  // A new disc: look it up (not again for the same disc when you come back to the page).
   useEffect(() => {
-    if (!disc) return;
+    if (!disc || ripState().lookedUp === disc.discId) return;
+    setRip({ lookedUp: disc.discId });
     let live = true;
     setDone(null);
     setError("");
@@ -103,7 +95,8 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
   // The chosen edition's cover.
   const chosen = matches[pick];
   useEffect(() => {
-    if (!chosen) return;
+    if (!chosen || ripState().coverFor === chosen.releaseId) return;
+    setRip({ coverFor: chosen.releaseId });
     let live = true;
     setCoverBusy(true);
     fetchCover(chosen.releaseId)
@@ -129,9 +122,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
   /** `only`: just these track numbers (trying skipped songs again). */
   const rip = async (only?: number[]) => {
     if (!disc || !draft) return;
-    setError("");
-    setRipping(true);
-    setProgress(null);
+    setRip({ error: "", ripping: true, progress: null });
     const artist = draft.artist.trim() || "Unknown Artist";
     const album = draft.album.trim() || "Unknown Album";
     try {
@@ -149,20 +140,19 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
             .filter((t) => !only || only.includes(t.number)),
           cover: draft.cover,
         },
-        setProgress,
+        (p) => setRip({ progress: p }),
       );
-      await onRipped(files);
+      const albumKey = await onRipped(files);
       // Trying skipped songs again: count them with the ones saved the first time.
-      setDone((before) => ({
-        count: files.length + (only && before ? before.count : 0),
-        folder: albumFolder(artist, album),
-        skipped,
-      }));
+      const before = ripState().done;
+      const result = { count: files.length + (only && before ? before.count : 0), folder: albumFolder(artist, album), skipped, album, artist, albumKey };
+      // Finished while you were elsewhere in the app: say so in the corner.
+      setRip((s) => ({ done: result, notice: s.shown ? null : result }));
     } catch (e) {
       const msg = String(e);
-      setError(msg === "Stopped" ? "Stopped. Songs already saved are kept." : msg);
+      setRip({ error: msg === "Stopped" ? "Stopped. Songs already saved are kept." : msg });
     } finally {
-      setRipping(false);
+      setRip({ ripping: false });
     }
   };
 

@@ -39,6 +39,7 @@ import { QueuePanel } from "./components/QueuePanel";
 import { SearchPalette } from "./components/SearchPalette";
 import { FeedbackDialog } from "./components/FeedbackDialog";
 import { HoldOn } from "./components/HoldOn";
+import { RipNotice } from "./components/RipNotice";
 import { WindowChrome } from "./components/WindowChrome";
 import { leaveGuard } from "./lib/leaveGuard";
 import { usePersistentState } from "./lib/storage";
@@ -297,6 +298,7 @@ function Shell() {
       {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
       {search !== null && <SearchPalette go={go} initial={search} onClose={() => setSearch(null)} />}
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
+      <RipNotice go={go} />
       {holding && (
         <HoldOn onBack={() => setHolding(null)}
           onProceed={() => { leaveGuard()?.onProceed(); const leave = holding; setHolding(null); leave(); }} />
