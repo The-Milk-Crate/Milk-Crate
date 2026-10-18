@@ -1,4 +1,4 @@
-import { Archive, Bell, Disc3, Monitor, CircleUserRound, MessageSquare, Search, House, MapPin, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Upload, UserRound } from "lucide-react";
+import { Archive, Bell, Disc3, Monitor, CircleUserRound, MessageSquare, Search, House, MapPin, Settings as SettingsIcon, ShieldCheck, Upload, UserRound } from "lucide-react";
 import type { Route } from "../App";
 import { Logo } from "./ui";
 import { useAuth } from "../lib/auth";
@@ -51,10 +51,10 @@ export function Sidebar({ route, go, collapsed, onToggle }: { route: Route; go: 
   return (
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar-head">
-        <Logo className="sidebar-logo" />
-        <button type="button" className="mc-icon-btn sidebar-toggle" onClick={onToggle} aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-          {collapsed ? <PanelLeftOpen size={20} strokeWidth={1.75} aria-hidden="true" /> : <PanelLeftClose size={20} strokeWidth={1.75} aria-hidden="true" />}
+        {/* The logo opens and closes the sidebar. */}
+        <button type="button" className="sidebar-logo-btn" onClick={onToggle} aria-expanded={!collapsed}
+          aria-label={collapsed ? "Milk Crate: expand sidebar" : "Milk Crate: collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+          <Logo className="sidebar-logo" />
         </button>
       </div>
       <button type="button" className="nav-item" onClick={() => openSearch()} aria-label={collapsed ? "Search" : undefined} title={collapsed ? "Search (Ctrl+K)" : undefined} aria-keyshortcuts="Control+K">

@@ -9,6 +9,7 @@ import { enterFullscreen } from "../lib/fullscreen";
 import { Backdrop } from "./Backdrop";
 import { FrostGrain } from "./FrostGrain";
 import { SeekBar } from "./SeekBar";
+import { RepeatButton, ShuffleButton } from "./PlayerBar";
 import { Glyph, PlayButton, Sleeve } from "./ui";
 
 const IDLE_MS = 3000;
@@ -123,9 +124,11 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
           )}
           <SeekBar className="immersive-seek" />
           <div className="immersive-controls">
+            <ShuffleButton />
             <button type="button" className="mc-icon-btn" aria-label="Previous" onClick={p.prev}><Glyph.prev /></button>
             <PlayButton size="lg" playing={p.playing} onClick={p.toggle} />
             <button type="button" className="mc-icon-btn" aria-label="Next" onClick={p.next}><Glyph.next /></button>
+            <RepeatButton />
           </div>
           {hasSongInfo(t) && (
             <button type="button" className={`immersive-lyrics-btn${showInfo ? " on" : ""}`} aria-pressed={showInfo} onClick={() => setShowInfo((v) => !v)}>

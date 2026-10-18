@@ -87,8 +87,9 @@ button { font: inherit; }
 }
 .sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 var(--space-6) var(--space-2); }
 .sidebar-logo { height: 28px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.sidebar-toggle { flex: none; color: var(--ink-muted); }
-.sidebar-toggle:hover { color: var(--ink); }
+.sidebar-logo-btn { display: flex; align-items: center; min-width: 0; padding: 4px; margin: -4px; border: 0; border-radius: var(--radius-md); background: none; color: inherit; cursor: pointer; transition: opacity .15s ease-out; }
+.sidebar-logo-btn:hover { opacity: .8; }
+.sidebar-logo-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .nav-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 /* Collapsed: an icon rail. */
 .side-collapsed .sidebar { padding-left: 12px; padding-right: 12px; overflow-x: hidden; }
@@ -818,6 +819,10 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 /* ---------- Artists: each artist as a panel, a mini artist page ---------- */
 .artist-panels { display: flex; flex-direction: column; gap: var(--space-6); }
 .artist-panels.is-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: var(--space-5, 20px); }
+/* Following: two across (one on a narrow window), with taller banners so the artist's picture shows. */
+.artist-panels.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .artist-panels.is-two { grid-template-columns: minmax(0, 1fr); } }
+.artist-panels.is-two .artist-panel .artist-panel-banner { height: 260px; }
 .artist-panel {
   position: relative; border-radius: var(--radius-lg); overflow: hidden; background: var(--ground-raised);
 }
@@ -858,6 +863,8 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 }
 .mc-scroll-thumb.is-y { box-shadow: inset 1px 0 0 rgba(255, 255, 255, .55), inset 0 0 0 1px rgba(255, 255, 255, .28), 0 2px 8px rgba(0, 0, 0, .28); }
 .mc-scroll-thumb:hover, .mc-scroll-thumb.is-dragging { background-color: rgba(255, 255, 255, .32); }
+/* Beside a big rounded panel, in the gap next to it: slimmer, clear of the panel's round corners. */
+.mc-scroll-thumb.is-y.is-outside { width: 6px; }
 /* Light mode: white frost would vanish on light glass, so the pill is a darker smoked glass with the same bright edge. */
 :root[data-theme="light"] .mc-scroll-thumb { background-color: rgba(27, 23, 20, .2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 0 0 1px rgba(27, 23, 20, .12), 0 2px 8px rgba(27, 23, 20, .16); }
 :root[data-theme="light"] .mc-scroll-thumb:hover, :root[data-theme="light"] .mc-scroll-thumb.is-dragging { background-color: rgba(27, 23, 20, .3); }

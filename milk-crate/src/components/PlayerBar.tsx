@@ -1,7 +1,7 @@
 import { usePlayer } from "../lib/player";
 import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
-import { ListMusic, Maximize2, Repeat, Repeat1, Volume1, Volume2, VolumeX } from "lucide-react";
+import { ListMusic, Maximize2, Repeat, Repeat1, Shuffle, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { Go } from "../App";
 import { SeekBar } from "./SeekBar";
 import { FavoriteButton, Glyph, PlayButton, Sleeve } from "./ui";
@@ -40,15 +40,11 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
 
       <div className="mc-player-center">
         <div className="mc-player-controls">
+          <ShuffleButton />
           <button type="button" className="mc-icon-btn" aria-label="Previous" onClick={p.prev} disabled={!t}><Glyph.prev /></button>
           <PlayButton playing={p.playing} onClick={p.toggle} />
           <button type="button" className="mc-icon-btn" aria-label="Next" onClick={p.next} disabled={!t}><Glyph.next /></button>
-          <button type="button" className={`mc-icon-btn repeat-btn${p.repeat !== "off" ? " on" : ""}`} aria-pressed={p.repeat !== "off"}
-            aria-label={p.repeat === "off" ? "Repeat: off" : p.repeat === "all" ? "Repeat: the whole queue" : "Repeat: this song"}
-            title={p.repeat === "off" ? "Repeat off" : p.repeat === "all" ? "Repeating the queue" : "Repeating this song"}
-            onClick={() => p.setRepeat(p.repeat === "off" ? "all" : p.repeat === "all" ? "one" : "off")}>
-            {p.repeat === "one" ? <Repeat1 size={17} strokeWidth={1.9} aria-hidden="true" /> : <Repeat size={17} strokeWidth={1.9} aria-hidden="true" />}
-          </button>
+          <RepeatButton />
         </div>
         <SeekBar />
       </div>
@@ -72,5 +68,29 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
         </button>
       </div>
     </div>
+  );
+}
+
+/** Shuffle on/off, opposite the repeat button so the play button sits in the middle. */
+export function ShuffleButton() {
+  const p = usePlayer();
+  return (
+    <button type="button" className={`mc-icon-btn repeat-btn${p.shuffleOn ? " on" : ""}`} aria-pressed={p.shuffleOn}
+      aria-label="Shuffle" title={p.shuffleOn ? "Shuffle on" : "Shuffle off"} onClick={() => p.setShuffle(!p.shuffleOn)}>
+      <Shuffle size={17} strokeWidth={1.9} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** Repeat: off → the whole queue → this song. */
+export function RepeatButton() {
+  const p = usePlayer();
+  return (
+    <button type="button" className={`mc-icon-btn repeat-btn${p.repeat !== "off" ? " on" : ""}`} aria-pressed={p.repeat !== "off"}
+      aria-label={p.repeat === "off" ? "Repeat: off" : p.repeat === "all" ? "Repeat: the whole queue" : "Repeat: this song"}
+      title={p.repeat === "off" ? "Repeat off" : p.repeat === "all" ? "Repeating the queue" : "Repeating this song"}
+      onClick={() => p.setRepeat(p.repeat === "off" ? "all" : p.repeat === "all" ? "one" : "off")}>
+      {p.repeat === "one" ? <Repeat1 size={17} strokeWidth={1.9} aria-hidden="true" /> : <Repeat size={17} strokeWidth={1.9} aria-hidden="true" />}
+    </button>
   );
 }

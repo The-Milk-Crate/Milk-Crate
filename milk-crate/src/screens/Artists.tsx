@@ -52,8 +52,8 @@ export function Artists({ go }: { go: Go }) {
             {!lib.signedIn && <Button size="sm" variant="primary" onClick={() => go({ name: "account" })}>Sign in</Button>}
           </div>
         ) : (
-          <div className="artist-panels">
-            {followed.map((a) => <ArtistPanel key={a.id} artist={a} go={go} size="wide" />)}
+          <div className="artist-panels is-grid is-two">
+            {followed.map((a) => <ArtistPanel key={a.id} artist={a} go={go} size="small" />)}
           </div>
         )}
       </section>

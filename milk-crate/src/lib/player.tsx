@@ -91,6 +91,9 @@ interface PlayerActions {
   jumpTo: (index: number) => void;
   clearUpNext: () => void;
   setRepeat: (r: Repeat) => void;
+  /** Shuffle button: the songs after the one playing come in a mixed-up order (by your favorites when weighted). */
+  shuffleOn: boolean;
+  setShuffle: (on: boolean) => void;
   shuffleAll: (tracks: Track[]) => void;
   toggle: () => void;
   next: () => void;
@@ -458,6 +461,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [weighted, favorites, library.albumRatings, playQueue],
   );
 
+  // The shuffle button. Turning it on mixes up what's after the playing song; turning it off puts the
+  // queue back in its original order (with anything added meanwhile at the end), still on the same song.
+  const [shuffleOn, setShuffleOn] = usePersistentState("mc.shuffleOn", false);
+  const unshuffled = useRef<Track[] | null>(null);
+  const mix = (tracks: Track[]) =>
+    weighted ? weightedShuffle(tracks, (t) => songWeight(favorites.has(t.id), library.albumRatings[t.releaseId])) : shuffle(tracks);
+  const setShuffle = (on: boolean) => {
+    setShuffleOn(on);
+    if (on) {
+      unshuffled.current = queue;
+      setQueue([...queue.slice(0, index + 1), ...mix(queue.slice(index + 1))]);
+    } else if (unshuffled.current) {
+      const orig = unshuffled.current;
+      unshuffled.current = null;
+      const inQueue = new Set(queue);
+      const wasThere = new Set(orig);
+      const back = [...orig.filter((t) => inQueue.has(t)), ...queue.filter((t) => !wasThere.has(t))];
+      setQueue(back);
+      setIndex(Math.max(0, back.indexOf(queue[index])));
+    }
+  };
+
   // Space plays/pauses anywhere in the app, except while typing, or when a control the keyboard has
   // moved to would use Space itself. (Immersive mode handles its own keys.)
   const toggleRef = useRef<() => void>(() => {});
@@ -496,6 +521,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     index,
     repeat,
     setRepeat,
+    shuffleOn,
+    setShuffle,
     playNext,
     playNow,
     startRadio,
@@ -529,8 +556,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setEqOn,
     setEqGains,
     // Choosing something else to play ends the radio.
-    playQueue: (tracks: Track[], startAt?: number) => { setRadio(null); playQueue(tracks, startAt); },
-    shuffleAll: (tracks: Track[]) => { setRadio(null); shuffleAll(tracks); },
+    // With shuffle on, the song you picked plays first and the rest come mixed up.
+    playQueue: (tracks: Track[], startAt = 0) => {
+      setRadio(null);
+      unshuffled.current = shuffleOn && tracks.length > 1 ? tracks : null;
+      if (!unshuffled.current) return playQueue(tracks, startAt);
+      playQueue([tracks[startAt], ...mix(tracks.filter((_, i) => i !== startAt))], 0);
+    },
+    shuffleAll: (tracks: Track[]) => { setRadio(null); unshuffled.current = tracks; shuffleAll(tracks); },
     next,
     prev,
     toggle: () => current && setPlaying((p) => !p),

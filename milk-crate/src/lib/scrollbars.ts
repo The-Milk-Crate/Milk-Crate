@@ -19,11 +19,35 @@ interface Area {
   el: HTMLElement;
   thumbs: Partial<Record<Axis, HTMLElement>>;
   resize: ResizeObserver;
+  /** Big rounded panel this area fills: its up-and-down pill sits just outside it, clear of the round corners. */
+  frame: HTMLElement | null;
 }
 
 const THICK = 10;  // px, across the bar
 const INSET = 4;   // px from the scroll area's edges
 const MIN_LEN = 36; // px, shortest the pill gets
+const OUT_THICK = 6; // px, a pill beside a panel (it sits in the gap between panels)
+const OUT_GAP = 2;   // px between the panel's edge and that pill
+
+/**
+ * The rounded panel a tall scroll area fills along its right side (the area itself, or a clipping
+ * parent with matching edges), when there's room beside it for the pill. Otherwise null.
+ */
+function findFrame(el: HTMLElement): HTMLElement | null {
+  const r = el.getBoundingClientRect();
+  if (r.height < 240) return null;
+  let n: HTMLElement | null = el;
+  for (let depth = 0; n && depth < 3; depth++, n = n.parentElement) {
+    const nr = n.getBoundingClientRect();
+    if (nr.right - r.right > 4) return null;
+    const cs = getComputedStyle(n);
+    const clips = n === el || cs.overflowX !== "visible";
+    if (clips && parseFloat(cs.borderTopRightRadius) >= 10) {
+      return window.innerWidth - nr.right >= OUT_THICK + OUT_GAP ? n : null;
+    }
+  }
+  return null;
+}
 
 const areas = new Map<HTMLElement, Area>();
 const owner = new WeakMap<HTMLElement, HTMLElement>(); // thumb → its scroll area
@@ -170,13 +194,16 @@ function place(a: Area) {
       if (t) t.style.display = "none";
       continue;
     }
-    const parent = el.parentElement;
+    const frame = axis === "y" ? a.frame : null;
+    const anchor = frame ?? el;
+    const parent = anchor.parentElement;
     if (!parent) continue;
     if (!t || !t.isConnected || t.parentElement !== parent) {
       t?.remove();
       t = a.thumbs[axis] = makeThumb(el, axis);
-      parent.insertBefore(t, el.nextSibling);
+      parent.insertBefore(t, anchor.nextSibling);
     }
+    t.classList.toggle("is-outside", !!frame);
     t.style.display = "";
     const box = t.offsetParent as HTMLElement | null;
     if (!box) { t.style.display = "none"; continue; }
@@ -196,6 +223,12 @@ function place(a: Area) {
       t.style.top = `${top + el.clientHeight - THICK - INSET}px`;
       t.style.width = `${len}px`;
       t.style.height = "";
+    } else if (frame) {
+      const f = frame.getBoundingClientRect();
+      t.style.top = `${top + at}px`;
+      t.style.left = `${f.right - b.left - box.clientLeft + box.scrollLeft + OUT_GAP}px`;
+      t.style.height = `${len}px`;
+      t.style.width = "";
     } else {
       t.style.top = `${top + at}px`;
       t.style.left = `${left + el.clientWidth - THICK - INSET}px`;
@@ -209,7 +242,7 @@ function adopt(el: HTMLElement) {
   if (areas.has(el)) return;
   const resize = new ResizeObserver(() => schedule());
   resize.observe(el);
-  areas.set(el, { el, thumbs: {}, resize });
+  areas.set(el, { el, thumbs: {}, resize, frame: findFrame(el) });
 }
 
 function drop(a: Area) {
@@ -237,7 +270,15 @@ function schedule(withScan = false) {
   if (frame) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
-    if (rescan) { rescan = false; scan(); }
+    if (rescan) {
+      rescan = false;
+      scan();
+      // Layout may have changed (window size, sidebar): check again which pills go beside their panel.
+      for (const a of areas.values()) {
+        const frame = a.el.isConnected ? findFrame(a.el) : null;
+        if (frame !== a.frame) { a.frame = frame; a.thumbs.y?.remove(); delete a.thumbs.y; }
+      }
+    }
     for (const a of [...areas.values()]) {
       if (!a.el.isConnected) drop(a);
       else place(a);
