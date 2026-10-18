@@ -20,7 +20,7 @@ import { shuffle, songWeight, weightedShuffle } from "./shuffle";
 import { load, save, usePersistentState } from "./storage";
 import { useAuth } from "./auth";
 import { mergeHistory, useAccountHistory, type Play } from "./history";
-import { isDesktop, isPersistable, readLocalSong, repairFlacFiles } from "./localFiles";
+import { isDesktop, isPersistable, playableSrc, readLocalSong, repairFlacFiles } from "./localFiles";
 import { computerKey, fileArtist, loadComputerTracks } from "./fileTags";
 import type { Track } from "./types";
 import { attempt, useLibrary } from "./library";
@@ -285,7 +285,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         el.addEventListener("error", rescue, { once: true });
         el.addEventListener("loadedmetadata", ok, { once: true });
         cleanup = () => { window.clearTimeout(timer); el.removeEventListener("error", rescue); el.removeEventListener("loadedmetadata", ok); };
-        start(current.src);
+        // (On a Mac, from the app's own local server: see playableSrc.)
+        void playableSrc(current).then((u) => start(u ?? current.src!));
       } else if (dl.byTrack[current.id]) void dl.localUrl(current.id).then((u) => start(u ?? current.src!));
       else start(current.src);
     } else {

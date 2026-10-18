@@ -6,6 +6,7 @@
  * next song in the queue is measured ahead of time so it starts at the right
  * level. Measuring downloads and decodes the whole song, one at a time.
  */
+import { playableSrc } from "./localFiles";
 import { MEASURE_RATE, type Loudness } from "./loudness";
 import { load, save } from "./storage";
 import type { Track } from "./types";
@@ -37,7 +38,7 @@ export function measureTrack(track: Track): Promise<Loudness | null> {
   if (!track.src) return Promise.resolve(null);
   const pending = inFlight.get(track.id);
   if (pending) return pending;
-  const job = line.then(() => measure(track.src!)).then((l) => {
+  const job = line.then(async () => measure((await playableSrc(track)) ?? track.src!)).then((l) => {
     if (l) remember(track.id, l);
     return l;
   });

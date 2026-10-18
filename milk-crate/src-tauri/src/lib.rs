@@ -204,7 +204,7 @@ mod link {
 
     /// Sends songs (and their albums' covers) to a computer that's receiving. Returns how many files went.
     #[tauri::command]
-    pub async fn link_send(app: tauri::AppHandle, addr: String, code: String, account: String, songs: Vec<String>) -> Result<usize, String> {
+    pub async fn link_send(app: tauri::AppHandle, addr: String, code: String, account: String, songs: Vec<String>) -> Result<cdlink::Sent, String> {
         CANCEL.store(false, Ordering::Relaxed);
         spawn_blocking(move || {
             let files = cdlink::with_covers(&songs.into_iter().map(PathBuf::from).collect::<Vec<_>>());
@@ -216,10 +216,31 @@ mod link {
         .map_err(|e| e.to_string())?
     }
 
+    /// Which of these songs (and covers) the other computer already has, so they aren't sent twice.
+    /// Returns the songs it has.
+    #[tauri::command]
+    pub async fn link_check(addr: String, code: String, account: String, songs: Vec<String>) -> Result<Vec<String>, String> {
+        spawn_blocking(move || {
+            let paths: Vec<PathBuf> = songs.iter().map(PathBuf::from).collect();
+            let has = cdlink::check(&addr, &code, &cdlink::account_tag(&account), &cdlink::computer_name(), &paths)?;
+            Ok(songs.into_iter().zip(has).filter(|(_, h)| *h).map(|(s, _)| s).collect())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
     #[tauri::command]
     pub fn link_send_cancel() {
         CANCEL.store(true, Ordering::Relaxed);
     }
+}
+
+/// Where the player can stream a song file from (see cdlink::media). macOS's web view doesn't
+/// reliably play audio from the built-in file protocol, so the app uses this there.
+#[tauri::command]
+fn media_base() -> Result<String, String> {
+    static BASE: std::sync::OnceLock<Result<String, String>> = std::sync::OnceLock::new();
+    BASE.get_or_init(|| cdlink::media::start().map_err(|e| e.to_string())).clone()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -255,7 +276,9 @@ pub fn run() {
             link::link_receive_stop,
             link::link_find,
             link::link_send,
-            link::link_send_cancel
+            link::link_send_cancel,
+            link::link_check,
+            media_base
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

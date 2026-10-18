@@ -27,12 +27,15 @@ export async function onReceive(fn: (e: ReceiveEvent) => void): Promise<() => vo
   return listen<ReceiveEvent>("link-receive", (e) => fn(e.payload));
 }
 
-/** Sends the songs (and their albums' covers). Returns how many files went. */
-export async function sendSongs(addr: string, code: string, account: string, songs: string[], onProgress: (p: SendProgress) => void): Promise<number> {
+/** Which of these songs the other computer already has (sent before). Needs its code. */
+export const songsThere = (addr: string, code: string, account: string, songs: string[]) => call<string[]>("link_check", { addr, code, account, songs });
+
+/** Sends the songs (and their albums' covers); ones the other computer already has are skipped. */
+export async function sendSongs(addr: string, code: string, account: string, songs: string[], onProgress: (p: SendProgress) => void): Promise<{ sent: number; skipped: number }> {
   const { listen } = await import("@tauri-apps/api/event");
   const stop = await listen<SendProgress>("link-send-progress", (e) => onProgress(e.payload));
   try {
-    return await call<number>("link_send", { addr, code, account, songs });
+    return await call<{ sent: number; skipped: number }>("link_send", { addr, code, account, songs });
   } finally {
     stop();
   }

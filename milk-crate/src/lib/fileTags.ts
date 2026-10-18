@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import type { FileTags, Track } from "./types";
 import { load, save } from "./storage";
+import { playableSrc } from "./localFiles";
 
 /* ---------- Which account's files ---------- */
 
@@ -60,7 +61,7 @@ export async function readFileTags(src: string): Promise<ReadTags> {
 
 /** Fills in a picked file's title, length, artist, album and cover from its tags. */
 export async function tagTrack(t: Track): Promise<Track> {
-  const r = await readFileTags(t.src ?? "");
+  const r = await readFileTags((await playableSrc(t)) ?? "");
   const tags: FileTags = { ...r.tags };
   if (r.cover) {
     const key = albumKey({ id: t.id, tags }) ?? `song:${t.id}`;

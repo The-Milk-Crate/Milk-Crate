@@ -63,6 +63,22 @@ export async function tracksFromPaths(paths: string[]): Promise<Track[]> {
 
 const MIME: Record<string, string> = { mp3: "audio/mpeg", flac: "audio/flac", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", opus: "audio/ogg" };
 
+/** True on a Mac, in the desktop app. */
+const onMac = () => isDesktop() && /Mac/i.test(navigator.userAgent);
+let mediaBase: Promise<string | null> | null = null;
+
+/**
+ * A URL the player can stream a song on this computer from. On a Mac it's the app's own local web
+ * server (macOS's web view doesn't reliably play audio from the built-in file protocol); elsewhere
+ * the file protocol URL the track already has.
+ */
+export async function playableSrc(track: { id: string; src?: string }): Promise<string | undefined> {
+  if (!track.id.startsWith("local:") || !onMac()) return track.src;
+  mediaBase ??= import("@tauri-apps/api/core").then(({ invoke }) => invoke<string>("media_base")).catch(() => null);
+  const base = await mediaBase;
+  return base ? base + encodeURIComponent(track.id.slice(6)) : track.src;
+}
+
 /** Desktop: reads a song file through the app (not the webview) and returns a blob URL for it. */
 export async function readLocalSong(path: string): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");

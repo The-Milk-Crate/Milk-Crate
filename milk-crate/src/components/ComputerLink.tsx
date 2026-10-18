@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Check, LoaderCircle, Monitor, RefreshCw, X } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useAddRipped, useRippedAlbums } from "../lib/ripped";
-import { cancelSend, findComputers, onReceive, sendSongs, sizeLabel, startReceiving, stopReceiving, type Peer, type SendProgress } from "../lib/link";
+import { cancelSend, findComputers, onReceive, sendSongs, sizeLabel, songsThere, startReceiving, stopReceiving, type Peer, type SendProgress } from "../lib/link";
 import { Button } from "./ui";
 
 /**
@@ -120,6 +120,27 @@ function Send({ account }: { account: string }) {
   const albums = ripped.filter((a) => picked.has(a.key));
   const songs = useMemo(() => albums.flatMap((a) => a.tracks.map((t) => t.id.replace(/^local:/, ""))), [albums]);
   const peer = peers?.find((p) => p.addr === to);
+
+  // Once the computer and its code are in: which CDs are already on it (sent before). Those are
+  // unticked and marked, and wouldn't be sent again anyway.
+  const digits = code.replace(/\D/g, "");
+  const [there, setThere] = useState<Set<string> | null>(null);
+  const [checkErr, setCheckErr] = useState("");
+  useEffect(() => {
+    setThere(null);
+    setCheckErr("");
+    if (!peer || digits.length !== 6) return;
+    let live = true;
+    const all = ripped.flatMap((a) => a.tracks.map((t) => t.id.replace(/^local:/, "")));
+    songsThere(peer.addr, digits, account, all).then((have) => {
+      if (!live) return;
+      const set = new Set(have);
+      setThere(set);
+      setPicked((p) => new Set([...p].filter((k) => !ripped.find((a) => a.key === k)?.tracks.every((t) => set.has(t.id.replace(/^local:/, ""))))));
+    }).catch((e) => live && setCheckErr(String(e)));
+    return () => { live = false; };
+  }, [peer?.addr, digits, account]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onThere = (a: (typeof ripped)[number]) => !!there && a.tracks.every((t) => there.has(t.id.replace(/^local:/, "")));
   const toggle = (k: string) => setPicked((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
   const send = async () => {
@@ -128,8 +149,11 @@ function Send({ account }: { account: string }) {
     setMsg(null);
     setProgress(null);
     try {
-      const n = await sendSongs(peer.addr, code.replace(/\D/g, ""), account, songs, setProgress);
-      setMsg({ ok: true, text: `Sent ${albums.length} ${albums.length === 1 ? "album" : "albums"} (${n} files) to ${peer.name}.` });
+      const r = await sendSongs(peer.addr, digits, account, songs, setProgress);
+      setMsg({ ok: true, text: r.sent
+        ? `Sent ${albums.length} ${albums.length === 1 ? "album" : "albums"} (${r.sent} files) to ${peer.name}.${r.skipped ? ` ${r.skipped} files were already there, so they weren't sent again.` : ""}`
+        : `${peer.name} already has ${albums.length === 1 ? "that CD" : "all of those"}. Nothing needed sending.` });
+      setThere((t) => new Set([...(t ?? []), ...songs]));
     } catch (e) {
       const t = String(e);
       setMsg({ ok: false, text: t === "Stopped" ? "Stopped. What already arrived stays on the other computer." : t });
@@ -169,6 +193,7 @@ function Send({ account }: { account: string }) {
         <span className="catalog eyebrow">2 · The code on that computer</span>
         <input className="link-code-input numeral" inputMode="numeric" maxLength={7} placeholder="000 000" value={code} disabled={sending}
           onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ""))} aria-label="Code from the other computer" />
+        {checkErr && <span className="form-error caption" role="alert">{checkErr}</span>}
       </div>
 
       <div className="link-step">
@@ -177,7 +202,8 @@ function Send({ account }: { account: string }) {
           {ripped.map((a) => (
             <label key={a.key} className="link-album">
               <input type="checkbox" checked={picked.has(a.key)} onChange={() => toggle(a.key)} disabled={sending} />
-              <span><strong>{a.title}</strong> <span className="caption muted">{a.artist} · {a.tracks.length} songs</span></span>
+              <span><strong>{a.title}</strong> <span className="caption muted">{a.artist} · {a.tracks.length} songs</span>
+                {onThere(a) && <span className="link-there caption"> · Already on {peer?.name}</span>}</span>
             </label>
           ))}
         </div>
@@ -194,7 +220,7 @@ function Send({ account }: { account: string }) {
         {sending ? (
           <Button onClick={() => void cancelSend()}>Stop</Button>
         ) : (
-          <Button variant="primary" onClick={() => void send()} disabled={!peer || code.replace(/\D/g, "").length !== 6 || !albums.length}>
+          <Button variant="primary" onClick={() => void send()} disabled={!peer || digits.length !== 6 || !albums.length}>
             <ArrowLeftRight size={16} aria-hidden="true" /> Send {albums.length} {albums.length === 1 ? "CD" : "CDs"}
           </Button>
         )}

@@ -1207,3 +1207,4 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .playlist-cover-hint { position: absolute; inset: 0; display: grid; place-items: center; border-radius: var(--radius-md); color: #fff; background: rgba(0, 0, 0, .35); opacity: 0; transition: opacity .15s ease-out; }
 .playlist-cover-btn:hover .playlist-cover-hint, .playlist-cover-btn:focus-visible .playlist-cover-hint { opacity: 1; }
 .playlist-cover-menu { left: 12px; top: calc(100% - 12px); right: auto; }
+.link-there { color: var(--accent); }
