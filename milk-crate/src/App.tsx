@@ -40,7 +40,8 @@ import { SearchPalette } from "./components/SearchPalette";
 import { FeedbackDialog } from "./components/FeedbackDialog";
 import { HoldOn } from "./components/HoldOn";
 import { RipNotice } from "./components/RipNotice";
-import { WindowChrome } from "./components/WindowChrome";
+import { WindowChrome, platform } from "./components/WindowChrome";
+const isMac = platform() === "mac";
 import { leaveGuard } from "./lib/leaveGuard";
 import { usePersistentState } from "./lib/storage";
 import { listenForLinks } from "./lib/share";
@@ -278,6 +279,14 @@ function Shell() {
         </div>
         <div className="shell-main-wrap">
           <FrostGrain />
+          {isMac && (
+            <nav className="mac-topbar" aria-label="Back and forward">
+              <button type="button" className="mc-icon-btn main-nav-btn" onClick={back} disabled={!past.length}
+                aria-label="Back" title={past.length ? "Back (⌘[)" : "Back"}><ChevronLeft size={18} strokeWidth={2} aria-hidden="true" /></button>
+              <button type="button" className="mc-icon-btn main-nav-btn" onClick={forward} disabled={!ahead.length}
+                aria-label="Forward" title={ahead.length ? "Forward (⌘])" : "Forward"}><ChevronRight size={18} strokeWidth={2} aria-hidden="true" /></button>
+            </nav>
+          )}
           <main className="shell-main" ref={main}>
             <nav className="main-nav" aria-label="Back and forward"><div className="main-nav-pill">
               <button type="button" className="mc-icon-btn main-nav-btn" onClick={back} disabled={!past.length}

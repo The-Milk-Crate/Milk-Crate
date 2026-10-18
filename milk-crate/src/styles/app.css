@@ -991,10 +991,14 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .win-btn:hover { opacity: 1; background: color-mix(in srgb, var(--ink) 12%, transparent); }
 .win-btn.is-close:hover { background: #c42b1c; color: #fff; }
 .win-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; opacity: 1; }
-/* Mac: the red, yellow and green buttons sit inside the sidebar's top-left corner
-   (placed by trafficLightPosition in src-tauri/tauri.macos.conf.json), with the logo below them. */
-:root[data-platform="mac"] .shell-side .sidebar { padding-top: calc(var(--space-6) + 30px); }
-:root[data-platform="mac"] .side-collapsed .shell-side .sidebar { padding-top: calc(var(--space-6) + 30px); }
+/* Mac: a clear strip along the top of the window, above the panels. The red, yellow and green
+   buttons sit in it on the left (placed by trafficLightPosition in src-tauri/tauri.macos.conf.json)
+   and back / forward on the right (MacTopBar in src/App.tsx), so nothing overlaps a panel. */
+:root[data-platform="mac"] .shell { padding-top: 40px; }
+:root[data-platform="mac"] .shell-main > .main-nav { display: none; }
+:root[data-platform="mac"] .shell-main .screen { padding-top: var(--space-8); }
+.mac-topbar { position: fixed; z-index: 60; top: 5px; right: 12px; display: flex; gap: 2px; }
+.mac-topbar .main-nav-btn { width: 30px; height: 30px; }
 
 /* Account, For Artists and Review shown as tabs of Settings (src/screens/Settings.tsx). */
 .settings-embed > .screen { padding: 0; max-width: none !important; }
@@ -1208,3 +1212,4 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .playlist-cover-btn:hover .playlist-cover-hint, .playlist-cover-btn:focus-visible .playlist-cover-hint { opacity: 1; }
 .playlist-cover-menu { left: 12px; top: calc(100% - 12px); right: auto; }
 .link-there { color: var(--accent); }
+:root[data-platform="mac"] .queue-panel { top: 50px; }
