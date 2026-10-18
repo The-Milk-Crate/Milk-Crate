@@ -78,3 +78,9 @@ async function setRippedCover(album: ComputerAlbum, updateTracks: (tracks: Compu
   if (!album.cover) updateTracks(album.tracks.map((t) => ({ ...t, tags: { ...t.tags, cover: key } })));
   return null;
 }
+
+/** Ids of every song from a CD you ripped (for the "on this computer" mark next to them). */
+export function useRippedTrackIds(): Set<string> {
+  const ripped = useRippedAlbums();
+  return useMemo(() => new Set(ripped.flatMap((a) => a.tracks.map((t) => t.id))), [ripped]);
+}

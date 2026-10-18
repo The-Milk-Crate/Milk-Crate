@@ -1,6 +1,6 @@
 import { accentForHue, huesFromImage, oklchToHex } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Shuffle, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
@@ -107,9 +107,16 @@ function ShelfSection({ current, sections, go }: { current: (typeof SHELF_SECTIO
   const [sort, setSort] = usePersistentState<ShelfSort>(`mc.shelfSort.${current.id}`, "az");
   const raw = useShelfItems(current.format);
   const items = useMemo(() => sortShelf(raw, sort), [raw, sort]);
+  const p = usePlayer();
+  // Shuffle: every song you have in this section (your CDs, or your vinyl…), mixed up.
+  const songs = useMemo(() => items.flatMap((it) => it.tracks), [items]);
   return (
     <>
       <div className="shelf-bar">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <Button onClick={() => p.shuffleAll(songs)} disabled={!songs.length} title={`Shuffle the songs on your ${current.label.toLowerCase()}`}>
+          <Shuffle size={16} aria-hidden="true" /> Shuffle {current.label.replace("’", "")}
+        </Button>
         <div role="tablist" aria-label="Your shelf" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {sections.map((s) => (
             <button key={s.id} type="button" role="tab" className="chip" aria-selected={s.id === current.id} aria-pressed={s.id === current.id}
@@ -117,6 +124,7 @@ function ShelfSection({ current, sections, go }: { current: (typeof SHELF_SECTIO
               {s.label}
             </button>
           ))}
+        </div>
         </div>
         <div role="group" aria-label="Sort" className="shelf-sort">
           <span className="catalog eyebrow">Sort</span>
@@ -195,6 +203,14 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+  // Flip to the album that's playing (when the song changes), so the shelf follows the music.
+  const p = usePlayer();
+  const playingId = p.current?.id;
+  useEffect(() => {
+    if (!playingId) return;
+    const at = items.findIndex((it) => it.tracks.some((t) => t.id === playingId));
+    if (at >= 0) flip.current(at);
+  }, [playingId, items]);
   const front = items[index];
   if (!front) return null;
   const big = (size.w * GROW - size.w) / 2;

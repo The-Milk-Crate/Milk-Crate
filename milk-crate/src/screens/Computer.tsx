@@ -135,7 +135,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
           <h2 className="display-md">Songs</h2>
           <div>
             {songs.map((t, i) => (
-              <TrackRow key={t.id} index={i + 1} title={t.title} artist={[fileArtist(t), t.tags?.album].filter(Boolean).join(" · ") || undefined}
+              <TrackRow key={t.id} trackId={t.id} index={i + 1} title={t.title} artist={[fileArtist(t), t.tags?.album].filter(Boolean).join(" · ") || undefined}
                 duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
                 playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(songs, i)}
                 actions={<>
@@ -198,7 +198,7 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
       </header>
       <div>
         {a.tracks.map((t, i) => (
-          <TrackRow key={t.id} index={t.tags?.trackNo ?? i + 1} title={t.title} artist={a.artist === "Various artists" ? fileArtist(t) : undefined}
+          <TrackRow key={t.id} trackId={t.id} index={t.tags?.trackNo ?? i + 1} title={t.title} artist={a.artist === "Various artists" ? fileArtist(t) : undefined}
             duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
             playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(a.tracks, i)}
             actions={<AddToPlaylist trackIds={[t.id]} />} />

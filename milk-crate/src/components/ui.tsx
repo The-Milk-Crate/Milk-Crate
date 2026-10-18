@@ -6,6 +6,7 @@ import type { ButtonHTMLAttributes, CSSProperties, ReactNode, Ref } from "react"
 import type { Rating } from "../lib/types";
 import { sleeveDesign, sleeveSeed } from "../lib/sleeve";
 import { useDownloadedTracks } from "../lib/downloads";
+import { useRippedTrackIds } from "../lib/ripped";
 
 const cx = (...c: (string | false | undefined | null)[]) => c.filter(Boolean).join(" ");
 
@@ -218,6 +219,8 @@ export function TrackRow(props: {
   trackId?: string;
 }) {
   const downloaded = useDownloadedTracks()[props.trackId ?? ""];
+  // Songs from a CD you ripped are on this computer too.
+  const ripped = useRippedTrackIds().has(props.trackId ?? "");
   return (
     <div
       className={cx("mc-track", props.playing && "playing")}
@@ -240,7 +243,7 @@ export function TrackRow(props: {
         )}
       </span>
       <span className="mc-track-text">
-        <span className="mc-track-title">{props.title}{downloaded && <> <DownloadedMark size={12} /></>}</span>
+        <span className="mc-track-title">{props.title}{(downloaded || ripped) && <> <DownloadedMark size={12} label={downloaded ? "Downloaded" : "Ripped from your CD"} /></>}</span>
         {props.artist && <span className="mc-track-artist">{props.artist}</span>}
       </span>
       <span className="mc-track-meta">

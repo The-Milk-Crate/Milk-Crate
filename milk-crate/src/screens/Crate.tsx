@@ -470,7 +470,7 @@ function PlaylistList({ go }: { go: Go }) {
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="playlist-list" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <form className="panel" style={{ flexDirection: "row", alignItems: "flex-end", flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); create(); }}>
         <label className="field" style={{ flex: "1 1 260px" }}>
           <span className="catalog eyebrow">New playlist</span>

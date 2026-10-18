@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { CircleUserRound, Download, MessageSquare, Palette, RefreshCw, ShieldCheck, SlidersHorizontal, Upload } from "lucide-react";
 import type { Go, Route, SettingsTab } from "../App";
 import { useAuth } from "../lib/auth";
 import { FeedbackForm } from "../components/FeedbackDialog";
@@ -28,10 +29,12 @@ function Switch({ label, hint, on, onChange, tag }: { label: string; hint: strin
 
 /** A tab of Settings: one of its own sections, or a page (Account, For Artists, Review) shown inside it. */
 type FrameTab = SettingsTab | "account" | "upload" | "review";
+type NavEntry = { id: FrameTab; label: string; to: Route; Icon: typeof Palette };
 
 /**
- * Settings, with a tab for each part: how the app looks and sounds, downloads and updates, then
- * your account, For Artists (artist accounts), Review (reviewers) and feedback for the team.
+ * Settings: a sidebar of its categories inside the main panel (like the main sidebar, which tucks
+ * itself away while you're here; see App), and the chosen one beside it. The app's own settings
+ * first, then yours: your account, For Artists (artist accounts), Review (reviewers), feedback.
  */
 export function SettingsFrame({ go, at, wide = false, children }: { go: Go; at: FrameTab; wide?: boolean; children: ReactNode }) {
   const auth = useAuth();
@@ -39,35 +42,44 @@ export function SettingsFrame({ go, at, wide = false, children }: { go: Go; at: 
   useEffect(() => {
     appVersion().then(setVersion).catch(() => {});
   }, []);
-  const tabs: { id: FrameTab; label: string; to: Route }[] = [
-    { id: "appearance", label: "Appearance", to: { name: "settings", tab: "appearance" } },
-    { id: "sound", label: "Sound", to: { name: "settings", tab: "sound" } },
-    { id: "downloads", label: "Downloads", to: { name: "settings", tab: "downloads" } },
-    { id: "updates", label: "Updates", to: { name: "settings", tab: "updates" } },
-    { id: "account", label: auth.session ? "Account" : "Sign in", to: { name: "account" } },
-    ...(auth.session && auth.kind === "artist" ? [{ id: "upload" as const, label: "For Artists", to: { name: "upload" } as Route }] : []),
-    ...(auth.isAdmin ? [{ id: "review" as const, label: "Review", to: { name: "review" } as Route }] : []),
-    { id: "feedback", label: "Send Feedback", to: { name: "settings", tab: "feedback" } },
+  const app: NavEntry[] = [
+    { id: "appearance", label: "Appearance", to: { name: "settings", tab: "appearance" }, Icon: Palette },
+    { id: "sound", label: "Sound", to: { name: "settings", tab: "sound" }, Icon: SlidersHorizontal },
+    { id: "downloads", label: "Downloads", to: { name: "settings", tab: "downloads" }, Icon: Download },
+    { id: "updates", label: "Updates", to: { name: "settings", tab: "updates" }, Icon: RefreshCw },
   ];
+  const you: NavEntry[] = [
+    { id: "account", label: auth.session ? "Account" : "Sign in", to: { name: "account" }, Icon: CircleUserRound },
+    ...(auth.session && auth.kind === "artist" ? [{ id: "upload" as const, label: "For Artists", to: { name: "upload" } as Route, Icon: Upload }] : []),
+    ...(auth.isAdmin ? [{ id: "review" as const, label: "Review", to: { name: "review" } as Route, Icon: ShieldCheck }] : []),
+    { id: "feedback", label: "Send Feedback", to: { name: "settings", tab: "feedback" }, Icon: MessageSquare },
+  ];
+  const all = [...app, ...you];
   const own = !["account", "upload", "review"].includes(at);
+  const item = (t: NavEntry) => (
+    <button key={t.id} type="button" className="nav-item" aria-current={at === t.id ? "page" : undefined} onClick={() => go(t.to)}>
+      <t.Icon size={18} strokeWidth={1.75} aria-hidden="true" style={{ flex: "none" }} />
+      <span>{t.label}</span>
+    </button>
+  );
 
   return (
-    <div className="screen" style={{ maxWidth: wide ? 960 : 680 }}>
-      <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span className="catalog eyebrow">{version ? `Milk Crate ${version}` : "Milk Crate"}</span>
-        <h1 className="display-lg">Settings</h1>
-      </header>
-      <div role="tablist" aria-label="Settings" className="segmented">
-        {tabs.map((t) => (
-          <button key={t.id} type="button" role="tab" id={`settings-${t.id}`} className="chip" aria-selected={at === t.id} aria-pressed={at === t.id}
-            aria-controls="settings-panel" onClick={() => go(t.to)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div id="settings-panel" role="tabpanel" aria-labelledby={`settings-${at}`} className={own ? undefined : "settings-embed"}
-        style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        {children}
+    <div className="screen">
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="Settings">
+          <div className="settings-nav-head">
+            <h1 className="display-md">Settings</h1>
+            <span className="catalog eyebrow">{version ? `Milk Crate ${version}` : "Milk Crate"}</span>
+          </div>
+          {app.map(item)}
+          <span className="settings-nav-group catalog eyebrow">You</span>
+          {you.map(item)}
+        </nav>
+        <div id="settings-panel" role="region" aria-label={all.find((t) => t.id === at)?.label ?? "Settings"}
+          className={`settings-body${wide ? " is-wide" : ""}${own ? "" : " settings-embed"}`}>
+          {own && <h2 className="display-lg">{all.find((t) => t.id === at)?.label}</h2>}
+          {children}
+        </div>
       </div>
     </div>
   );

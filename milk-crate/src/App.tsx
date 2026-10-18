@@ -153,6 +153,21 @@ function Shell() {
     return () => window.removeEventListener("mc:feedback", onOpen);
   }, []);
   const [sideCollapsed, setSideCollapsed] = usePersistentState("mc.sidebarCollapsed", false);
+  // Settings has its own sidebar, so the main one tucks away while you're in it, and comes back when
+  // you leave (unless it was already tucked away when you came in).
+  const inSettings = ["settings", "account", "upload", "review", "editRelease", "stats"].includes(route.name);
+  const settingsWas = useRef<{ inside: boolean; reopen: boolean }>({ inside: false, reopen: false });
+  useEffect(() => {
+    const w = settingsWas.current;
+    if (inSettings && !w.inside) {
+      w.reopen = !sideCollapsed;
+      if (!sideCollapsed) setSideCollapsed(true);
+    } else if (!inSettings && w.inside) {
+      if (w.reopen) setSideCollapsed(false);
+      w.reopen = false;
+    }
+    w.inside = inSettings;
+  }, [inSettings]); // eslint-disable-line react-hooks/exhaustive-deps
   const main = useRef<HTMLElement>(null);
   const loc = useLocation();
 
