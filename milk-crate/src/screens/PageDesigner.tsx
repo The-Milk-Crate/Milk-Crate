@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ImagePlus, Type, Upload as UploadIcon } from "lucide-react";
 import type { Go } from "../App";
 import type { Artist, ArtistPage } from "../lib/types";
@@ -160,7 +160,8 @@ export function PageDesigner({ go }: { go: Go }) {
               <label className="field">
                 <span className="catalog eyebrow">Letter spacing</span>
                 <input type="range" min={-5} max={30} step={1} value={Math.round((draft.spacing ?? 0) * 100)}
-                  onChange={(e) => set({ spacing: Number(e.target.value) / 100 || undefined })} className="range" />
+                  onChange={(e) => set({ spacing: Number(e.target.value) / 100 || undefined })} className="range mc-range"
+                  style={{ "--v": (Math.round((draft.spacing ?? 0) * 100) + 5) / 35 } as CSSProperties} />
               </label>
             </>
           )}

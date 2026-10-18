@@ -254,7 +254,7 @@ button { font: inherit; }
 .font-tile-sample { font-size: 20px; line-height: 26px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .font-tile-upload { align-items: center; justify-content: center; border-style: dashed; color: var(--ink-muted); }
 .font-tile-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.range { width: 100%; max-width: 360px; accent-color: var(--accent); }
+.range { width: 100%; max-width: 360px; }
 
 /* City picker */
 .city-picker { position: relative; }
@@ -344,10 +344,7 @@ button { font: inherit; }
 
 /* Volume (player bar) */
 .volume { display: flex; align-items: center; gap: 6px; }
-.volume-slider { width: 120px; height: 4px; appearance: none; -webkit-appearance: none; border-radius: 2px; cursor: pointer;
-  background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--line-strong) var(--fill, 0%)); }
-.volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 0; }
-.volume-slider:focus-visible { outline: 2px solid var(--focus); outline-offset: 6px; }
+.volume-slider { width: 120px; }
 .eq-btn { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; height: 22px; padding: 0 6px; border-radius: var(--radius-sm); cursor: pointer;
   border: 1px solid var(--line-strong); background: none; color: var(--ink-muted); }
 .eq-btn:hover { color: var(--ink); border-color: var(--ink-muted); }
@@ -365,7 +362,7 @@ button { font: inherit; }
 .eq-value { font-family: var(--font-mono); min-height: 18px; }
 .eq-slot { position: relative; width: 28px; height: 160px; }
 /* A horizontal slider turned upright: works the same in Edge (Windows) and Safari (Mac) engines. */
-.eq-slider { position: absolute; left: 50%; top: 50%; width: 160px; margin: 0; transform: translate(-50%, -50%) rotate(-90deg); accent-color: var(--accent); cursor: pointer; }
+.eq-slider { position: absolute; left: 50%; top: 50%; width: 160px; margin: 0; transform: translate(-50%, -50%) rotate(-90deg); }
 .eq-slider:disabled { cursor: default; }
 .eq-hz { color: var(--ink-muted); }
 
@@ -1004,30 +1001,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .playlist-mosaic { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .mc-sleeve.playlist-mosaic img { position: static; width: 100%; height: 100%; object-fit: cover; }
 
-/* ---------- Frosted glass seek bar and play/pause (player bar and immersive mode) ---------- */
-/* The rail is a tube of glass; the played part is the accent showing through it; the handle is a glass bead. */
-.mc-player .mc-progress-rail, .immersive-seek .mc-progress-rail {
-  height: 8px; border-radius: 4px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
-  -webkit-backdrop-filter: blur(8px) saturate(1.6); backdrop-filter: blur(8px) saturate(1.6);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), inset 0 0 0 1px rgba(255, 255, 255, .1), inset 0 -1px 1px rgba(0, 0, 0, .25);
-}
-.mc-player .mc-progress-fill, .immersive-seek .mc-progress-fill {
-  border-radius: 4px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .45), rgba(255, 255, 255, .08) 55%, rgba(0, 0, 0, .08)),
-    color-mix(in srgb, var(--accent) 78%, transparent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.mc-player .mc-progress-thumb, .immersive-seek .mc-progress-thumb {
-  width: 16px; height: 16px;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55) 45%, rgba(255, 255, 255, .28));
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7), 0 2px 6px rgba(0, 0, 0, .35);
-}
-.immersive-seek .mc-progress-rail { height: 10px; border-radius: 5px; }
-.immersive-seek .mc-progress-fill { border-radius: 5px; }
-
 /* Play/pause (every round play button): a bubble of glass tinted with the accent. */
 .mc-play {
   color: #fff;
@@ -1042,50 +1015,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .mc-play svg { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25)); }
 .mc-play:hover:not(:disabled) { transform: scale(1.05); }
 .mc-play:active:not(:disabled) { transform: scale(.94); }
-:root[data-theme="light"] .mc-player .mc-progress-rail, :root[data-theme="light"] .immersive-seek .mc-progress-rail {
-  background: linear-gradient(180deg, rgba(40, 32, 24, .14), rgba(40, 32, 24, .06));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 0 0 1px rgba(40, 32, 24, .1);
-}
-
-/* Volume and EQ sliders: the same glass tube and bead as the seek bar. */
-.volume-slider {
-  height: 8px; border-radius: 4px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .04) 60%, rgba(0, 0, 0, .06)),
-    linear-gradient(to right, color-mix(in srgb, var(--accent) 80%, transparent) var(--fill, 0%), rgba(255, 255, 255, .1) var(--fill, 0%));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), inset 0 0 0 1px rgba(255, 255, 255, .1), inset 0 -1px 1px rgba(0, 0, 0, .25);
-}
-.volume-slider::-webkit-slider-thumb {
-  width: 16px; height: 16px;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55) 45%, rgba(255, 255, 255, .28));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7), 0 2px 6px rgba(0, 0, 0, .35);
-}
-.volume-slider::-moz-range-thumb {
-  width: 16px; height: 16px; border: 0; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55) 45%, rgba(255, 255, 255, .28));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7), 0 2px 6px rgba(0, 0, 0, .35);
-}
-.eqp-track::before, .vol-pop-track::before {
-  width: 8px; border-radius: 4px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, .28), inset 0 0 0 1px rgba(255, 255, 255, .1), inset -1px 0 1px rgba(0, 0, 0, .25);
-}
-.eqp-track::before { left: 10px; }
-.vol-pop-track::before { left: 10px; }
-.eqp-fill, .vol-pop-fill {
-  left: 10px; width: 8px; border-radius: 4px;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, .45), rgba(255, 255, 255, .08) 55%, rgba(0, 0, 0, .08)),
-    color-mix(in srgb, var(--accent) 78%, transparent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.eqp-track[aria-disabled="true"] .eqp-fill { background: rgba(255, 255, 255, .14); box-shadow: none; }
-.eqp-knob, .vol-pop-knob {
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55) 45%, rgba(255, 255, 255, .28));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7), 0 2px 6px rgba(0, 0, 0, .35);
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-}
-
 /* Windows: the queue drawer starts below the window buttons. */
 :root[data-platform="windows"] .queue-panel { top: 60px; }
 
@@ -1125,31 +1054,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .spin-slow { animation: mc-spin 2.4s linear infinite; }
 @keyframes rip-notice-in { from { opacity: 0; transform: translateY(16px) scale(.94); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .rip-notice, .spin-slow { animation: none; } }
-
-/* Slider handles: a glass bead filled with the accent, so the colored part of the slider runs right
-   into it (a see-through bead showed where the color stopped underneath). */
-.mc-player .mc-progress-thumb, .immersive-seek .mc-progress-thumb,
-.eqp-knob, .vol-pop-knob {
-  background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .9), rgba(255, 255, 255, .25) 42%, rgba(255, 255, 255, 0) 68%),
-    color-mix(in srgb, var(--accent) 88%, white 12%);
-  -webkit-backdrop-filter: none; backdrop-filter: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55), inset 0 -2px 3px rgba(0, 0, 0, .15), 0 2px 6px rgba(0, 0, 0, .35);
-}
-.volume-slider::-webkit-slider-thumb {
-  background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .9), rgba(255, 255, 255, .25) 42%, rgba(255, 255, 255, 0) 68%),
-    color-mix(in srgb, var(--accent) 88%, white 12%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55), inset 0 -2px 3px rgba(0, 0, 0, .15), 0 2px 6px rgba(0, 0, 0, .35);
-}
-.volume-slider::-moz-range-thumb {
-  background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .9), rgba(255, 255, 255, .25) 42%, rgba(255, 255, 255, 0) 68%),
-    color-mix(in srgb, var(--accent) 88%, white 12%);
-}
-.eqp-track[aria-disabled="true"] .eqp-knob {
-  background: radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .9), rgba(255, 255, 255, .45) 45%, rgba(255, 255, 255, .3));
-}
 
 /* The upright volume slider (src/components/VolumePopover.tsx). */
 .vol-vertical { display: flex; flex-direction: column; align-items: center; gap: 10px; height: 100%; }
@@ -1214,3 +1118,83 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .playlist-cover-menu { left: 12px; top: calc(100% - 12px); right: auto; }
 .link-there { color: var(--accent); }
 :root[data-platform="mac"] .queue-panel { top: 50px; }
+
+/* ---------- Sliders and bars: a frosted glass tube with a milky white oval handle ----------
+   One look for every slider (seek, volume, EQ, settings) and every progress bar. The played/filled part
+   is the accent showing through the glass; the handle is an oval pill, lighter than the bar. */
+:root {
+  --mc-rail: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
+  --mc-rail-edge: inset 0 1px 0 rgba(255, 255, 255, .28), inset 0 0 0 1px rgba(255, 255, 255, .1), inset 0 -1px 1px rgba(0, 0, 0, .25);
+  --mc-rail-empty: rgba(255, 255, 255, .1);
+  --mc-fill: color-mix(in srgb, var(--accent) 80%, transparent);
+  --mc-fill-shine: linear-gradient(180deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .04) 60%, rgba(0, 0, 0, .06));
+  --mc-fill-off: rgba(255, 255, 255, .14);
+  --mc-pill: linear-gradient(180deg, #ffffff, #f3eee8 55%, #e4ddd5);
+  --mc-pill-shadow: inset 0 1px 0 #fff, inset 0 -1px 2px rgba(0, 0, 0, .14), 0 0 0 1px rgba(255, 255, 255, .55), 0 2px 8px rgba(0, 0, 0, .4);
+}
+:root[data-theme="light"] {
+  --mc-rail: linear-gradient(180deg, rgba(40, 32, 24, .14), rgba(40, 32, 24, .06));
+  --mc-rail-edge: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 0 0 1px rgba(40, 32, 24, .1);
+  --mc-rail-empty: rgba(40, 32, 24, .1);
+  --mc-fill-off: rgba(40, 32, 24, .16);
+  --mc-pill-shadow: inset 0 1px 0 #fff, inset 0 -1px 2px rgba(0, 0, 0, .12), 0 0 0 1px rgba(27, 23, 20, .16), 0 2px 6px rgba(27, 23, 20, .28);
+}
+
+/* The tube (seek bar, progress bars, upright sliders) */
+.mc-progress-rail, .rip-notice-bar, .eqp-track::before, .vol-pop-track::before {
+  background: var(--mc-rail); box-shadow: var(--mc-rail-edge);
+  -webkit-backdrop-filter: blur(8px) saturate(1.6); backdrop-filter: blur(8px) saturate(1.6);
+}
+.mc-progress-rail { height: 8px; border-radius: 4px; }
+.immersive-seek .mc-progress-rail { height: 10px; border-radius: 5px; }
+.rip-notice-bar { height: 6px; border-radius: 3px; }
+.eqp-track::before, .vol-pop-track::before { left: 10px; width: 8px; border-radius: 4px; }
+
+/* The filled part */
+.mc-progress-fill, .rip-notice-bar span { border-radius: inherit; background: var(--mc-fill-shine), var(--mc-fill); }
+.eqp-fill, .vol-pop-fill { left: 10px; width: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .04) 60%, rgba(0, 0, 0, .06)), var(--mc-fill); }
+.eqp-track[aria-disabled="true"] .eqp-fill { background: var(--mc-fill-off); }
+
+/* The oval handle */
+.mc-progress-thumb, .eqp-knob, .vol-pop-knob {
+  border-radius: 999px; background: var(--mc-pill); box-shadow: var(--mc-pill-shadow);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.mc-progress-thumb { width: 26px; height: 16px; }
+.mc-progress-track:hover .mc-progress-thumb, .mc-progress-track.dragging .mc-progress-thumb { transform: translate(-50%, -50%) scale(1.08); }
+.mc-progress-track:focus-visible .mc-progress-thumb { box-shadow: var(--mc-pill-shadow), 0 0 0 2px var(--ground), 0 0 0 4px var(--focus); }
+.eqp-knob { width: 16px; height: 26px; margin: -13px 0 0 -8px; }
+.eqp-track:hover .eqp-knob, .eqp-track:active .eqp-knob { transform: scale(1.08); }
+.eqp-track[aria-disabled="true"] .eqp-knob { opacity: .55; }
+.vol-pop-knob { left: 6px; width: 16px; height: 26px; margin-bottom: -13px; }
+
+/* Native sliders (volume, settings, the Settings equalizer, page designer). Set --v (0 to 1) on each one:
+   the fill runs to the middle of the handle at every position. */
+.mc-range {
+  -webkit-appearance: none; appearance: none; margin: 0; height: 8px; border-radius: 4px; cursor: pointer;
+  --h: 13px; --fill-color: var(--mc-fill);
+  background:
+    var(--mc-fill-shine),
+    linear-gradient(to right, var(--fill-color) calc(var(--h) + (100% - 2 * var(--h)) * var(--v, 0)), var(--mc-rail-empty) 0);
+  box-shadow: var(--mc-rail-edge);
+  -webkit-backdrop-filter: blur(8px) saturate(1.6); backdrop-filter: blur(8px) saturate(1.6);
+}
+.mc-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 26px; height: 16px; border: 0; border-radius: 999px;
+  background: var(--mc-pill); box-shadow: var(--mc-pill-shadow); transition: transform .15s ease-out;
+}
+.mc-range::-moz-range-thumb { width: 26px; height: 16px; border: 0; border-radius: 999px; background: var(--mc-pill); box-shadow: var(--mc-pill-shadow); }
+.mc-range:hover::-webkit-slider-thumb { transform: scale(1.08); }
+.mc-range:active::-webkit-slider-thumb { transform: scale(.96); }
+.mc-range:focus-visible { outline: 2px solid var(--focus); outline-offset: 6px; }
+.mc-range:disabled { cursor: default; --fill-color: var(--mc-fill-off); }
+.mc-range:disabled::-webkit-slider-thumb { opacity: .55; }
+.mc-range:disabled::-moz-range-thumb { opacity: .55; }
+/* The bigger handle on the Settings equalizer. */
+.mc-range-lg { height: 10px; border-radius: 5px; --h: 17px; }
+.mc-range-lg::-webkit-slider-thumb { width: 34px; height: 20px; }
+.mc-range-lg::-moz-range-thumb { width: 34px; height: 20px; }
+@media (prefers-reduced-transparency: reduce) {
+  .mc-range, .mc-progress-rail, .rip-notice-bar, .eqp-track::before, .vol-pop-track::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

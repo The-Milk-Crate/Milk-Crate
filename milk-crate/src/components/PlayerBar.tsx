@@ -72,9 +72,9 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
               <button type="button" className="mc-icon-btn" aria-label={p.muted ? "Unmute" : "Mute"} aria-pressed={p.muted} onClick={() => p.setMuted(!p.muted)}>
                 <VolumeIcon />
               </button>
-              <input type="range" className="volume-slider" min={0} max={100} step={1} aria-label="Volume"
+              <input type="range" className="volume-slider mc-range" min={0} max={100} step={1} aria-label="Volume"
                 value={Math.round((p.muted ? 0 : p.volume) * 100)} onChange={(e) => p.setVolume(Number(e.target.value) / 100)}
-                style={{ "--fill": `${Math.round((p.muted ? 0 : p.volume) * 100)}%` } as React.CSSProperties} />
+                style={{ "--v": p.muted ? 0 : p.volume } as React.CSSProperties} />
             </>
           )}
           {folded && volOpen && <VolumePopover anchor={volBtn} onClose={() => setVolOpen(false)} />}

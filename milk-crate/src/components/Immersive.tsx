@@ -183,9 +183,9 @@ function ImmersiveVolume() {
       <button type="button" className="mc-icon-btn" aria-label={p.muted ? "Unmute" : "Mute"} aria-pressed={p.muted} onClick={() => p.setMuted(!p.muted)}>
         <VolumeIcon />
       </button>
-      <input type="range" className="volume-slider" min={0} max={100} step={1} aria-label="Volume" value={level}
+      <input type="range" className="volume-slider mc-range" min={0} max={100} step={1} aria-label="Volume" value={level}
         onChange={(e) => p.setVolume(Number(e.target.value) / 100)}
-        style={{ "--fill": `${level}%` } as React.CSSProperties} />
+        style={{ "--v": level / 100 } as React.CSSProperties} />
     </div>
   );
 }

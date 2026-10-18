@@ -182,8 +182,8 @@ function Slider({ label, hint, value, onChange, left, right, fallback }: {
         {value !== fallback && <Button size="sm" variant="ghost" onClick={() => onChange(fallback)}>Reset</Button>}
       </span>
       <span className="caption muted">{hint}</span>
-      <input type="range" className="volume-slider" min={0} max={100} step={1} value={value} aria-label={label} aria-valuetext={`${value}%`}
-        onChange={(e) => onChange(Number(e.target.value))} style={{ "--fill": `${value}%`, width: "100%", marginTop: 10 } as CSSProperties} />
+      <input type="range" className="volume-slider mc-range" min={0} max={100} step={1} value={value} aria-label={label} aria-valuetext={`${value}%`}
+        onChange={(e) => onChange(Number(e.target.value))} style={{ "--v": value / 100, width: "100%", marginTop: 10 } as CSSProperties} />
       <span className="caption muted" style={{ display: "flex", justifyContent: "space-between" }} aria-hidden="true"><span>{left}</span><span>{right}</span></span>
     </div>
   );
@@ -235,7 +235,8 @@ function Equalizer() {
             <label key={b.hz} className="eq-band">
               <span className="eq-value caption">{p.eqGains[i] > 0 ? "+" : ""}{p.eqGains[i]}</span>
               <span className="eq-slot">
-                <input type="range" className="eq-slider" min={-EQ_MAX_DB} max={EQ_MAX_DB} step={1} value={p.eqGains[i] ?? 0} disabled={!p.eqOn}
+                <input type="range" className="eq-slider mc-range mc-range-lg" min={-EQ_MAX_DB} max={EQ_MAX_DB} step={1} value={p.eqGains[i] ?? 0} disabled={!p.eqOn}
+                  style={{ "--v": ((p.eqGains[i] ?? 0) + EQ_MAX_DB) / (2 * EQ_MAX_DB) } as CSSProperties}
                   aria-label={`${b.label} Hz`} aria-valuetext={`${p.eqGains[i]} decibels`} aria-orientation="vertical"
                   onChange={(e) => setBand(i, Number(e.target.value))} onDoubleClick={() => setBand(i, 0)} />
               </span>
