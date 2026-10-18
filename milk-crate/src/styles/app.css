@@ -786,9 +786,9 @@ button.catalog.immersive-link { color: var(--ink-muted); }
   display: grid; grid-auto-flow: column; grid-auto-columns: 140px; gap: var(--space-4);
   overflow-x: auto; padding: 4px 4px 30px; overscroll-behavior-x: contain;
 }
-.cover-row.two-rows { grid-template-rows: auto auto; row-gap: var(--space-6); }
-.cover-row.wraps { grid-auto-flow: row; row-gap: var(--space-6); }
-.cover-tile { position: relative; min-width: 0; }
+/* Whole rows of covers, as many per row as fit (src/screens/Crate.tsx); no sideways scrolling. */
+.cover-grid { display: grid; column-gap: 16px; row-gap: var(--space-6); padding: 4px 0 8px; }
+.cover-tile { position: relative; min-width: 0; container-type: inline-size; }
 .cover-tile-open { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; }
 .cover-tile-open:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: var(--radius-sm); }
 .cover-tile-art { position: relative; display: block; transition: transform .15s ease-out; }
@@ -796,7 +796,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .cover-tile-open:hover .cover-tile-art { transform: translateY(-2px); }
 .cover-tile-title { font-weight: 650; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .cover-tile-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: -4px; }
-.cover-tile-play { position: absolute; top: 96px; right: 6px; width: 36px; height: 36px; opacity: 0; transition: opacity .15s ease-out; box-shadow: var(--shadow-lift); }
+.cover-tile-play { position: absolute; top: calc(100cqw - 44px); right: 6px; width: 36px; height: 36px; opacity: 0; transition: opacity .15s ease-out; box-shadow: var(--shadow-lift); }
 .cover-tile-play svg { width: 15px; height: 15px; }
 .cover-tile:hover .cover-tile-play, .cover-tile-play:focus-visible { opacity: 1; }
 @media (hover: none) { .cover-tile-play { opacity: 1; } }

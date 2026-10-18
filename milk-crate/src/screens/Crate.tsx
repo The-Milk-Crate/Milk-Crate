@@ -85,12 +85,12 @@ function CrateHome({ go }: { go: Go }) {
   const p = usePlayer();
   const lib = useLibrary();
   const crate = useCrate();
-  const albums = crate.filter((e) => e.kind === "album");
-  const singles = crate.filter((e) => e.kind !== "album");
   const favorites = useFavoriteTracks();
-  const recent = useRecentSongs(SHELF_MAX);
+  const recent = useRecentSongs(RECENT_MAX);
   // CDs you ripped count as albums too (they play from this computer).
   const ripped = useRippedAlbums();
+  const albums = useAlbumItems(crate, ripped);
+  const songs = useCrateSongs();
   const everything = useMemo(() => {
     const ids = new Set([...crate.flatMap((e) => e.trackIds), ...lib.favorites]);
     return [...[...ids].map((id) => c.trackById[id]).filter(Boolean), ...ripped.flatMap((a) => a.tracks)];
@@ -100,7 +100,7 @@ function CrateHome({ go }: { go: Go }) {
     <div className="screen">
       <header className="screen-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span className="catalog eyebrow">{plural(albums.length + ripped.length, "album")} · {plural(singles.length, "single")} · {plural(favorites.length, "favorite")}</span>
+          <span className="catalog eyebrow">{plural(albums.length, "album")} · {plural(songs.length, "song")} · {plural(favorites.length, "favorite")}</span>
           <h1 className="display-lg">Your Crate</h1>
         </div>
         <Button variant="primary" onClick={() => p.shuffleAll(everything)} disabled={!everything.length}>
@@ -115,25 +115,14 @@ function CrateHome({ go }: { go: Go }) {
         </div>
       )}
 
-      <CrateShelf title="Albums" count={albums.length + ripped.length} onOpen={() => go({ name: "crate", tab: "albums" })}>
-        {albums.slice(0, SHELF_MAX).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
-        {ripped.slice(0, Math.max(0, SHELF_MAX - albums.length)).map((a) => <RippedTile key={a.key} album={a} go={go} />)}
-      </CrateShelf>
-
-      <CrateShelf title="Singles" count={singles.length} onOpen={() => go({ name: "crate", tab: "singles" })}>
-        {singles.slice(0, SHELF_MAX).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
-      </CrateShelf>
-
-      <CrateShelf title="Favorites" count={favorites.length} onOpen={() => go({ name: "crate", tab: "favorites" })}>
-        {favorites.slice(0, SHELF_MAX).map((t, i) => <SongTile key={t.id} track={t} onPlay={() => p.playQueue(favorites, i)} />)}
-      </CrateShelf>
-
-      <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}>
-        {recent.map((t) => <SongTile key={t.id} track={t} onPlay={() => p.playNow(t)} />)}
+      <CrateShelf title="Albums" count={albums.length} rows={2} onOpen={() => go({ name: "crate", tab: "albums" })}>
+        {(n) => albums.slice(0, n).map((x) => x.cd
+          ? <RippedTile key={`cd:${x.cd.key}`} album={x.cd} go={go} />
+          : <EntryTile key={x.crate.release.id} entry={x.crate} go={go} />)}
       </CrateShelf>
 
       <CrateShelf title="Playlists" count={lib.playlists.length} onOpen={() => go({ name: "crate", tab: "playlists" })}>
-        {lib.playlists.slice(0, SHELF_MAX).map((pl) => {
+        {(n) => lib.playlists.slice(0, n).map((pl) => {
           const first = pl.trackIds.map((id) => c.trackById[id]).find(Boolean);
           const r = first ? c.releaseById[first.releaseId] : undefined;
           return (
@@ -142,37 +131,73 @@ function CrateHome({ go }: { go: Go }) {
           );
         })}
       </CrateShelf>
+
+      <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}>
+        {(n) => recent.slice(0, n).map((t) => <SongTile key={t.id} track={t} onPlay={() => p.playNow(t)} />)}
+      </CrateShelf>
     </div>
   );
 }
 
-/** Covers shown on each overview shelf (two rows of them, scrolling sideways). */
-const SHELF_MAX = 24;
+/** Albums, EPs and singles in your crate plus the CDs you ripped: played most recently first. */
+type AlbumItem = { crate: CrateEntry; cd?: undefined; at: number } | { cd: RippedAlbum; crate?: undefined; at: number };
+function useAlbumItems(crate: CrateEntry[], ripped: RippedAlbum[]): AlbumItem[] {
+  const p = usePlayer();
+  return useMemo(() => {
+    const played = new Map<string, number>();
+    for (const h of p.history) if (!played.has(h.trackId)) played.set(h.trackId, h.at);
+    const cdAt = (a: RippedAlbum) => Math.max(0, ...a.tracks.map((t) => played.get(t.id) ?? 0));
+    const items: AlbumItem[] = [
+      ...crate.map((e) => ({ crate: e, at: e.playedAt })),
+      ...ripped.map((a) => ({ cd: a, at: cdAt(a) })),
+    ];
+    const added = (x: AlbumItem) => (x.crate ? x.crate.addedAt : x.cd!.rippedAt);
+    return items.sort((a, b) => b.at - a.at || added(b) - added(a));
+  }, [crate, ripped, p.history]);
+}
+
+/** Every song in your crate: from albums and singles you saved, your favorites, and CDs you ripped. Each once. */
+function useCrateSongs(): Track[] {
+  const c = useCatalog();
+  const lib = useLibrary();
+  const p = usePlayer();
+  const crate = useCrate();
+  const ripped = useRippedAlbums();
+  return useMemo(() => {
+    const seen = new Set<string>();
+    const out: Track[] = [];
+    const add = (t?: Track) => { if (t && !seen.has(t.id)) { seen.add(t.id); out.push(t); } };
+    crate.forEach((e) => e.trackIds.forEach((id) => add(c.trackById[id])));
+    lib.favorites.forEach((id) => add(c.trackById[id]));
+    ripped.forEach((a) => a.tracks.forEach(add));
+    p.localTracks.filter((t) => p.favorites.has(t.id)).forEach(add);
+    return out;
+  }, [crate, lib.favorites, c.trackById, ripped, p.localTracks, p.favorites]);
+}
+
+/** Recently Played on the overview: one row's worth (the rest are a click away). */
+const RECENT_MAX = 24;
 const TILE_W = 140;
+const TILE_GAP = 16;
 
 /**
- * One shelf on the overview: a bordered heading (click for all of it) over two rows of covers.
- * A shelf that fits on one row stays one row; one that fits on two fills the top row first;
- * more than that scrolls sideways, two covers to a column.
+ * One shelf on the overview: a bordered heading (click for all of it) over whole rows of covers.
+ * As many covers per row as the window has room for; no sideways scrolling.
  */
-function CrateShelf({ title, count, showCount = true, onOpen, children }: {
-  title: string; count: number; showCount?: boolean; onOpen: () => void; children: ReactNode;
+function CrateShelf({ title, count, rows = 1, showCount = true, onOpen, children }: {
+  title: string; count: number; rows?: number; showCount?: boolean; onOpen: () => void; children: (n: number) => ReactNode;
 }) {
   const row = useRef<HTMLDivElement>(null);
-  const [perRow, setPerRow] = useState(99);
+  const [perRow, setPerRow] = useState(6);
   useLayoutEffect(() => {
     const el = row.current;
     if (!el) return;
-    const measure = () => {
-      const gap = parseFloat(getComputedStyle(el).columnGap) || 16;
-      setPerRow(Math.max(1, Math.floor((el.clientWidth - 8 + gap) / (TILE_W + gap))));
-    };
+    const measure = () => setPerRow(Math.max(1, Math.floor((el.clientWidth + TILE_GAP) / (TILE_W + TILE_GAP))));
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [count > 0]); // eslint-disable-line react-hooks/exhaustive-deps
-  const shown = Math.min(count, SHELF_MAX);
   return (
     <section className="crate-shelf" aria-label={title}>
       <button type="button" className="crate-heading" onClick={onOpen} aria-label={`${title}${showCount ? `, ${count}` : ""}. See all`}>
@@ -181,8 +206,7 @@ function CrateShelf({ title, count, showCount = true, onOpen, children }: {
         <ChevronRight size={20} strokeWidth={2} aria-hidden="true" />
       </button>
       {count > 0 && (
-        <div ref={row} className={`cover-row${shown > perRow * 2 ? " two-rows" : shown > perRow ? " wraps" : ""}`}
-          style={shown > perRow && shown <= perRow * 2 ? { gridTemplateColumns: `repeat(${perRow}, ${TILE_W}px)` } : undefined}>{children}</div>
+        <div ref={row} className="cover-grid" style={{ gridTemplateColumns: `repeat(${perRow}, minmax(0, 1fr))` }}>{children(perRow * rows)}</div>
       )}
     </section>
   );
@@ -242,16 +266,15 @@ function SongTile({ track: t, onPlay }: { track: Track; onPlay: () => void }) {
 
 /* ---------- A full page for one shelf ---------- */
 
-const PAGE_TITLE: Record<CrateTab, string> = { albums: "Albums", singles: "Singles", favorites: "Favorites", history: "Recently Played", playlists: "Playlists" };
+const PAGE_TITLE: Record<CrateTab, string> = { albums: "Albums", singles: "Albums", songs: "Songs", favorites: "Songs", history: "Recently Played", playlists: "Playlists" };
 
 function CratePage({ go, tab }: { go: Go; tab: CrateTab }) {
   return (
     <div className="screen">
       <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate" })}>← Your Crate</button>
       <h1 className="display-lg">{PAGE_TITLE[tab]}</h1>
-      {tab === "albums" && <Entries go={go} kind="albums" />}
-      {tab === "singles" && <Entries go={go} kind="singles" />}
-      {tab === "favorites" && <Favorites go={go} />}
+      {(tab === "albums" || tab === "singles") && <Entries go={go} />}
+      {(tab === "songs" || tab === "favorites") && <Songs go={go} favoritesFirst={tab === "favorites"} />}
       {tab === "history" && <History />}
       {tab === "playlists" && <PlaylistList go={go} />}
     </div>
@@ -266,13 +289,13 @@ const ENTRY_SORTS: { id: EntrySort; label: string }[] = [
   { id: "title", label: "Title" },
 ];
 
-/** Every album, or every single/double/triple, in your crate. */
-function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
+/** Every album, EP and single in your crate, and every CD you ripped. */
+function Entries({ go }: { go: Go }) {
   const c = useCatalog();
   const p = usePlayer();
   const lib = useLibrary();
   const crate = useCrate();
-  const [sort, setSort] = usePersistentState<EntrySort>(`mc.crateSort.${kind}`, "played");
+  const [sort, setSort] = usePersistentState<EntrySort>("mc.crateSort.albums", "played");
   const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
   const artistOf = (e: CrateEntry) => c.artistById[e.release.artistId]?.name ?? "";
   const ripped = useRippedAlbums();
@@ -280,8 +303,8 @@ function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
   // Albums in your crate and CDs you ripped, sorted together.
   type Item = { crate: CrateEntry; cd?: undefined } | { cd: RippedAlbum; crate?: undefined };
   const list: Item[] = [
-    ...crate.filter((e) => (kind === "albums" ? e.kind === "album" : e.kind !== "album")).map((e) => ({ crate: e })),
-    ...(kind === "albums" ? ripped.map((a) => ({ cd: a })) : []),
+    ...crate.map((e) => ({ crate: e })),
+    ...ripped.map((a) => ({ cd: a })),
   ];
   const titleOf = (x: Item) => (x.crate ? x.crate.release.title : x.cd!.title);
   const nameOf = (x: Item) => (x.crate ? artistOf(x.crate) : x.cd!.artist);
@@ -293,9 +316,7 @@ function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
   if (!list.length)
     return (
       <div className="empty">
-        <span>{kind === "albums"
-          ? "No albums yet. Open any album and choose Add to your crate. Four or more songs from one album count as an album too."
-          : "No singles yet. From any song's menu choose Add to your crate. One, two or three songs from an album show here as a single, double or triple."}</span>
+        <span>No albums yet. Open any album and choose Add to your crate. Songs you add on their own show here too, as a single, double or triple.</span>
         <Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button>
       </div>
     );
@@ -309,7 +330,7 @@ function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
             {ENTRY_SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
           </select>
         </label>
-        <span className="caption muted">{plural(list.length, kind === "albums" ? "album" : "single")}</span>
+        <span className="caption muted">{plural(list.length, "album")}</span>
       </div>
       <div className="release-grid">
         {list.map((x) => {
@@ -336,39 +357,77 @@ function Entries({ go, kind }: { go: Go; kind: "albums" | "singles" }) {
   );
 }
 
-/* ---------- Favorites: every song you've hearted ---------- */
+/* ---------- Songs: every song in your crate, in one list ---------- */
 
-function Favorites({ go }: { go: Go }) {
+type SongSort = "played" | "title" | "artist" | "album";
+const SONG_SORTS: { id: SongSort; label: string }[] = [
+  { id: "played", label: "Recently played" },
+  { id: "title", label: "Title" },
+  { id: "artist", label: "Artist" },
+  { id: "album", label: "Album" },
+];
+
+function Songs({ go, favoritesFirst }: { go: Go; favoritesFirst: boolean }) {
   const c = useCatalog();
   const p = usePlayer();
-  const tracks = useFavoriteTracks();
-  if (!tracks.length)
-    return (
-      <div className="empty">
-        <span>No favorites yet. Tap the heart next to any song and it lands here. Favorites come up more when you shuffle.</span>
-        <Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button>
-      </div>
-    );
+  const all = useCrateSongs();
+  const favs = useFavoriteTracks();
+  const [only, setOnly] = useState(favoritesFirst);
+  const [sort, setSort] = usePersistentState<SongSort>("mc.crateSort.songs", "played");
+  const artistOf = (t: Track) => c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer");
+  const albumOf = (t: Track) => c.releaseById[t.releaseId]?.title ?? t.tags?.album ?? "";
+  const tracks = useMemo(() => {
+    const list = only ? [...favs] : [...all];
+    const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+    const played = new Map<string, number>();
+    for (const h of p.history) if (!played.has(h.trackId)) played.set(h.trackId, h.at);
+    if (sort === "played") list.sort((a, b) => (played.get(b.id) ?? 0) - (played.get(a.id) ?? 0));
+    if (sort === "title") list.sort((a, b) => byName(a.title, b.title));
+    if (sort === "artist") list.sort((a, b) => byName(artistOf(a), artistOf(b)) || byName(albumOf(a), albumOf(b)) || (a.tags?.trackNo ?? 0) - (b.tags?.trackNo ?? 0));
+    if (sort === "album") list.sort((a, b) => byName(albumOf(a), albumOf(b)) || (a.tags?.trackNo ?? 0) - (b.tags?.trackNo ?? 0));
+    return list;
+  }, [only, favs, all, sort, p.history, c]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <section className="section">
-      <div className="section-title" style={{ justifyContent: "space-between" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <PlayButton playing={tracks.some((t) => t.id === p.current?.id) && p.playing} onClick={() => p.playQueue(tracks)} />
-          <Button onClick={() => p.shuffleAll(tracks)}><Shuffle size={16} aria-hidden="true" /> Shuffle favorites</Button>
+      <div className="section-title" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <PlayButton playing={tracks.some((t) => t.id === p.current?.id) && p.playing} onClick={() => tracks.length && p.playQueue(tracks)} />
+          <Button onClick={() => p.shuffleAll(tracks)} disabled={!tracks.length}><Shuffle size={16} aria-hidden="true" /> Shuffle</Button>
+          <div role="group" aria-label="Show" style={{ display: "flex", gap: 6 }}>
+            <button type="button" className="chip" aria-pressed={!only} onClick={() => setOnly(false)}>All songs</button>
+            <button type="button" className="chip" aria-pressed={only} onClick={() => setOnly(true)}>
+              <Heart size={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /> Favorites
+            </button>
+          </div>
         </div>
-        <span className="caption muted"><Heart size={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /> Played most recently first. Tap a heart again to take a song out.</span>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <label className="field sort-field">
+            <span className="catalog eyebrow">Sort by</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value as SongSort)}>
+              {SONG_SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </label>
+          <span className="caption muted">{plural(tracks.length, "song")}</span>
+        </div>
       </div>
-      <div>
-        {tracks.map((t, i) => {
-          const album = c.releaseById[t.releaseId];
-          return (
-            <TrackRow key={t.id} trackId={t.id} index={i + 1} title={t.title} artist={[c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer"), album?.title ?? t.tags?.album].filter(Boolean).join(" · ")}
+      {!tracks.length ? (
+        <div className="empty">
+          <span>{only
+            ? "No favorites yet. Tap the heart next to any song and it lands here. Favorites come up more when you shuffle."
+            : "No songs yet. Add albums or songs to your crate, favorite songs, or rip a CD, and they all show here."}</span>
+          <Button size="sm" onClick={() => go({ name: "home" })}>Find music</Button>
+        </div>
+      ) : (
+        <div>
+          {tracks.map((t, i) => (
+            <TrackRow key={t.id} trackId={t.id} index={i + 1} title={t.title} artist={[artistOf(t), albumOf(t)].filter(Boolean).join(" · ")}
               duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
               playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(tracks, i)}
               actions={t.id.startsWith("local:") ? undefined : <AddToPlaylist trackIds={[t.id]} />} />
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

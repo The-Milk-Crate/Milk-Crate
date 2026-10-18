@@ -48,7 +48,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 
 /** Screens the app can show. Add a case here and in <Screen> for each new one. */
 /** Your Crate's pages. No tab: the overview (recent albums, singles, favorites and plays). */
-export type CrateTab = "albums" | "singles" | "favorites" | "history" | "playlists";
+export type CrateTab = "albums" | "singles" | "songs" | "favorites" | "history" | "playlists";
 export type ShelfFormat = "vinyl" | "45s" | "cds" | "cassettes";
 export type SettingsTab = "appearance" | "sound" | "downloads" | "updates";
 export type Route =
