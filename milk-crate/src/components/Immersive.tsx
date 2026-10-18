@@ -10,6 +10,7 @@ import { Backdrop } from "./Backdrop";
 import { FrostGrain } from "./FrostGrain";
 import { SeekBar } from "./SeekBar";
 import { RepeatButton, ShuffleButton } from "./PlayerBar";
+import { albumKey, fileArtist, useFileCover } from "../lib/fileTags";
 import { Glyph, PlayButton, Sleeve } from "./ui";
 
 const IDLE_MS = 3000;
@@ -26,7 +27,10 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
   const t = p.current;
   const release = t ? c.releaseById[t.releaseId] : undefined;
   const artist = t ? c.artistById[t.artistId] : undefined;
-  const artistName = artist?.name ?? (t ? "Your files" : "");
+  // Songs from your computer (ripped CDs included): the cover, artist and album from the file's tags.
+  const fileCover = useFileCover(release ? undefined : t?.tags?.cover);
+  const localAlbum = !release && t?.tags?.album ? { title: t.tags.album, year: t.tags.year, key: albumKey(t) } : undefined;
+  const artistName = artist?.name ?? ((t && fileArtist(t)) || (t ? "Your files" : ""));
   const [idle, setIdle] = useState(false);
   // Lyrics and credits take the cover's place while they're open (and stay open from song to song).
   const [showInfo, setShowInfo] = useState(false);
@@ -107,7 +111,8 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
         {showInfo && hasSongInfo(t) ? (
           <div className="immersive-lyrics" aria-label={`Lyrics and credits for ${t.title}`}><SongInfoContent track={t} /></div>
         ) : (
-          <Sleeve src={release?.art} seed={release ? sleeveSeed(release.title, artistName) : t.title} alt={release ? `${release.title} cover` : ""} />
+          <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artistName) : sleeveSeed(localAlbum?.title ?? t.title, artistName)}
+            alt={release ? `${release.title} cover` : localAlbum ? `${localAlbum.title} cover` : ""} />
         )}
         <div className="immersive-info">
           <FrostGrain source="immersive" saturate={1.5} />
@@ -115,6 +120,15 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
             <button type="button" className="catalog eyebrow immersive-link" onClick={() => openPage({ name: "album", releaseId: release.id })}>
               {[release.title, release.year].filter(Boolean).join(" · ")}
             </button>
+          )}
+          {localAlbum && (
+            localAlbum.key ? (
+              <button type="button" className="catalog eyebrow immersive-link" onClick={() => openPage({ name: "computer", album: localAlbum.key })}>
+                {[localAlbum.title, localAlbum.year].filter(Boolean).join(" · ")}
+              </button>
+            ) : (
+              <span className="catalog eyebrow">{[localAlbum.title, localAlbum.year].filter(Boolean).join(" · ")}</span>
+            )
           )}
           <h1 className="immersive-title">{t.title}</h1>
           {artist ? (

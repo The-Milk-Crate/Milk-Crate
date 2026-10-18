@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Disc3, ImagePlus, LoaderCircle, X } from "lucide-react";
+import { Disc3, ImagePlus, LoaderCircle, Lock, X } from "lucide-react";
 import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUrl, lookupDisc, ripDisc, type CdMatch, type Disc, type RipProgress } from "../lib/cd";
 import { pickImage } from "../lib/localFiles";
 import { setLeaveGuard } from "../lib/leaveGuard";
@@ -264,6 +264,10 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
 
+          <p className="caption muted private-note">
+            <Lock size={13} aria-hidden="true" />
+            <span>Only rip CDs you own, for your own listening. Ripped music stays on this computer and is never uploaded or shared.</span>
+          </p>
           <div className="cd-ripper-actions">
             {ripping ? (
               <Button onClick={() => void cancelRip()}>Stop</Button>
