@@ -17,3 +17,6 @@ release/
 milkcrate-signing-secrets.txt
 src-tauri/cdrip/target
 src-tauri/cdlink/target
+
+# TypeScript build cache
+*.tsbuildinfo
