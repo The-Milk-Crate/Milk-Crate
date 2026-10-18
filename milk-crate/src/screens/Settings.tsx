@@ -107,6 +107,7 @@ function Appearance() {
           </div>
         </div>
         <Switch label="Album colors" hint="While music plays, the accent takes the album's color. Your accent comes back when nothing's playing." on={s.matchAlbum} onChange={s.setMatchAlbum} />
+        <Switch label="Accent scroll bars" hint="Tint the frosted scroll bars with your accent color. With Album colors on, they take the color of the album that's playing." on={s.scrollAccent} onChange={s.setScrollAccent} />
       </section>
 
       <section className="panel" style={{ gap: 4 }}>

@@ -28,6 +28,7 @@ import { LocationProvider, useLocation } from "./lib/location";
 import { LibraryProvider } from "./lib/library";
 import { DownloadsProvider } from "./lib/downloads";
 import { SettingsProvider, useSettings } from "./lib/settings";
+import { installScrollbars } from "./lib/scrollbars";
 import { UpdatePrompt } from "./components/UpdatePrompt";
 import { NeedsAccount } from "./components/NeedsAccount";
 import { Logo } from "./components/ui";
@@ -139,6 +140,8 @@ function Shell() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [search, setSearch] = useState<string | null>(null);
   const [feedback, setFeedback] = useState(false);
+  // Frosted scroll bars everywhere, plus wheel and arrow-key scrolling (src/lib/scrollbars.ts).
+  useEffect(() => installScrollbars(), []);
   useEffect(() => {
     const onOpen = () => setFeedback(true);
     window.addEventListener("mc:feedback", onOpen);

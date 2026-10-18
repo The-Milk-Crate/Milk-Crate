@@ -149,8 +149,9 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
       e.preventDefault();
       flip.current((i) => i + step);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture, so the shelf gets the arrows before the app-wide arrow-key scrolling (src/lib/scrollbars.ts).
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
   const front = items[index];
   if (!front) return null;

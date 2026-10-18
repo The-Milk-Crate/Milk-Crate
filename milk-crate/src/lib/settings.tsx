@@ -24,6 +24,9 @@ interface Settings {
   /** Experimental: fine grain on the glass that refracts the album colors (src/lib/frost.ts). On by default. */
   frostTexture: boolean;
   setFrostTexture: (on: boolean) => void;
+  /** Scroll bars tinted with the accent (the playing album's color when matchAlbum is on). Off by default. */
+  scrollAccent: boolean;
+  setScrollAccent: (on: boolean) => void;
 }
 
 /** Clearest glass by default (still passes WCAG AA; see tintScale). */
@@ -38,6 +41,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [accentColor, setAccentColor] = usePersistentState<string | null>("mc.accentColor", null);
   const [transparency, setTransparency] = usePersistentState("mc.glassClarity", DEFAULT_TRANSPARENCY);
   const [frostTexture, setFrostTexture] = usePersistentState("mc.frostGrainOn", true);
+  const [scrollAccent, setScrollAccent] = usePersistentState("mc.scrollAccent", false);
+  useEffect(() => {
+    document.documentElement.dataset.scrollAccent = scrollAccent ? "on" : "off";
+  }, [scrollAccent]);
   useEffect(() => applyGlassTints(theme, transparency), [theme, transparency]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -80,7 +87,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     void colorTitleBar(theme);
   }, [theme]);
   return (
-    <SettingsContext.Provider value={{ theme, setTheme, matchAlbum, setMatchAlbum, glass, setGlass, seeThrough, setSeeThrough, accentColor, setAccentColor, transparency, setTransparency, frostTexture, setFrostTexture }}>
+    <SettingsContext.Provider value={{ theme, setTheme, matchAlbum, setMatchAlbum, glass, setGlass, seeThrough, setSeeThrough, accentColor, setAccentColor, transparency, setTransparency, frostTexture, setFrostTexture, scrollAccent, setScrollAccent }}>
       {children}
     </SettingsContext.Provider>
   );
