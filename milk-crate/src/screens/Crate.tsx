@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, Heart, ImagePlus, Shuffle, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Heart, ImagePlus, Plus, Shuffle, Trash2, X } from "lucide-react";
 import type { CrateTab, Go } from "../App";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
@@ -551,6 +551,7 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
           </div>
         </div>
       </header>
+      <AddSongs pl={pl} />
       {tracks.length === 0 && <p className="muted">Empty for now. Use the ⋯ menu next to any song, including songs from CDs you ripped.</p>}
       <div>
         {tracks.map((t, i) =>
@@ -565,6 +566,65 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Add songs to a playlist from its page: search Milk Crate and your computer's songs (ripped CDs
+ * included) by title, artist or album; with nothing typed, songs from your crate.
+ */
+function AddSongs({ pl }: { pl: Playlist }) {
+  const c = useCatalog();
+  const p = usePlayer();
+  const lib = useLibrary();
+  const crateSongs = useCrateSongs();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [added, setAdded] = useState<Record<string, true>>({});
+  const artistOf = (t: Track) => c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer");
+  const albumOf = (t: Track) => c.releaseById[t.releaseId]?.title ?? t.tags?.album ?? "";
+  const results = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return crateSongs.slice(0, 30);
+    const seen = new Set<string>();
+    const all = [...c.tracks.filter((t) => t.src), ...p.localTracks].filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+    return all.filter((t) => {
+      const hay = `${t.title} ${artistOf(t)} ${albumOf(t)}`.toLowerCase();
+      return words.every((w) => hay.includes(w));
+    }).slice(0, 40);
+  }, [q, crateSongs, c.tracks, p.localTracks]); // eslint-disable-line react-hooks/exhaustive-deps
+  const inList = new Set(pl.trackIds);
+  const add = (t: Track) => void attempt(async () => { await lib.addToPlaylist(pl.id, [t.id]); setAdded((a) => ({ ...a, [t.id]: true })); });
+
+  if (!open) return <div><Button onClick={() => setOpen(true)}><Plus size={16} aria-hidden="true" /> Add songs</Button></div>;
+  return (
+    <section className="panel add-songs" aria-label="Add songs">
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <label className="field" style={{ flex: 1 }}>
+          <span className="catalog eyebrow">Add songs</span>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Song, artist or album" />
+        </label>
+        <Button variant="ghost" onClick={() => { setOpen(false); setQ(""); }}>Done</Button>
+      </div>
+      {!q && results.length > 0 && <span className="caption muted">From your crate</span>}
+      {results.length === 0 && <p className="caption muted">{q ? "Nothing matches that." : "Nothing in your crate yet. Search for any song on Milk Crate or your computer."}</p>}
+      <div className="add-songs-list">
+        {results.map((t) => {
+          const has = added[t.id] || inList.has(t.id);
+          return (
+            <div key={t.id} className="add-songs-row">
+              <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
+                <span className="add-songs-title">{t.title}</span>
+                <span className="caption muted add-songs-sub">{[artistOf(t), albumOf(t)].filter(Boolean).join(" · ")}</span>
+              </span>
+              <Button size="sm" variant={has ? "ghost" : undefined} onClick={() => add(t)} aria-label={`Add ${t.title}${has ? " again" : ""}`}>
+                {has ? <><Check size={14} aria-hidden="true" /> Added</> : <><Plus size={14} aria-hidden="true" /> Add</>}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

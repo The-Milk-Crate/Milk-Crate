@@ -116,12 +116,12 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
             alt={release ? `${release.title} cover` : localAlbum ? `${localAlbum.title} cover` : ""} />
         )}
         <div className="immersive-card">
-        {/* The volume, docked to the song's card on the side facing the cover. */}
+        <FrostGrain source="immersive" saturate={1.5} />
+        {/* The volume, on the song's card (one piece of glass) on the side facing the cover. */}
         <div className="immersive-volume">
           <VerticalVolume />
         </div>
         <div className="immersive-info">
-          <FrostGrain source="immersive" saturate={1.5} />
           {release && (
             <button type="button" className="catalog eyebrow immersive-link" onClick={() => openPage({ name: "album", releaseId: release.id })}>
               {[release.title, release.year].filter(Boolean).join(" · ")}

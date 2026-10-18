@@ -1,5 +1,3 @@
-import { Search } from "lucide-react";
-import { openSearch } from "../components/SearchPalette";
 import { Tour } from "../components/Tour";
 import { RadioButton } from "../components/RadioButton";
 import type { Go } from "../App";
@@ -81,12 +79,6 @@ export function Home({ go }: { go: Go }) {
           <span className="catalog eyebrow">{scene ? `${scene.home.name}, ${scene.home.state}` : "Milk Crate"}</span>
           <h1 className="display-lg">{hello}{lib.displayName ? `, ${lib.displayName}` : ""}</h1>
           {scene && <div><RadioButton scene={scene} variant="primary" size="sm" /></div>}
-        </div>
-        <div className="field" style={{ flex: "0 1 360px", minWidth: 220 }}>
-          <span className="catalog eyebrow" aria-hidden="true">Search</span>
-          <button type="button" className="search-field-btn" onClick={() => openSearch()} aria-label="Search artists, albums, songs and towns" aria-keyshortcuts="Control+K">
-            <Search size={16} strokeWidth={1.75} aria-hidden="true" /> Artists, albums, songs, towns <kbd>{/Mac/i.test(navigator.userAgent) ? "⌘K" : "Ctrl K"}</kbd>
-          </button>
         </div>
       </header>
 

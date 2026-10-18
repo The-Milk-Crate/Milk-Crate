@@ -1,7 +1,10 @@
 import { accentForHue, huesFromImage, oklchToHex } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, Plus, Shuffle, Trash2, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Disc3, Plus, Shuffle, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
+import { CdRipper } from "../components/CdRipper";
+import { canRip } from "../lib/cd";
+import { useRip } from "../lib/ripSession";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
 import { FORMAT_LABEL, attempt, useLibrary, type PhysicalItem } from "../lib/library";
@@ -10,7 +13,7 @@ import { usePersistentState } from "../lib/storage";
 import { SHELF_SECTIONS, flipSound, ownedSections, setShelfSounds, shelfSoundsOn, sortShelf, spineColor, useFlipper, type ShelfSort } from "../lib/shelf";
 import type { PhysicalFormat, Release, Track } from "../lib/types";
 import { Button, PlayButton, Sleeve } from "../components/ui";
-import { useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
+import { useAddRipped, useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
 
 /** One thing on your shelf, with what's needed to draw and play it. */
 interface ShelfItem {
@@ -66,6 +69,8 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
   const sections = ownedSections(all.map((x) => x.item.format));
   const current = sections.find((s) => s.id === format) ?? sections[0];
   const [adding, setAdding] = useState(false);
+  const [ripOpen, setRipOpen] = useRip("open");
+  const addRipped = useAddRipped();
   const [sounds, setSounds] = useState(shelfSoundsOn);
   const counts = sections.map((s) => {
     const n = all.filter((x) => x.item.format === s.format).length;
@@ -86,6 +91,9 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
               {sounds ? <Volume2 size={18} aria-hidden="true" /> : <VolumeX size={18} aria-hidden="true" />}
             </button>
           )}
+          {canRip() && (!current || current.id === "cds") && (
+            <Button onClick={() => setRipOpen(true)} disabled={ripOpen}><Disc3 size={16} aria-hidden="true" /> Rip a CD</Button>
+          )}
           <Button variant={adding || !sections.length ? "ghost" : "primary"} onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
             <Plus size={16} aria-hidden="true" /> Add to your shelf
           </Button>
@@ -96,6 +104,9 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
         <AddToShelf defaultFormat={current?.format} onAdded={(f) => { setAdding(false); go({ name: "shelf", format: SHELF_SECTIONS.find((s) => s.format === f)!.id }); }}
           intro={!sections.length} />
       )}
+
+      {/* The same ripper as in Your Computer: a ripped CD lands on this shelf. */}
+      {ripOpen && (!current || current.id === "cds") && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
 
       {current && <ShelfSection key={current.id} current={current} sections={sections} go={go} />}
     </div>
@@ -208,11 +219,16 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
   // Flip to the album that's playing (when the song changes), so the shelf follows the music.
   const p = usePlayer();
   const playingId = p.current?.id;
+  const playingAt = playingId ? items.findIndex((it) => it.tracks.some((t) => t.id === playingId)) : -1;
   useEffect(() => {
-    if (!playingId) return;
-    const at = items.findIndex((it) => it.tracks.some((t) => t.id === playingId));
-    if (at >= 0) flip.current(at);
-  }, [playingId, items]);
+    if (playingAt >= 0) flip.current(playingAt);
+  }, [playingId, items]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Flipped away to look at others while one plays: back to it after a few seconds of no flipping.
+  useEffect(() => {
+    if (!p.playing || playingAt < 0 || index === playingAt) return;
+    const t = window.setTimeout(() => flip.current(playingAt), 4000);
+    return () => window.clearTimeout(t);
+  }, [index, playingAt, p.playing]);
   const front = items[index];
   if (!front) return null;
   const big = (size.w * GROW - size.w) / 2;
@@ -258,7 +274,6 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
           <button type="button" className="mc-icon-btn flat-step" aria-label="Next" disabled={index >= items.length - 1} onClick={() => setIndex(index + 1)}>
             <ChevronRight size={20} aria-hidden="true" />
           </button>
-          <span className="caption muted">Use the ← → keys, scroll or drag to flip</span>
         </div>
       </div>
       <Holding it={front} go={go} />

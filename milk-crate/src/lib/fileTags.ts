@@ -225,3 +225,19 @@ export function useFileCover(key?: string): string | undefined {
   }, [key]);
   return url;
 }
+
+/** Reads the tags of many files, three at a time. */
+export async function tagAll(tracks: Track[], onProgress: (done: number) => void): Promise<Track[]> {
+  const out: Track[] = new Array(tracks.length);
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    while (next < tracks.length) {
+      const i = next++;
+      out[i] = await tagTrack(tracks[i]);
+      onProgress(++done);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return out;
+}

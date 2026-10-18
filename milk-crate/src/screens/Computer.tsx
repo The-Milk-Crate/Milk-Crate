@@ -3,32 +3,18 @@ import { Disc3, FolderPlus, ImagePlus, Lock, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
 import { useLibrary } from "../lib/library";
-import { pickAudioFiles, tracksFromPaths } from "../lib/localFiles";
+import { pickAudioFiles } from "../lib/localFiles";
 import { canRip } from "../lib/cd";
 import { CdRipper } from "../components/CdRipper";
 import { useRip } from "../lib/ripSession";
 import { AddToPlaylist } from "../components/AddToPlaylist";
 import { changeRippedCover } from "../lib/ripped";
-import { albumKey, fileArtist, groupComputer, tagTrack, useFileCover, type ComputerAlbum } from "../lib/fileTags";
+import { fileArtist, groupComputer, tagAll, useFileCover, type ComputerAlbum } from "../lib/fileTags";
+import { useAddRipped } from "../lib/ripped";
 import { formatTime } from "../lib/format";
-import type { Track } from "../lib/types";
 import { Button, PlayButton, ReleaseCard, Sleeve, TrackRow } from "../components/ui";
 
 /** Reads tags for several files, a few at a time. */
-async function tagAll(tracks: Track[], onProgress: (done: number) => void): Promise<Track[]> {
-  const out: Track[] = new Array(tracks.length);
-  let next = 0;
-  let done = 0;
-  const worker = async () => {
-    while (next < tracks.length) {
-      const i = next++;
-      out[i] = await tagTrack(tracks[i]);
-      onProgress(++done);
-    }
-  };
-  await Promise.all([worker(), worker(), worker()]);
-  return out;
-}
 
 /**
  * Your Computer: albums and songs from audio files on this computer, sorted by
@@ -45,19 +31,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
   const [ripOpen, setRipOpen] = useRip("open");
 
   // A ripped CD: its new files join Your Computer, tags (names, cover) read from the files.
-  const addRipped = async (paths: string[]) => {
-    const tracks = await tracksFromPaths(paths);
-    // Ripping the same CD again: refresh what's there instead of adding duplicates.
-    const known = new Set(tracks.map((t) => t.id));
-    p.localTracks.filter((t) => known.has(t.id)).forEach((t) => p.removeLocalTrack(t.id));
-    tracks.forEach((t) => tried.current.add(t.id));
-    const tagged = await tagAll(tracks, () => {});
-    p.addLocalTracks(tagged);
-    // It's a CD you own: it goes on Your Shelf and in Your Crate › Albums too (on this computer only).
-    const key = tagged.map(albumKey).find(Boolean);
-    if (key) p.addRippedCd(key);
-    return key;
-  };
+  const addRipped = useAddRipped();
 
   // Files added before tags were read: read them once.
   const tried = useRef(new Set<string>());

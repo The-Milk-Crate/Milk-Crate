@@ -285,8 +285,8 @@ button { font: inherit; }
 .selectable { user-select: text; }
 
 /* Release cards with a play button; average ratings; track actions */
-.mc-card-wrap { position: relative; }
-.mc-card-play { position: absolute; top: 14px; right: 14px; opacity: 0; transform: translateY(4px); transition: opacity .15s ease-out, transform .15s ease-out; box-shadow: var(--shadow-lift); }
+.mc-card-wrap { position: relative; container-type: inline-size; }
+.mc-card-play { position: absolute; left: 10px; top: calc(100cqw - 54px); opacity: 0; transform: translateY(4px); transition: opacity .15s ease-out, transform .15s ease-out; box-shadow: var(--shadow-lift); }
 .mc-card-wrap:hover .mc-card-play, .mc-card-play:focus-visible { opacity: 1; transform: none; }
 @media (hover: none) { .mc-card-play { opacity: 1; transform: none; } }
 .mc-avg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); }
@@ -800,7 +800,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .cover-tile-open:hover .cover-tile-art { transform: translateY(-2px); }
 .cover-tile-title { font-weight: 650; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .cover-tile-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: -4px; }
-.cover-tile-play { position: absolute; top: calc(100cqw - 44px); right: 6px; width: 36px; height: 36px; opacity: 0; transition: opacity .15s ease-out; box-shadow: var(--shadow-lift); }
+.cover-tile-play { position: absolute; top: calc(100cqw - 44px); left: 8px; width: 36px; height: 36px; opacity: 0; transition: opacity .15s ease-out; box-shadow: var(--shadow-lift); }
 .cover-tile-play svg { width: 15px; height: 15px; }
 .cover-tile:hover .cover-tile-play, .cover-tile-play:focus-visible { opacity: 1; }
 @media (hover: none) { .cover-tile-play { opacity: 1; } }
@@ -1030,7 +1030,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 
 /* Play/pause (every round play button): a bubble of glass tinted with the accent. */
 .mc-play {
-  position: relative; color: #fff;
+  color: #fff;
   background:
     linear-gradient(170deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, .06) 55%, rgba(255, 255, 255, 0)),
     color-mix(in srgb, var(--accent) 62%, transparent);
@@ -1158,15 +1158,22 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .vol-pop .vol-vertical .vol-pop-track { flex: none; }
 
 /* Immersive mode: the volume docked to the left of the song's card, as one piece with it. */
-.immersive-card { display: flex; align-items: stretch; width: min(500px, 100%); }
-.immersive-card .immersive-info { width: auto; flex: 1 1 auto; min-width: 0; border-radius: 0 20px 20px 0; border-left: 0; }
-.immersive-volume {
-  flex: none; width: 56px; box-sizing: border-box; padding: 18px 0 12px; border-radius: 20px 0 0 20px;
-  background: rgba(19, 17, 15, .4); border: 1px solid rgba(255, 250, 240, .1); border-right: 1px solid rgba(255, 250, 240, .06);
+.immersive-card {
+  position: relative; display: flex; align-items: stretch; width: min(500px, 100%); border-radius: 20px;
+  background: rgba(19, 17, 15, .55); border: 1px solid rgba(255, 250, 240, .1);
   -webkit-backdrop-filter: blur(30px) saturate(1.5); backdrop-filter: blur(30px) saturate(1.5);
   box-shadow: inset 0 1px 0 rgba(255, 250, 240, .08), 0 20px 60px rgba(0, 0, 0, .25);
-  transition: opacity .6s ease;
 }
-[data-theme="light"] .immersive-volume { background: rgba(250, 246, 239, .5); border-color: rgba(40, 32, 24, .1); }
+[data-theme="light"] .immersive-card { background: rgba(250, 246, 239, .62); border-color: rgba(40, 32, 24, .1); }
+.immersive-card .immersive-info { width: auto; flex: 1 1 auto; min-width: 0; padding-left: 14px; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.immersive-volume { position: relative; flex: none; width: 48px; box-sizing: border-box; padding: 22px 0 14px 8px; }
+.immersive-volume .vol-pop-level { display: none; }
 .immersive-volume .mc-icon-btn { color: var(--ink); }
-.immersive.idle .immersive-volume { opacity: .35; }
+
+/* Adding songs on a playlist's page (src/screens/Crate.tsx). */
+.add-songs { gap: var(--space-3); }
+.add-songs-list { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
+.add-songs-row { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-radius: var(--radius-sm); }
+.add-songs-row:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.add-songs-title { font-weight: 650; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.add-songs-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

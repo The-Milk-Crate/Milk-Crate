@@ -4,9 +4,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { usePlayer } from "./player";
-import { getCover, groupComputer, replaceCover, type ComputerAlbum } from "./fileTags";
+import { albumKey, getCover, groupComputer, replaceCover, tagAll, type ComputerAlbum } from "./fileTags";
 import { dataUrlToBlob, imageAsDataUrl } from "./cd";
-import { isDesktop, pickImage } from "./localFiles";
+import { isDesktop, pickImage, tracksFromPaths } from "./localFiles";
 
 export interface RippedAlbum extends ComputerAlbum {
   /** When it was ripped (ms). */
@@ -83,4 +83,24 @@ async function setRippedCover(album: ComputerAlbum, updateTracks: (tracks: Compu
 export function useRippedTrackIds(): Set<string> {
   const ripped = useRippedAlbums();
   return useMemo(() => new Set(ripped.flatMap((a) => a.tracks.map((t) => t.id))), [ripped]);
+}
+
+/**
+ * Adds a just-ripped CD's files: they join Your Computer (tags and cover read from the files),
+ * and the CD goes on Your Shelf and in Your Crate › Albums (on this computer only).
+ * Returns the album's key. Used by the CD ripper wherever it's open.
+ */
+export function useAddRipped() {
+  const p = usePlayer();
+  return async (paths: string[]): Promise<string | undefined> => {
+    const tracks = await tracksFromPaths(paths);
+    // Ripping the same CD again: refresh what's there instead of adding duplicates.
+    const known = new Set(tracks.map((t) => t.id));
+    p.localTracks.filter((t) => known.has(t.id)).forEach((t) => p.removeLocalTrack(t.id));
+    const tagged = await tagAll(tracks, () => {});
+    p.addLocalTracks(tagged);
+    const key = tagged.map(albumKey).find(Boolean);
+    if (key) p.addRippedCd(key);
+    return key;
+  };
 }
