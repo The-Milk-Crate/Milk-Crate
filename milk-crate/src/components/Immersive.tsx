@@ -13,6 +13,7 @@ import { VolumeIcon } from "./VolumePopover";
 import { RepeatButton, ShuffleButton } from "./PlayerBar";
 import { albumKey, fileArtist, useFileCover } from "../lib/fileTags";
 import { Glyph, PlayButton, Sleeve } from "./ui";
+import { ImmersiveLibrary } from "./ImmersiveLibrary";
 
 const IDLE_MS = 3000;
 
@@ -35,6 +36,14 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
   const [idle, setIdle] = useState(false);
   // Lyrics and credits take the cover's place while they're open (and stay open from song to song).
   const [showInfo, setShowInfo] = useState(false);
+  // The mini library on the left edge. Opening it shrinks the cover to fit beside it; each change
+  // runs the glass sheen across the cover once (two alternating names so it restarts every time).
+  const [libOpen, setLibOpen] = useState(false);
+  const [sheen, setSheen] = useState(0);
+  const setLib = (open: boolean) => { setLibOpen(open); setSheen((n) => n + 1); };
+  const libOpenRef = useRef(libOpen);
+  libOpenRef.current = libOpen;
+  const closeLib = useRef(() => setLib(false));
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -73,7 +82,10 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
     };
     const onKey = (e: KeyboardEvent) => {
       wake();
-      if (e.key === "Escape") close.current();
+      if (e.key === "Escape") {
+        if (libOpenRef.current) closeLib.current(); // Esc closes the library first
+        else close.current();
+      }
       else if (e.key === " " && !(e.target as HTMLElement).closest?.("button, input, [role=slider]")) {
         e.preventDefault();
         toggle.current();
@@ -103,12 +115,13 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
   };
 
   return (
-    <div ref={dialog} tabIndex={-1} className={`immersive${idle ? " idle" : ""}`} role="dialog" aria-modal="true" aria-label="Immersive mode">
+    <div ref={dialog} tabIndex={-1} className={`immersive${idle && !libOpen ? " idle" : ""}${libOpen ? " lib-open" : ""}`} role="dialog" aria-modal="true" aria-label="Immersive mode">
       <Backdrop immersive />
       <button type="button" className="immersive-exit" onClick={onClose}>
         <Minimize2 size={16} strokeWidth={1.75} aria-hidden="true" /> Exit immersive mode <kbd>Esc</kbd>
       </button>
-      <div className="immersive-stage">
+      <ImmersiveLibrary open={libOpen} onOpen={() => setLib(true)} onClose={() => setLib(false)} onFullLibrary={() => openPage({ name: "crate" })} />
+      <div className={`immersive-stage${sheen ? ` sheen-${sheen % 2 ? "a" : "b"}` : ""}`}>
         {showInfo && hasSongInfo(t) ? (
           <div className="immersive-lyrics" aria-label={`Lyrics and credits for ${t.title}`}><SongInfoContent track={t} /></div>
         ) : (

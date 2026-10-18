@@ -49,7 +49,7 @@ export function Sidebar({ route, go, collapsed, onToggle }: { route: Route; go: 
     [lib.physical, ripped.length],
   );
   const shelfFolder: NavItem[] = shelfSections.map((s) => ({
-    name: "shelf", key: s.id, label: s.id === "vinyl" ? "Vinyls" : s.id === "45s" ? "45s" : s.label, Icon: SHELF_ICONS[s.id], to: { name: "shelf", format: s.id },
+    name: "shelf", key: s.id, label: s.id === "vinyl" ? "Vinyl" : s.id === "45s" ? "45s" : s.label, Icon: SHELF_ICONS[s.id], to: { name: "shelf", format: s.id },
   }));
   const shelfKey = route.name === "shelf" ? route.format ?? shelfSections[0]?.id : undefined;
 

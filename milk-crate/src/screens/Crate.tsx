@@ -137,8 +137,8 @@ function CrateHome({ go }: { go: Go }) {
 }
 
 /** Albums, EPs and singles in your crate plus the CDs you ripped: played most recently first. */
-type AlbumItem = { crate: CrateEntry; cd?: undefined; at: number } | { cd: RippedAlbum; crate?: undefined; at: number };
-function useAlbumItems(crate: CrateEntry[], ripped: RippedAlbum[]): AlbumItem[] {
+export type AlbumItem = { crate: CrateEntry; cd?: undefined; at: number } | { cd: RippedAlbum; crate?: undefined; at: number };
+export function useAlbumItems(crate: CrateEntry[], ripped: RippedAlbum[]): AlbumItem[] {
   const p = usePlayer();
   return useMemo(() => {
     const played = new Map<string, number>();
