@@ -60,15 +60,10 @@ export function Scenes({ go, explore }: { go: Go; explore?: { name: string; stat
           <span className="catalog" style={{ textTransform: "uppercase", color: "var(--accent)" }}>
             {national ? `Across ${country === "US" ? "the United States" : COUNTRY_NAMES[country]}` : `${exploring ? "Exploring" : "Your scene"} · ${regionName(scene.home)}${scene.home.country !== home?.country ? `, ${COUNTRY_NAMES[scene.home.country]}` : ""}`}
           </span>
-          <h1 className="display-lg">{national ? "Every scene" : scene.home.name}</h1>
-          <span className="caption muted">
-            {national
-              ? `Look around any town's bins.${home ? ` Your own city stays ${home.name}.` : ""}`
-              : "Flip through the scene one town at a time, nearest first."}
-            {!national && !exploring && (
-              <> · <button type="button" className="link-btn" onClick={() => go({ name: "account" })}>Change your city</button></>
-            )}
-          </span>
+          <h1 className="display-lg">{national ? "Every Scene" : scene.home.name}</h1>
+          {!national && !exploring && (
+            <span className="caption"><button type="button" className="link-btn" onClick={() => go({ name: "account" })}>Change your city</button></span>
+          )}
           {!national && <div style={{ marginTop: 6 }}><RadioButton scene={scene} /></div>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -93,7 +88,6 @@ export function Scenes({ go, explore }: { go: Go; explore?: { name: string; stat
             <div style={{ flex: "0 1 360px", minWidth: 220 }}>
               <CityPicker label="Look around another town" value={null} onChange={browse} />
             </div>
-            <span className="caption muted" style={{ paddingBottom: 12 }}>Only towns where a band has released music show up on the map.</span>
           </div>
           {placed.length ? (
             <CountryMap key={country} country={country} placed={placed} places={loc.places} home={home} onBrowse={browse} />

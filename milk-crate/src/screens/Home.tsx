@@ -53,7 +53,7 @@ export function Home({ go }: { go: Go }) {
   const added = lib.saved.slice(0, 8).map((s) => c.releaseById[s.releaseId]).filter(Boolean);
 
   const hour = new Date().getHours();
-  const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const hello = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
 
   return (
     <div className="screen">

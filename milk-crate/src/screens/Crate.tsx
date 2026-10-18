@@ -112,28 +112,23 @@ function CrateHome({ go }: { go: Go }) {
         </div>
       )}
 
-      <CrateShelf title="Albums" count={albums.length} onOpen={() => go({ name: "crate", tab: "albums" })}
-        empty="Open any album and choose Add to your crate. Four or more songs from one album land here too.">
+      <CrateShelf title="Albums" count={albums.length} onOpen={() => go({ name: "crate", tab: "albums" })}>
         {albums.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
       </CrateShelf>
 
-      <CrateShelf title="Singles" count={singles.length} onOpen={() => go({ name: "crate", tab: "singles" })}
-        empty="Add one, two or three songs from an album (from a song's menu) and they show here as a single, double or triple.">
+      <CrateShelf title="Singles" count={singles.length} onOpen={() => go({ name: "crate", tab: "singles" })}>
         {singles.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
       </CrateShelf>
 
-      <CrateShelf title="Favorites" count={favorites.length} onOpen={() => go({ name: "crate", tab: "favorites" })}
-        empty="Tap the heart next to any song and it lands here.">
+      <CrateShelf title="Favorites" count={favorites.length} onOpen={() => go({ name: "crate", tab: "favorites" })}>
         {favorites.slice(0, 12).map((t, i) => <SongTile key={t.id} track={t} onPlay={() => p.playQueue(favorites, i)} />)}
       </CrateShelf>
 
-      <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}
-        empty="Songs you play show up here, even ones that aren't in your crate.">
+      <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}>
         {recent.map((t) => <SongTile key={t.id} track={t} onPlay={() => p.playNow(t)} />)}
       </CrateShelf>
 
-      <CrateShelf title="Playlists" count={lib.playlists.length} onOpen={() => go({ name: "crate", tab: "playlists" })}
-        empty="Make a playlist here, or add songs to one from any song's menu.">
+      <CrateShelf title="Playlists" count={lib.playlists.length} onOpen={() => go({ name: "crate", tab: "playlists" })}>
         {lib.playlists.slice(0, 12).map((pl) => {
           const first = pl.trackIds.map((id) => c.trackById[id]).find(Boolean);
           const r = first ? c.releaseById[first.releaseId] : undefined;
@@ -148,8 +143,8 @@ function CrateHome({ go }: { go: Go }) {
 }
 
 /** One shelf on the overview: a bordered heading (click for all of it) over a row of covers. */
-function CrateShelf({ title, count, showCount = true, onOpen, empty, children }: {
-  title: string; count: number; showCount?: boolean; onOpen: () => void; empty: string; children: ReactNode;
+function CrateShelf({ title, count, showCount = true, onOpen, children }: {
+  title: string; count: number; showCount?: boolean; onOpen: () => void; children: ReactNode;
 }) {
   return (
     <section className="crate-shelf" aria-label={title}>
@@ -158,7 +153,7 @@ function CrateShelf({ title, count, showCount = true, onOpen, empty, children }:
         {showCount && <span className="crate-heading-count numeral">{count}</span>}
         <ChevronRight size={20} strokeWidth={2} aria-hidden="true" />
       </button>
-      {count ? <div className="cover-row">{children}</div> : <p className="caption muted crate-empty">{empty}</p>}
+      {count > 0 && <div className="cover-row">{children}</div>}
     </section>
   );
 }

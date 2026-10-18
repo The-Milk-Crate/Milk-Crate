@@ -19,7 +19,7 @@ export function Tour({ go }: { go: Go }) {
   const steps = [
     { id: "city", title: "Set your town", body: "Your scene is built around it: the bands near you come first.", ok: !!loc.home, action: () => go({ name: "account" }), label: "Choose your town" },
     { id: "rate", title: `Favorite ${FAVORITE_GOAL} songs`, body: "Tap the heart on a song: it goes in Favorites in Your Crate, and comes up more when you shuffle.", ok: hearted >= FAVORITE_GOAL, action: () => go({ name: "scenes" }), label: hearted ? `${hearted} of ${FAVORITE_GOAL} favorited` : "Find a song you love" },
-    { id: "follow", title: "Follow a local band", body: "Their new releases show up in New for you, first.", ok: lib.following.length > 0, action: () => go({ name: "scenes" }), label: "Flip through your scene" },
+    { id: "follow", title: "Follow a local band", body: "Their new releases show up in New For You, first.", ok: lib.following.length > 0, action: () => go({ name: "scenes" }), label: "Flip through your scene" },
   ];
   if (done || steps.every((s) => s.ok)) return null;
   const count = steps.filter((s) => s.ok).length;

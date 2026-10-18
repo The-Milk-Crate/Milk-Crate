@@ -36,7 +36,7 @@ export function Inbox({ go }: { go: Go }) {
     <div className="screen">
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="catalog eyebrow">{freshIds.size ? `${freshIds.size} new since you last looked` : "You're caught up"}</span>
-        <h1 className="display-lg">New for you</h1>
+        <h1 className="display-lg">New For You</h1>
       </header>
       {coming.length > 0 && (
         <section className="section">

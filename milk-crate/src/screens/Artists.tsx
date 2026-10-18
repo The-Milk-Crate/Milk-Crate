@@ -41,7 +41,6 @@ export function Artists({ go }: { go: Go }) {
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="catalog eyebrow">{c.artists.length} on Milk Crate</span>
         <h1 className="display-lg">Artists</h1>
-        <p className="muted">Who you follow, and who to hear next. No follower counts.</p>
       </header>
 
       <section className="section">
