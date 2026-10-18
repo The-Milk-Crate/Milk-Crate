@@ -343,7 +343,7 @@ button { font: inherit; }
 .artist-card .mc-card-meta { white-space: normal; overflow: visible; text-overflow: clip; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Volume (player bar) */
-.volume { display: flex; align-items: center; gap: 6px; }
+.volume { display: flex; align-items: center; gap: 16px; }
 .volume-slider { width: 120px; }
 .eq-btn { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; height: 22px; padding: 0 6px; border-radius: var(--radius-sm); cursor: pointer;
   border: 1px solid var(--line-strong); background: none; color: var(--ink-muted); }
@@ -357,7 +357,7 @@ button { font: inherit; }
 .eq { display: flex; flex-direction: column; gap: 16px; }
 .eq.is-off { opacity: .5; }
 .eq-bands { display: flex; align-items: stretch; gap: 8px; padding: 12px 8px; border-radius: var(--radius-md); background: var(--ground-sunken); }
-.eq-scale { display: flex; flex-direction: column; justify-content: space-between; text-align: right; padding: 26px 4px 26px 0; min-width: 40px; }
+.eq-scale { display: flex; flex-direction: column; justify-content: space-between; text-align: right; padding: 35px 4px 31px 0; min-width: 40px; }
 .eq-band { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .eq-value { font-family: var(--font-mono); min-height: 18px; }
 .eq-slot { position: relative; width: 28px; height: 160px; }
@@ -930,11 +930,11 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 :root[data-theme="light"] .eq-pop { box-shadow: inset 0 1px 0 var(--panel-shine), inset 0 0 0 1px var(--panel-edge), 0 20px 50px rgba(40, 32, 24, .22); }
 .eq-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .eq-pop-head h2 { margin: 0; }
-.eq-pop-body { display: flex; flex-direction: column; gap: 14px; transition: opacity .15s ease-out; }
+.eq-pop-body { display: flex; flex-direction: column; gap: 20px; transition: opacity .15s ease-out; }
 .eq-pop-body.is-off { opacity: .45; }
 .eq-pop-presets { display: flex; flex-wrap: wrap; gap: 8px; }
 .eq-pop-bands { display: flex; gap: 6px; height: 170px; }
-.eq-pop-scale { display: flex; flex-direction: column; justify-content: space-between; padding: 0 4px 24px 0; font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--ink-muted); }
+.eq-pop-scale { display: flex; flex-direction: column; justify-content: space-between; padding: 8px 4px 30px 0; font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--ink-muted); }
 .eqp-band { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
 .eqp-track { position: relative; flex: 1; width: 28px; cursor: pointer; touch-action: none; border-radius: 8px; outline: none; }
 .eqp-track[aria-disabled="true"] { cursor: default; }
@@ -1056,7 +1056,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 @media (prefers-reduced-motion: reduce) { .rip-notice, .spin-slow { animation: none; } }
 
 /* The upright volume slider (src/components/VolumePopover.tsx). */
-.vol-vertical { display: flex; flex-direction: column; align-items: center; gap: 10px; height: 100%; }
+.vol-vertical { display: flex; flex-direction: column; align-items: center; gap: 14px; height: 100%; }
 .vol-pop .vol-vertical { height: auto; }
 .vol-vertical .vol-pop-track { flex: 1 1 auto; min-height: 90px; }
 .vol-pop .vol-vertical .vol-pop-track { flex: none; }
@@ -1071,7 +1071,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 }
 .immersive-card .immersive-info { width: auto; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .immersive-volume {
-  position: relative; display: flex; align-items: center; gap: 10px; height: 52px; box-sizing: border-box; padding: 0 20px 0 6px;
+  position: relative; display: flex; align-items: center; gap: 14px; height: 52px; box-sizing: border-box; padding: 0 22px 0 6px;
   border-radius: 26px; background: rgba(19, 17, 15, .48); border: 1px solid rgba(255, 250, 240, .1);
   -webkit-backdrop-filter: blur(30px) saturate(1.5); backdrop-filter: blur(30px) saturate(1.5);
   box-shadow: inset 0 1px 0 rgba(255, 250, 240, .08), 0 12px 34px rgba(0, 0, 0, .22);

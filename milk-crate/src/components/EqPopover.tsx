@@ -5,13 +5,16 @@ import { usePlayer } from "../lib/player";
 import { EQ_BANDS, EQ_MAX_DB, EQ_PRESETS, FLAT } from "../lib/audioOut";
 import { Button } from "./ui";
 
+/** Half the oval handle's length (it's 26px tall; see .eqp-knob). */
+const HALF = 13;
+
 /** One band: an upright track that fills from 0 dB toward the knob. Drag it, use the arrow keys, or double-click for 0. */
 function EqSlider({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange: (db: number) => void }) {
   const track = useRef<HTMLDivElement>(null);
   const clamp = (v: number) => Math.max(-EQ_MAX_DB, Math.min(EQ_MAX_DB, Math.round(v)));
   const fromPointer = (y: number) => {
     const r = track.current!.getBoundingClientRect();
-    return clamp(EQ_MAX_DB - ((y - r.top) / r.height) * EQ_MAX_DB * 2);
+    return clamp(EQ_MAX_DB - ((y - r.top - HALF) / (r.height - 2 * HALF)) * EQ_MAX_DB * 2);
   };
   const down = (e: PointerEvent<HTMLDivElement>) => {
     if (disabled || e.button !== 0) return;
@@ -30,6 +33,9 @@ function EqSlider({ label, value, disabled, onChange }: { label: string; value: 
     else if (e.key === "End") { e.preventDefault(); onChange(-EQ_MAX_DB); }
   };
   const at = 50 - (value / EQ_MAX_DB) * 50; // % from the top
+  // The oval handle stays inside the bar: +12 sits HALF px below the top, -12 HALF px above the bottom.
+  const y = (pct: number) => `calc(${HALF}px + (100% - ${2 * HALF}px) * ${pct / 100})`;
+  const run = `calc((100% - ${2 * HALF}px) * ${Math.abs(at - 50) / 100})`;
   return (
     <div className="eqp-band">
       <div ref={track} className="eqp-track" role="slider" tabIndex={disabled ? -1 : 0} aria-label={`${label} Hz`}
@@ -37,8 +43,8 @@ function EqSlider({ label, value, disabled, onChange }: { label: string; value: 
         aria-valuetext={`${value > 0 ? "+" : ""}${value} decibels`} aria-disabled={disabled}
         onPointerDown={down} onPointerMove={move} onKeyDown={key} onDoubleClick={() => !disabled && onChange(0)}>
         <span className="eqp-zero" />
-        <span className="eqp-fill" style={{ top: `${Math.min(at, 50)}%`, height: `${Math.abs(at - 50)}%` }} />
-        <span className="eqp-knob" style={{ top: `${at}%` }} />
+        <span className="eqp-fill" style={{ top: y(Math.min(at, 50)), height: run }} />
+        <span className="eqp-knob" style={{ top: y(at) }} />
       </div>
       <span className="eqp-hz">{label}</span>
     </div>

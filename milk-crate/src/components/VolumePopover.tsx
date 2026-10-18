@@ -65,12 +65,16 @@ export function VolumePopover({ anchor, onClose }: { anchor: RefObject<HTMLEleme
  * An upright volume slider: the level, the slider (drag, scroll over it, arrow keys) and mute.
  * In the volume pop-out and docked beside the song in immersive mode.
  */
+/** Half the oval handle's length (it's 26px tall; see .vol-pop-knob). The handle stays inside the bar. */
+const HALF = 13;
+
 export function VerticalVolume({ autoFocus = false, className = "" }: { autoFocus?: boolean; className?: string }) {
   const p = usePlayer();
   const box = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const level = Math.round((p.muted ? 0 : p.volume) * 100);
   const set = (v: number) => p.setVolume(Math.max(0, Math.min(100, Math.round(v))) / 100);
+  const pos = `calc(${HALF}px + (100% - ${2 * HALF}px) * ${level / 100})`;
 
   useEffect(() => { if (autoFocus) track.current?.focus({ preventScroll: true }); }, [autoFocus]);
 
@@ -85,7 +89,7 @@ export function VerticalVolume({ autoFocus = false, className = "" }: { autoFocu
 
   const fromPointer = (y: number) => {
     const r = track.current!.getBoundingClientRect();
-    return 100 - ((y - r.top) / r.height) * 100;
+    return 100 - ((y - r.top - HALF) / (r.height - 2 * HALF)) * 100;
   };
   const down = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -108,8 +112,8 @@ export function VerticalVolume({ autoFocus = false, className = "" }: { autoFocu
       <div ref={track} className="vol-pop-track" role="slider" tabIndex={0} aria-label="Volume" aria-orientation="vertical"
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={level} aria-valuetext={`${level}%`}
         onPointerDown={down} onPointerMove={move} onKeyDown={key}>
-        <span className="vol-pop-fill" style={{ height: `${level}%` }} />
-        <span className="vol-pop-knob" style={{ bottom: `${level}%` }} />
+        <span className="vol-pop-fill" style={{ height: pos }} />
+        <span className="vol-pop-knob" style={{ bottom: pos }} />
       </div>
       <button type="button" className="mc-icon-btn" aria-label={p.muted ? "Unmute" : "Mute"} aria-pressed={p.muted} onClick={() => p.setMuted(!p.muted)}>
         <VolumeIcon />

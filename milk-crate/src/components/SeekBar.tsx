@@ -10,16 +10,21 @@ const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
  * keys don't move it). While dragging, the time shows where you'll land; the song
  * jumps there when you let go.
  */
+/** Half the oval handle's length (it's 26px long; see .mc-progress-thumb). */
+const HALF = 13;
+
 export function SeekBar({ className }: { className?: string }) {
   const p = usePlayer();
   const [drag, setDrag] = useState<number | null>(null);
   const ready = !!p.current && p.duration > 0;
   const frac = drag ?? (p.duration ? clamp01(p.elapsed / p.duration) : 0);
   const shown = drag !== null ? drag * p.duration : p.elapsed;
+  // The oval handle stays inside the bar: its middle runs from HALF px in at the start to HALF px in at the end.
   const at = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    return clamp01((e.clientX - r.left) / r.width);
+    return clamp01((e.clientX - r.left - HALF) / (r.width - 2 * HALF));
   };
+  const pos = `calc(${HALF}px + (100% - ${2 * HALF}px) * ${frac})`;
 
   return (
     <div className={`mc-progress${className ? ` ${className}` : ""}`}>
@@ -55,9 +60,9 @@ export function SeekBar({ className }: { className?: string }) {
         }}
       >
         <div className="mc-progress-rail">
-          <div className="mc-progress-fill" style={{ width: `${frac * 100}%` }} />
+          <div className="mc-progress-fill" style={{ width: pos }} />
         </div>
-        {ready && <div className="mc-progress-thumb" style={{ left: `${frac * 100}%` }} />}
+        {ready && <div className="mc-progress-thumb" style={{ left: pos }} />}
       </div>
       <span className="mc-progress-time">{formatTime(p.duration)}</span>
     </div>

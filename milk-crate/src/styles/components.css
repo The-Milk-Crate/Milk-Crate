@@ -83,7 +83,7 @@
 .mc-icon-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .mc-icon-btn svg { width: 18px; height: 18px; }
 /* Times sit clear of the handle, even when it's at either end and grown on hover. */
-.mc-progress { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 16px; width: 100%;
+.mc-progress { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 20px; width: 100%;
   font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 /* Seek bar: a 6px rail inside a 20px-tall hit area, with a round handle like the other sliders. */
 .mc-progress-track { position: relative; height: 20px; display: flex; align-items: center; cursor: pointer; touch-action: none; border-radius: 10px; }
