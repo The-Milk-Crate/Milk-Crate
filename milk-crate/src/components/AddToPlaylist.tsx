@@ -38,8 +38,6 @@ export function AddToPlaylist({ trackIds, label, compact = true }: { trackIds: s
     setOpen(false);
     void attempt(async () => { await fn(); say(msg); }, (m) => say(m));
   };
-  // Songs on this computer (ripped CDs, your files) stay on it, so they don't go into account playlists.
-  const allLocal = tracks.length > 0 && tracks.every((t) => t.id.startsWith("local:"));
   const canDownload = tracks.filter(downloadable);
   const allDownloaded = canDownload.length > 0 && canDownload.every((t) => dl.byTrack[t.id]);
 
@@ -67,8 +65,8 @@ export function AddToPlaylist({ trackIds, label, compact = true }: { trackIds: s
               ? <button type="button" role="menuitem" onClick={after(() => dl.remove(canDownload.map((t) => t.id)), "Download removed")}>Remove download</button>
               : <button type="button" role="menuitem" onClick={after(() => dl.download(canDownload), many ? "Downloaded" : "Downloaded")}>Download{many ? " all" : ""}</button>
           )}
-          {!allLocal && <span className="atp-label catalog" role="presentation">Add to playlist</span>}
-          {allLocal ? null : lib.signedIn ? (
+          <span className="atp-label catalog" role="presentation">Add to playlist</span>
+          {lib.signedIn ? (
             <>
               {lib.playlists.map((pl) => (
                 <button key={pl.id} type="button" role="menuitem" onClick={after(() => lib.addToPlaylist(pl.id, trackIds), `Added to ${pl.name}`)}>{pl.name}</button>

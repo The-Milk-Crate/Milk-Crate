@@ -13,6 +13,8 @@ import { artistSounds, similarArtists } from "../lib/similar";
 import type { Release } from "../lib/types";
 import { Button, ReleaseCard } from "../components/ui";
 import { ArtistCard } from "../components/ArtistCard";
+import { useFileCovers, useRippedAlbums } from "../lib/ripped";
+import { sleeveSeed } from "../lib/sleeve";
 
 const DAY = 86_400_000;
 
@@ -23,6 +25,8 @@ export function Home({ go }: { go: Go }) {
   const lib = useLibrary();
   const { scene } = useLocation();
   const placed = useArtistPlaces();
+  const ripped = useRippedAlbums();
+  const cdCovers = useFileCovers(ripped.map((a) => a.cover));
 
   const play = (r: Release) => p.playQueue(r.trackIds.map((id) => c.trackById[id]).filter(Boolean));
   const card = (r: Release, sticker?: string) => {
@@ -33,10 +37,25 @@ export function Home({ go }: { go: Go }) {
     );
   };
 
-  // In your rotation: albums you've played most in the last 30 days.
+  // In your rotation: albums you've played most in the last 30 days, CDs you ripped included.
+  const cdByTrack = new Map(ripped.flatMap((a) => a.tracks.map((t) => [t.id, a] as const)));
   const counts = new Map<string, number>();
-  for (const h of p.history) if (Date.now() - h.at < 30 * DAY && c.releaseById[h.releaseId]) counts.set(h.releaseId, (counts.get(h.releaseId) ?? 0) + 1);
-  const rotation = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => c.releaseById[id]);
+  for (const h of p.history) {
+    if (Date.now() - h.at >= 30 * DAY) continue;
+    const key = c.releaseById[h.releaseId] ? h.releaseId : cdByTrack.has(h.trackId) ? `cd:${cdByTrack.get(h.trackId)!.key}` : null;
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const rippedByKey = new Map(ripped.map((a) => [`cd:${a.key}`, a]));
+  const rotation = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => id);
+  const rotationCard = (id: string) => {
+    const cd = rippedByKey.get(id);
+    if (!cd) return card(c.releaseById[id]);
+    return (
+      <ReleaseCard key={id} title={cd.title} artist={cd.artist} year={cd.year} art={cd.cover ? cdCovers[cd.cover] : undefined}
+        seed={sleeveSeed(cd.title, cd.artist)} sticker="CD" stickerTone="sticker"
+        onOpen={() => go({ name: "computer", album: cd.key })} onPlay={() => p.playQueue(cd.tracks)} />
+    );
+  };
 
   // New releases: newest first, with ones from your scene marked.
   const nearIds = new Set(scene ? placed.filter((a) => inScene(scene, a.place)).map((a) => a.artist.id) : []);
@@ -79,7 +98,7 @@ export function Home({ go }: { go: Go }) {
               <h2 className="display-md">In your rotation</h2>
               {rotation.length > 0 && <button type="button" className="link-btn" onClick={() => go({ name: "crate" })}>Your crate</button>}
             </div>
-            {rotation.length ? <div className="release-grid">{rotation.map((r) => card(r))}</div> : <p className="muted">Play some music and the albums you keep coming back to show up here.</p>}
+            {rotation.length ? <div className="release-grid">{rotation.map(rotationCard)}</div> : <p className="muted">Play some music and the albums you keep coming back to show up here.</p>}
           </section>
 
           <section className="section">

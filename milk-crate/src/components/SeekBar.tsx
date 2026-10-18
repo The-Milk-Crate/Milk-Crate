@@ -6,8 +6,8 @@ const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 /**
  * The seek bar (scrubber): elapsed time, a track you can click anywhere on,
- * and a round handle you can drag. Arrow keys jump 5 seconds, Home/End go to
- * the start/end. While dragging, the time shows where you'll land; the song
+ * and a round handle you can drag. Home/End go to the start/end (the arrow
+ * keys don't move it). While dragging, the time shows where you'll land; the song
  * jumps there when you let go.
  */
 export function SeekBar({ className }: { className?: string }) {
@@ -48,7 +48,7 @@ export function SeekBar({ className }: { className?: string }) {
         onPointerCancel={() => setDrag(null)}
         onKeyDown={(e) => {
           if (!ready) return;
-          const to = { ArrowRight: p.elapsed + 5, ArrowUp: p.elapsed + 5, ArrowLeft: p.elapsed - 5, ArrowDown: p.elapsed - 5, Home: 0, End: p.duration - 1 }[e.key];
+          const to = ({ Home: 0, End: p.duration - 1 } as Record<string, number>)[e.key];
           if (to === undefined) return;
           e.preventDefault();
           p.seek(to / p.duration);

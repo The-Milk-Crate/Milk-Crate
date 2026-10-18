@@ -12,13 +12,22 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useAuth } from "./auth";
 import { useCatalog } from "./catalog";
 import { supabase } from "./supabase";
+import { usePersistentState } from "./storage";
+import { isLocalTrackId, mergePlaylistOrder } from "./playlistOrder";
 import type { PhysicalFormat, Rating } from "./types";
 
 export interface SavedAlbum { releaseId: string; addedAt: string }
 /** A song added to your crate on its own (not with its whole release). */
 export interface CrateSong { trackId: string; addedAt: string }
 export interface PhysicalItem { id: string; format: PhysicalFormat; releaseId?: string; artistName: string; title: string; note: string; addedAt: string }
-export interface Playlist { id: string; name: string; trackIds: string[]; updatedAt: string }
+/**
+ * A playlist. `trackIds` is its songs in order, including songs from this computer (ids "local:…",
+ * e.g. a ripped CD) — those are kept on this computer only and never sent to Milk Crate's servers.
+ * `localCount` is how many of them there are.
+ */
+export interface Playlist { id: string; name: string; trackIds: string[]; updatedAt: string; localCount: number }
+
+export { isLocalTrackId, mergePlaylistOrder } from "./playlistOrder";
 export interface NewPhysical { format: PhysicalFormat; releaseId?: string; artistName?: string; title?: string; note?: string }
 
 export const FORMAT_LABEL: Record<PhysicalFormat, string> = { LP: "Vinyl LP", "7in": '7" single', Cassette: "Cassette", CD: "CD" };
@@ -89,7 +98,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [saved, setSaved] = useState<SavedAlbum[]>([]);
   const [crateSongs, setCrateSongs] = useState<CrateSong[]>([]);
   const [physical, setPhysical] = useState<PhysicalItem[]>([]);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [serverPlaylists, setPlaylists] = useState<Playlist[]>([]);
+  // Where this computer's songs sit in each playlist (see mergePlaylistOrder). Never leaves this computer.
+  const [localOrder, setLocalOrder] = usePersistentState<Record<string, string[]>>("mc.playlistOrder", {});
+  const playlists = useMemo(() => serverPlaylists.map((p) => {
+    const trackIds = mergePlaylistOrder(localOrder[p.id], p.trackIds);
+    return { ...p, trackIds, localCount: trackIds.filter(isLocalTrackId).length };
+  }), [serverPlaylists, localOrder]);
+  const rememberOrder = useCallback((id: string, all: string[] | null) => setLocalOrder((o) => {
+    const next = { ...o };
+    if (all && all.some(isLocalTrackId)) next[id] = all;
+    else delete next[id];
+    return next;
+  }), [setLocalOrder]);
   const [following, setFollowing] = useState<string[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [albumRatings, setAlbumRatings] = useState<Record<string, Rating>>({});
@@ -213,42 +234,51 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [gate, physical]);
 
   const writePlaylist = useCallback(async (id: string, patch: { name?: string; track_ids?: string[] }) => {
-    const before = playlists;
+    const before = serverPlaylists;
     const now = new Date().toISOString();
     setPlaylists((ps) => ps.map((p) => (p.id === id ? { ...p, ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.track_ids ? { trackIds: patch.track_ids } : {}), updatedAt: now } : p)));
     const { error } = await supabase.from("playlists").update({ ...patch, updated_at: now }).eq("id", id);
     if (error) setPlaylists(before);
     check(error);
-  }, [playlists]);
+  }, [serverPlaylists]);
+
+  /** Saves a playlist's full order: catalog songs to your account, this computer's songs here only. */
+  const writeOrder = useCallback(async (id: string, all: string[]) => {
+    rememberOrder(id, all);
+    await writePlaylist(id, { track_ids: all.filter((t) => !isLocalTrackId(t)) });
+  }, [rememberOrder, writePlaylist]);
 
   const createPlaylist = useCallback(async (name: string, trackIds: string[] = []) => {
     gate("make playlists");
-    const { data, error } = await supabase.from("playlists").insert({ name: name.trim() || "New playlist", track_ids: trackIds }).select().single();
+    const { data, error } = await supabase.from("playlists")
+      .insert({ name: name.trim() || "New playlist", track_ids: trackIds.filter((t) => !isLocalTrackId(t)) }).select().single();
     check(error);
     const p = playlistFromRow(data);
     setPlaylists((ps) => [p, ...ps]);
-    return p;
-  }, [gate]);
+    rememberOrder(p.id, trackIds);
+    return { ...p, trackIds, localCount: trackIds.filter(isLocalTrackId).length };
+  }, [gate, rememberOrder]);
 
   const renamePlaylist = useCallback(async (id: string, name: string) => { gate("edit playlists"); await writePlaylist(id, { name: name.trim() || "Untitled playlist" }); }, [gate, writePlaylist]);
   const addToPlaylist = useCallback(async (id: string, trackIds: string[]) => {
     gate("add to playlists");
     const p = playlists.find((x) => x.id === id);
-    if (p) await writePlaylist(id, { track_ids: [...p.trackIds, ...trackIds] });
-  }, [gate, playlists, writePlaylist]);
+    if (p) await writeOrder(id, [...p.trackIds, ...trackIds]);
+  }, [gate, playlists, writeOrder]);
   const removeFromPlaylist = useCallback(async (id: string, index: number) => {
     gate("edit playlists");
     const p = playlists.find((x) => x.id === id);
-    if (p) await writePlaylist(id, { track_ids: p.trackIds.filter((_, i) => i !== index) });
-  }, [gate, playlists, writePlaylist]);
+    if (p) await writeOrder(id, p.trackIds.filter((_, i) => i !== index));
+  }, [gate, playlists, writeOrder]);
   const deletePlaylist = useCallback(async (id: string) => {
     gate("edit playlists");
-    const before = playlists;
+    rememberOrder(id, null);
+    const before = serverPlaylists;
     setPlaylists((ps) => ps.filter((p) => p.id !== id));
     const { error } = await supabase.from("playlists").delete().eq("id", id);
     if (error) setPlaylists(before);
     check(error);
-  }, [gate, playlists]);
+  }, [gate, serverPlaylists, rememberOrder]);
 
   const follow = useCallback(async (artistId: string) => {
     gate("follow artists");
@@ -334,7 +364,7 @@ function physicalFromRow(r: Record<string, unknown>): PhysicalItem {
   };
 }
 function playlistFromRow(r: Record<string, unknown>): Playlist {
-  return { id: String(r.id), name: String(r.name ?? ""), trackIds: (r.track_ids as string[]) ?? [], updatedAt: String(r.updated_at ?? "") };
+  return { id: String(r.id), name: String(r.name ?? ""), trackIds: (r.track_ids as string[]) ?? [], updatedAt: String(r.updated_at ?? ""), localCount: 0 };
 }
 
 export function useLibrary() {

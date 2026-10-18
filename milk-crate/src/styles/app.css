@@ -995,3 +995,50 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 /* Account, For Artists and Review shown as tabs of Settings (src/screens/Settings.tsx). */
 .settings-embed > .screen { padding: 0; max-width: none !important; }
 .settings-embed > .screen > header .display-lg { font-size: 24px; line-height: 28px; }
+
+/* A playlist's made-up cover: four of its albums' covers in a 2×2 grid (src/components/PlaylistCover.tsx). */
+.playlist-mosaic { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.mc-sleeve.playlist-mosaic img { position: static; width: 100%; height: 100%; object-fit: cover; }
+
+/* ---------- Frosted glass seek bar and play/pause (player bar and immersive mode) ---------- */
+/* The rail is a tube of glass; the played part is the accent showing through it; the handle is a glass bead. */
+.mc-player .mc-progress-rail, .immersive-seek .mc-progress-rail {
+  height: 8px; border-radius: 4px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
+  -webkit-backdrop-filter: blur(8px) saturate(1.6); backdrop-filter: blur(8px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), inset 0 0 0 1px rgba(255, 255, 255, .1), inset 0 -1px 1px rgba(0, 0, 0, .25);
+}
+.mc-player .mc-progress-fill, .immersive-seek .mc-progress-fill {
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .45), rgba(255, 255, 255, .08) 55%, rgba(0, 0, 0, .08)),
+    color-mix(in srgb, var(--accent) 78%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.mc-player .mc-progress-thumb, .immersive-seek .mc-progress-thumb {
+  width: 16px; height: 16px;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55) 45%, rgba(255, 255, 255, .28));
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7), 0 2px 6px rgba(0, 0, 0, .35);
+}
+.immersive-seek .mc-progress-rail { height: 10px; border-radius: 5px; }
+.immersive-seek .mc-progress-fill { border-radius: 5px; }
+
+/* Play/pause: a bubble of glass tinted with the accent. */
+.mc-player .mc-play, .immersive-controls .mc-play {
+  position: relative; color: #fff;
+  background:
+    linear-gradient(170deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, .06) 55%, rgba(255, 255, 255, 0)),
+    color-mix(in srgb, var(--accent) 62%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.7); backdrop-filter: blur(14px) saturate(1.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), inset 0 0 0 1px rgba(255, 255, 255, .22), inset 0 -2px 6px rgba(0, 0, 0, .12),
+    0 6px 18px color-mix(in srgb, var(--accent) 30%, rgba(0, 0, 0, .25));
+  transition: transform .15s ease-out, background .2s ease-out;
+}
+.mc-player .mc-play svg, .immersive-controls .mc-play svg { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25)); }
+.mc-player .mc-play:hover, .immersive-controls .mc-play:hover { transform: scale(1.05); }
+.mc-player .mc-play:active, .immersive-controls .mc-play:active { transform: scale(.94); }
+:root[data-theme="light"] .mc-player .mc-progress-rail, :root[data-theme="light"] .immersive-seek .mc-progress-rail {
+  background: linear-gradient(180deg, rgba(40, 32, 24, .14), rgba(40, 32, 24, .06));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 0 0 1px rgba(40, 32, 24, .1);
+}

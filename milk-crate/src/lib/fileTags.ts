@@ -182,6 +182,19 @@ export async function replaceCover(key: string, blob: Blob) {
   window.dispatchEvent(new CustomEvent("mc:cover", { detail: key }));
 }
 
+/** Forgets a saved cover (e.g. a playlist's own picture); everything showing it updates. */
+export async function deleteCover(key: string) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  memo.set(key, null);
+  window.dispatchEvent(new CustomEvent("mc:cover", { detail: key }));
+}
+
 export async function getCover(key: string): Promise<string | null> {
   if (memo.has(key)) return memo.get(key)!;
   try {

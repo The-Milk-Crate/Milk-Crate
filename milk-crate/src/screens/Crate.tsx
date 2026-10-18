@@ -1,9 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, Heart, Shuffle, Trash2, X } from "lucide-react";
+import { ChevronRight, Heart, ImagePlus, Shuffle, Trash2, X } from "lucide-react";
 import type { CrateTab, Go } from "../App";
 import { useCatalog } from "../lib/catalog";
 import { usePlayer } from "../lib/player";
-import { FORMAT_LABEL, attempt, useLibrary } from "../lib/library";
+import { FORMAT_LABEL, attempt, useLibrary, type Playlist } from "../lib/library";
 import { usePersistentState } from "../lib/storage";
 import { formatTime } from "../lib/format";
 import { sleeveSeed } from "../lib/sleeve";
@@ -15,6 +15,7 @@ import { Button, PlayButton, ReleaseCard, Sleeve, Sticker, TrackRow, useAllDownl
 import { AddToPlaylist } from "../components/AddToPlaylist";
 import { AlbumRating } from "../components/AlbumRating";
 import { HistoryList } from "../components/HistoryList";
+import { PlaylistCover, choosePlaylistCover, clearPlaylistCover, playlistCoverKey, usePlaylistTracks } from "../components/PlaylistCover";
 
 /**
  * Your Crate. The overview has a shelf for each part: Albums, Singles,
@@ -122,14 +123,10 @@ function CrateHome({ go }: { go: Go }) {
       </CrateShelf>
 
       <CrateShelf title="Playlists" count={lib.playlists.length} onOpen={() => go({ name: "crate", tab: "playlists" })}>
-        {(n) => lib.playlists.slice(0, n).map((pl) => {
-          const first = pl.trackIds.map((id) => c.trackById[id]).find(Boolean);
-          const r = first ? c.releaseById[first.releaseId] : undefined;
-          return (
-            <Tile key={pl.id} art={r?.art} seed={`playlist ${pl.name}`} title={pl.name} sub={plural(pl.trackIds.length, "song")}
-              onOpen={() => go({ name: "crate", playlistId: pl.id })} />
-          );
-        })}
+        {(n) => lib.playlists.slice(0, n).map((pl) => (
+          <Tile key={pl.id} seed={`playlist ${pl.name}`} cover={<PlaylistCover playlist={pl} />} title={pl.name} sub={plural(pl.trackIds.length, "song")}
+            onOpen={() => go({ name: "crate", playlistId: pl.id })} />
+        ))}
       </CrateShelf>
 
       <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}>
@@ -213,14 +210,14 @@ function CrateShelf({ title, count, rows = 1, showCount = true, onOpen, children
 }
 
 /** A square cover with a title under it. */
-function Tile({ art, seed, title, sub, sticker, downloaded, onOpen, onPlay }: {
-  art?: string; seed: string; title: string; sub?: string; sticker?: string; downloaded?: boolean; onOpen: () => void; onPlay?: () => void;
+function Tile({ art, seed, cover, title, sub, sticker, downloaded, onOpen, onPlay }: {
+  art?: string; seed: string; cover?: ReactNode; title: string; sub?: string; sticker?: string; downloaded?: boolean; onOpen: () => void; onPlay?: () => void;
 }) {
   return (
     <div className="cover-tile">
       <button type="button" className="cover-tile-open" onClick={onOpen} title={[title, sub].filter(Boolean).join(" · ")}>
         <span className="cover-tile-art">
-          <Sleeve src={art} seed={seed} alt="" />
+          {cover ?? <Sleeve src={art} seed={seed} alt="" />}
           {sticker && <Sticker>{sticker}</Sticker>}
         </span>
         <span className="cover-tile-title">{title}{downloaded && <> <DownloadedMark size={12} /></>}</span>
@@ -295,7 +292,7 @@ function Entries({ go }: { go: Go }) {
   const p = usePlayer();
   const lib = useLibrary();
   const crate = useCrate();
-  const [sort, setSort] = usePersistentState<EntrySort>("mc.crateSort.albums", "played");
+  const [sort, setSort] = usePersistentState<EntrySort>("mc.crateSort.albums.v2", "artist");
   const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
   const artistOf = (e: CrateEntry) => c.artistById[e.release.artistId]?.name ?? "";
   const ripped = useRippedAlbums();
@@ -373,7 +370,7 @@ function Songs({ go, favoritesFirst }: { go: Go; favoritesFirst: boolean }) {
   const all = useCrateSongs();
   const favs = useFavoriteTracks();
   const [only, setOnly] = useState(favoritesFirst);
-  const [sort, setSort] = usePersistentState<SongSort>("mc.crateSort.songs", "played");
+  const [sort, setSort] = usePersistentState<SongSort>("mc.crateSort.songs.v2", "artist");
   const artistOf = (t: Track) => c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer");
   const albumOf = (t: Track) => c.releaseById[t.releaseId]?.title ?? t.tags?.album ?? "";
   const tracks = useMemo(() => {
@@ -463,11 +460,8 @@ function History() {
 /* ---------- Playlists ---------- */
 
 function PlaylistList({ go }: { go: Go }) {
-  const c = useCatalog();
-  const p = usePlayer();
   const lib = useLibrary();
   const [name, setName] = useState("");
-  const tracksOf = (ids: string[]) => ids.map((id) => c.trackById[id]).filter(Boolean);
 
   const create = () => void attempt(async () => {
     const pl = await lib.createPlaylist(name.trim() || `New playlist ${lib.playlists.length + 1}`);
@@ -485,57 +479,85 @@ function PlaylistList({ go }: { go: Go }) {
         <Button variant="primary" type="submit">Create</Button>
       </form>
       {lib.playlists.length === 0 && lib.signedIn && <p className="muted">No playlists yet. Add songs to one from any album with the playlist button.</p>}
-      {lib.playlists.map((pl) => {
-        const tracks = tracksOf(pl.trackIds);
-        return (
-          <div key={pl.id} className="list-row">
-            <PlayButton playing={false} onClick={() => p.playQueue(tracks)} />
-            <button type="button" className="link-btn" style={{ flex: "1 1 auto", textAlign: "left", textDecoration: "none", color: "var(--ink)", fontWeight: 650 }}
-              onClick={() => go({ name: "crate", playlistId: pl.id })}>{pl.name}</button>
-            <span className="caption muted">{tracks.length} {tracks.length === 1 ? "song" : "songs"} · {formatTime(tracks.reduce((s, t) => s + t.duration, 0))}</span>
-          </div>
-        );
-      })}
+      {lib.playlists.map((pl) => <PlaylistRow key={pl.id} pl={pl} go={go} />)}
     </div>
   );
 }
 
+function PlaylistRow({ pl, go }: { pl: Playlist; go: Go }) {
+  const p = usePlayer();
+  const tracks = usePlaylistTracks(pl.trackIds).filter(Boolean) as Track[];
+  return (
+          <div className="list-row">
+            <PlaylistCover playlist={pl} style={{ width: 48, flex: "none" }} />
+            <PlayButton playing={false} onClick={() => p.playQueue(tracks)} />
+            <button type="button" className="link-btn" style={{ flex: "1 1 auto", textAlign: "left", textDecoration: "none", color: "var(--ink)", fontWeight: 650 }}
+              onClick={() => go({ name: "crate", playlistId: pl.id })}>{pl.name}</button>
+            <span className="caption muted">{tracks.length} {tracks.length === 1 ? "song" : "songs"} · {formatTime(tracks.reduce((s, t) => s + (t.duration || 0), 0))}</span>
+          </div>
+  );
+}
+
 function CratePlaylist({ go, playlistId }: { go: Go; playlistId: string }) {
+  const lib = useLibrary();
+  const pl = lib.playlists.find((x) => x.id === playlistId);
+  if (!pl) return <div className="screen"><p className="muted">Playlist not found.</p><Button onClick={() => go({ name: "crate", tab: "playlists" })}>Back to playlists</Button></div>;
+  return <PlaylistPage go={go} pl={pl} key={pl.id} />;
+}
+
+function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
   const c = useCatalog();
   const p = usePlayer();
   const lib = useLibrary();
-  const pl = lib.playlists.find((x) => x.id === playlistId);
-  const [name, setName] = useState(pl?.name ?? "");
+  const [name, setName] = useState(pl.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  if (!pl) return <div className="screen"><p className="muted">Playlist not found.</p><Button onClick={() => go({ name: "crate", tab: "playlists" })}>Back to playlists</Button></div>;
-  const tracks = pl.trackIds.map((id) => c.trackById[id]);
+  const [coverMsg, setCoverMsg] = useState("");
+  const own = useFileCover(playlistCoverKey(pl.id));
+  const tracks = usePlaylistTracks(pl.trackIds);
   const playable = tracks.filter(Boolean) as Track[];
+  const artistOf = (t: Track) => c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer");
 
   return (
     <div className="screen">
       <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: "playlists" })}>← Playlists</button>
-      <header className="screen-head">
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "1 1 360px" }}>
-          <span className="catalog eyebrow">Playlist · {playable.length} songs · {formatTime(playable.reduce((s, t) => s + t.duration, 0))}</span>
+      <header className="album-head">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", flex: "none" }}>
+          <PlaylistCover playlist={pl} style={{ width: 200 }} />
+          <span style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button type="button" className="link-btn caption" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              onClick={() => { setCoverMsg(""); void choosePlaylistCover(pl.id).then((e) => setCoverMsg(e ?? "")); }}>
+              <ImagePlus size={14} aria-hidden="true" /> {own ? "Change picture" : "Choose a picture"}
+            </button>
+            {own && <button type="button" className="link-btn caption muted" onClick={() => void clearPlaylistCover(pl.id)}>Let Milk Crate make one</button>}
+          </span>
+          {coverMsg && <span className="form-error caption" role="alert">{coverMsg}</span>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: "1 1 320px", minWidth: 0 }}>
+          <span className="catalog eyebrow">Playlist · {plural(playable.length, "song")} · {formatTime(playable.reduce((s, t) => s + (t.duration || 0), 0))} · only you can see it</span>
           <input className="title-input display-lg" value={name} aria-label="Playlist name" maxLength={100}
             onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() !== pl.name && void attempt(() => lib.renamePlaylist(pl.id, name))}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <PlayButton size="lg" playing={false} onClick={() => p.playQueue(playable)} />
-          <Button onClick={() => p.shuffleAll(playable)} disabled={!playable.length}><Shuffle size={16} aria-hidden="true" /> Shuffle</Button>
-          {confirmDelete ? (
-            <Button variant="ghost" onClick={() => void attempt(async () => { await lib.deletePlaylist(pl.id); go({ name: "crate", tab: "playlists" }); })}>Delete for good</Button>
-          ) : (
-            <Button variant="ghost" onClick={() => setConfirmDelete(true)}>Delete playlist</Button>
+          {pl.localCount > 0 && (
+            <p className="caption muted">{plural(pl.localCount, "song")} from your computer {pl.localCount === 1 ? "is" : "are"} in here. They stay on this computer and play only here.</p>
           )}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <PlayButton size="lg" playing={false} onClick={() => p.playQueue(playable)} />
+            <Button onClick={() => p.shuffleAll(playable)} disabled={!playable.length}><Shuffle size={16} aria-hidden="true" /> Shuffle</Button>
+            {confirmDelete ? (
+              <Button variant="ghost" onClick={() => void attempt(async () => { await lib.deletePlaylist(pl.id); void clearPlaylistCover(pl.id); go({ name: "crate", tab: "playlists" }); })}>Delete for good</Button>
+            ) : (
+              <Button variant="ghost" onClick={() => setConfirmDelete(true)}>Delete playlist</Button>
+            )}
+          </div>
         </div>
       </header>
-      {tracks.length === 0 && <p className="muted">Empty for now. Open any album and use the playlist button next to a song.</p>}
+      {tracks.length === 0 && <p className="muted">Empty for now. Use the ⋯ menu next to any song, including songs from CDs you ripped.</p>}
       <div>
         {tracks.map((t, i) =>
           t ? (
-            <TrackRow key={`${t.id}-${i}`} trackId={t.id} index={i + 1} title={t.title} artist={c.artistById[t.artistId]?.name} duration={formatTime(t.duration)}
+            <TrackRow key={`${t.id}-${i}`} trackId={t.id} index={i + 1} title={t.title}
+              artist={[artistOf(t), c.releaseById[t.releaseId]?.title ?? t.tags?.album].filter(Boolean).join(" · ")}
+              duration={t.duration ? formatTime(t.duration) : "—"}
               favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)} playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle}
               onPlay={() => p.playQueue(playable, playable.indexOf(t))}
               actions={<button type="button" className="mc-icon-btn" aria-label={`Remove ${t.title} from playlist`} onClick={() => void attempt(() => lib.removeFromPlaylist(pl.id, i))}><X size={16} aria-hidden="true" /></button>} />

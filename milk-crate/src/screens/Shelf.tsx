@@ -307,11 +307,40 @@ function useCaseColors(art: string | undefined, fallback: string) {
 
 /** The jewel case's hinge, as a strip of frosted glass: the cover's edge blurred behind it, tinted with the cover's color. */
 function CdRidge({ art }: { art?: string }) {
+  const [soft, setSoft] = useState<string | null>(null);
+  useEffect(() => {
+    setSoft(null);
+    if (!art) return;
+    let live = true;
+    if (!ridgeStrips.has(art)) ridgeStrips.set(art, ridgeStrip(art).catch(() => null));
+    void ridgeStrips.get(art)!.then((u) => live && setSoft(u));
+    return () => { live = false; };
+  }, [art]);
   return (
     <span className="cd-hinge">
-      {art && <span className="cd-hinge-blur" style={{ backgroundImage: `url("${art}")` }} />}
+      {soft && <span className="cd-hinge-blur" style={{ backgroundImage: `url("${soft}")` }} />}
     </span>
   );
+}
+
+const ridgeStrips = new Map<string, Promise<string | null>>();
+
+/**
+ * The cover's left edge shrunk to a few pixels; stretched over the hinge it looks blurred, like
+ * frosted glass. (A CSS blur filter left a faint streak across the shelf in the desktop app.)
+ */
+async function ridgeStrip(src: string): Promise<string | null> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = src;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = 3;
+  canvas.height = 14;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0, img.naturalWidth * 0.12, img.naturalHeight, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
 }
 
 function CdCase({ it }: { it: ShelfItem }) {
