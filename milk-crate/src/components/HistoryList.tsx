@@ -54,7 +54,7 @@ export function HistoryList({ limit, compact = false }: { limit?: number; compac
 }
 
 /** A song's cover: its album's, or the one saved from a file on your computer. */
-function HistoryCover({ art, coverKey, seed, size }: { art?: string; coverKey?: string; seed: string; size: number }) {
+export function HistoryCover({ art, coverKey, seed, size }: { art?: string; coverKey?: string; seed: string; size: number }) {
   const file = useFileCover(art ? undefined : coverKey);
   return <Sleeve src={art ?? file} seed={seed} style={{ width: size, flex: "none" }} />;
 }

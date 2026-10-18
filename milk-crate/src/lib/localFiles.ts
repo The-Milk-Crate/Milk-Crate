@@ -61,6 +61,16 @@ export async function tracksFromPaths(paths: string[]): Promise<Track[]> {
   return paths.map((p) => toTrack(convertFileSrc(p), p));
 }
 
+const MIME: Record<string, string> = { mp3: "audio/mpeg", flac: "audio/flac", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", opus: "audio/ogg" };
+
+/** Desktop: reads a song file through the app (not the webview) and returns a blob URL for it. */
+export async function readLocalSong(path: string): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const bytes = await invoke<ArrayBuffer>("read_audio_file", { path });
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return URL.createObjectURL(new Blob([bytes], { type: MIME[ext] ?? "audio/*" }));
+}
+
 /** Object URLs from browser dev mode don't survive a reload, so only desktop tracks are persisted. */
 export const isPersistable = (track: Track) => !track.src?.startsWith("blob:");
 

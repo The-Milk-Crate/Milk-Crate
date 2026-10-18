@@ -5,8 +5,7 @@ import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
 import { formatTime } from "../lib/format";
 import type { Track } from "../lib/types";
-import { Sleeve } from "./ui";
-import { HistoryList } from "./HistoryList";
+import { HistoryCover, HistoryList } from "./HistoryList";
 import { fileArtist } from "../lib/fileTags";
 
 /**
@@ -44,7 +43,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
         onDragOver={(e) => { if (drag !== null && !now) { e.preventDefault(); setOver(i); } }}
         onDrop={(e) => { e.preventDefault(); if (drag !== null) p.moveInQueue(drag, i); setDrag(null); setOver(null); }}>
         {!now && <GripVertical className="queue-grip" size={16} strokeWidth={1.75} aria-hidden="true" />}
-        <Sleeve src={m.art} seed={m.seed} style={{ width: 40, flex: "none" }} />
+        <HistoryCover art={m.art} coverKey={t.tags?.cover} seed={m.seed} size={40} />
         <button type="button" className="queue-title" onClick={() => !now && p.jumpTo(i)} aria-label={now ? `${t.title}, playing now` : `Play ${t.title} now`} disabled={now}>
           <span className="queue-name">{t.title}</span>
           <span className="caption muted">{m.artist} · {formatTime(t.duration)}</span>

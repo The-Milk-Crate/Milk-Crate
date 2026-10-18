@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Heart, Shuffle, Trash2, X } from "lucide-react";
 import type { CrateTab, Go } from "../App";
 import { useCatalog } from "../lib/catalog";
@@ -88,7 +88,7 @@ function CrateHome({ go }: { go: Go }) {
   const albums = crate.filter((e) => e.kind === "album");
   const singles = crate.filter((e) => e.kind !== "album");
   const favorites = useFavoriteTracks();
-  const recent = useRecentSongs();
+  const recent = useRecentSongs(SHELF_MAX);
   // CDs you ripped count as albums too (they play from this computer).
   const ripped = useRippedAlbums();
   const everything = useMemo(() => {
@@ -116,16 +116,16 @@ function CrateHome({ go }: { go: Go }) {
       )}
 
       <CrateShelf title="Albums" count={albums.length + ripped.length} onOpen={() => go({ name: "crate", tab: "albums" })}>
-        {albums.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
-        {ripped.slice(0, Math.max(0, 12 - albums.length)).map((a) => <RippedTile key={a.key} album={a} go={go} />)}
+        {albums.slice(0, SHELF_MAX).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
+        {ripped.slice(0, Math.max(0, SHELF_MAX - albums.length)).map((a) => <RippedTile key={a.key} album={a} go={go} />)}
       </CrateShelf>
 
       <CrateShelf title="Singles" count={singles.length} onOpen={() => go({ name: "crate", tab: "singles" })}>
-        {singles.slice(0, 12).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
+        {singles.slice(0, SHELF_MAX).map((e) => <EntryTile key={e.release.id} entry={e} go={go} />)}
       </CrateShelf>
 
       <CrateShelf title="Favorites" count={favorites.length} onOpen={() => go({ name: "crate", tab: "favorites" })}>
-        {favorites.slice(0, 12).map((t, i) => <SongTile key={t.id} track={t} onPlay={() => p.playQueue(favorites, i)} />)}
+        {favorites.slice(0, SHELF_MAX).map((t, i) => <SongTile key={t.id} track={t} onPlay={() => p.playQueue(favorites, i)} />)}
       </CrateShelf>
 
       <CrateShelf title="Recently Played" count={recent.length} showCount={false} onOpen={() => go({ name: "crate", tab: "history" })}>
@@ -133,7 +133,7 @@ function CrateHome({ go }: { go: Go }) {
       </CrateShelf>
 
       <CrateShelf title="Playlists" count={lib.playlists.length} onOpen={() => go({ name: "crate", tab: "playlists" })}>
-        {lib.playlists.slice(0, 12).map((pl) => {
+        {lib.playlists.slice(0, SHELF_MAX).map((pl) => {
           const first = pl.trackIds.map((id) => c.trackById[id]).find(Boolean);
           const r = first ? c.releaseById[first.releaseId] : undefined;
           return (
@@ -146,10 +146,33 @@ function CrateHome({ go }: { go: Go }) {
   );
 }
 
-/** One shelf on the overview: a bordered heading (click for all of it) over a row of covers. */
+/** Covers shown on each overview shelf (two rows of them, scrolling sideways). */
+const SHELF_MAX = 24;
+const TILE_W = 140;
+
+/**
+ * One shelf on the overview: a bordered heading (click for all of it) over two rows of covers.
+ * A shelf that fits on one row stays one row; one that fits on two fills the top row first;
+ * more than that scrolls sideways, two covers to a column.
+ */
 function CrateShelf({ title, count, showCount = true, onOpen, children }: {
   title: string; count: number; showCount?: boolean; onOpen: () => void; children: ReactNode;
 }) {
+  const row = useRef<HTMLDivElement>(null);
+  const [perRow, setPerRow] = useState(99);
+  useLayoutEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const measure = () => {
+      const gap = parseFloat(getComputedStyle(el).columnGap) || 16;
+      setPerRow(Math.max(1, Math.floor((el.clientWidth - 8 + gap) / (TILE_W + gap))));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [count > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = Math.min(count, SHELF_MAX);
   return (
     <section className="crate-shelf" aria-label={title}>
       <button type="button" className="crate-heading" onClick={onOpen} aria-label={`${title}${showCount ? `, ${count}` : ""}. See all`}>
@@ -157,7 +180,10 @@ function CrateShelf({ title, count, showCount = true, onOpen, children }: {
         {showCount && <span className="crate-heading-count numeral">{count}</span>}
         <ChevronRight size={20} strokeWidth={2} aria-hidden="true" />
       </button>
-      {count > 0 && <div className="cover-row">{children}</div>}
+      {count > 0 && (
+        <div ref={row} className={`cover-row${shown > perRow * 2 ? " two-rows" : shown > perRow ? " wraps" : ""}`}
+          style={shown > perRow && shown <= perRow * 2 ? { gridTemplateColumns: `repeat(${perRow}, ${TILE_W}px)` } : undefined}>{children}</div>
+      )}
     </section>
   );
 }

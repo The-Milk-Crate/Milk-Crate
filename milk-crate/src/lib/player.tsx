@@ -20,7 +20,7 @@ import { shuffle, songWeight, weightedShuffle } from "./shuffle";
 import { load, save, usePersistentState } from "./storage";
 import { useAuth } from "./auth";
 import { mergeHistory, useAccountHistory, type Play } from "./history";
-import { isPersistable } from "./localFiles";
+import { isDesktop, isPersistable, readLocalSong } from "./localFiles";
 import { computerKey, fileArtist, loadComputerTracks } from "./fileTags";
 import type { Track } from "./types";
 import { attempt, useLibrary } from "./library";
@@ -70,6 +70,8 @@ interface PlayerState {
   normalizerOn: boolean;
   /** The Normalizer's change for the playing song in dB, or null while it's measuring. */
   normalizerDb: number | null;
+  /** Why the playing song won't load, if it won't (shown in the player bar). */
+  loadError: string | null;
 }
 
 interface PlayerActions {
@@ -228,28 +230,56 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const loadedFor = useRef<string | undefined>(undefined);
   const playingRef = useRef(playing);
   playingRef.current = playing;
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const blobUrl = useRef<string | null>(null);
   useEffect(() => {
     const el = audio.current;
     let live = true;
+    let cleanup = () => {};
     loadedFor.current = undefined;
     setElapsed(0);
+    setLoadError(null);
+    if (blobUrl.current) { URL.revokeObjectURL(blobUrl.current); blobUrl.current = null; }
     if (current?.src) {
       setDuration(current.duration);
+      const path = current.id.startsWith("local:") ? current.id.slice(6) : null;
       const start = (src: string) => {
         if (!live) return;
         out.current!.prepare(src);
         el.src = src;
         loadedFor.current = current.id;
-        if (playingRef.current) void el.play().catch(() => setPlaying(false));
+        // (A local song that fails to load is rescued below, so it stays "playing".)
+        if (playingRef.current) void el.play().catch((e: unknown) => { if (!path || (e as Error)?.name === "NotAllowedError") setPlaying(false); });
       };
-      if (dl.byTrack[current.id]) void dl.localUrl(current.id).then((u) => start(u ?? current.src!));
+      // A song on this computer that the webview can't stream from disk (it errors, or never gets
+      // going) is read in whole by the app instead and played from memory.
+      if (path && isDesktop() && !current.src.startsWith("blob:")) {
+        let rescued = false;
+        const rescue = () => {
+          if (rescued || !live) return;
+          rescued = true;
+          window.clearTimeout(timer);
+          void readLocalSong(path).then((url) => {
+            if (!live) { URL.revokeObjectURL(url); return; }
+            blobUrl.current = url;
+            el.addEventListener("error", () => live && setLoadError("This file couldn't be played. It may be damaged or in a format Milk Crate can't read."), { once: true });
+            start(url);
+          }).catch((e) => { if (live) { setLoadError(String(e)); setPlaying(false); } });
+        };
+        const ok = () => window.clearTimeout(timer);
+        const timer = window.setTimeout(() => { if (el.readyState < 1) rescue(); }, 4000);
+        el.addEventListener("error", rescue, { once: true });
+        el.addEventListener("loadedmetadata", ok, { once: true });
+        cleanup = () => { window.clearTimeout(timer); el.removeEventListener("error", rescue); el.removeEventListener("loadedmetadata", ok); };
+        start(current.src);
+      } else if (dl.byTrack[current.id]) void dl.localUrl(current.id).then((u) => start(u ?? current.src!));
       else start(current.src);
     } else {
       el.removeAttribute("src");
       el.load();
       setDuration(current?.duration ?? 0);
     }
-    return () => { live = false; };
+    return () => { live = false; cleanup(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, loadTick]);
 
@@ -263,7 +293,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const el = audio.current;
     if (!current?.src || loadedFor.current !== current.id) return;
     if (playing) out.current!.resume();
-    if (playing) void el.play().catch(() => setPlaying(false));
+    // A song on this computer that won't load gets a second try (see above), so only a blocked play stops it here.
+    if (playing) void el.play().catch((e: unknown) => { if (!current.id.startsWith("local:") || (e as Error)?.name === "NotAllowedError") setPlaying(false); });
     else el.pause();
   }, [playing, current?.src, current?.id]);
 
@@ -528,6 +559,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const value = {
     current,
+    loadError,
     queue,
     index,
     repeat,

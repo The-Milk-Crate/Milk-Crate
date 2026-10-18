@@ -9,6 +9,23 @@
 /// COLORREFs (0x00BBGGRR); 0xFFFFFFFF puts back the system default. Used with the
 /// see-through window so the bar matches the app instead of the system accent
 /// color. Does nothing on other systems, or on Windows versions without it.
+/// A song file's bytes, for when the webview can't stream it from disk itself
+/// (the player falls back to this; see `src/lib/player.tsx`). Audio files only.
+#[tauri::command]
+async fn read_audio_file(path: String) -> Result<tauri::ipc::Response, String> {
+    const AUDIO: [&str; 7] = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus"];
+    let p = std::path::PathBuf::from(&path);
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !AUDIO.contains(&ext.as_str()) {
+        return Err("Not a song file".into());
+    }
+    let bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(&p))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("Couldn't read {path}: {e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 fn set_title_bar_colors(window: tauri::WebviewWindow, caption: u32, text: u32, border: u32) -> Result<(), String> {
     #[cfg(windows)]
@@ -144,6 +161,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![
             set_title_bar_colors,
+            read_audio_file,
             cd::cd_discs,
             cd::cd_lookup,
             cd::cd_cover,
