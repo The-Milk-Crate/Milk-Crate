@@ -26,7 +26,14 @@ export interface PhysicalItem { id: string; format: PhysicalFormat; releaseId?: 
  * e.g. a ripped CD) — those are kept on this computer only and never sent to Milk Crate's servers.
  * `localCount` is how many of them there are.
  */
-export interface Playlist { id: string; name: string; trackIds: string[]; updatedAt: string; localCount: number }
+export interface Playlist {
+  id: string; name: string; trackIds: string[]; updatedAt: string; localCount: number;
+  /** The picture you chose, kept with your account ("<user>/<playlist>.jpg?v=…"); none: Milk Crate makes one. */
+  coverPath?: string;
+}
+
+/** Where playlist pictures are kept (a private bucket: only you can read yours). See supabase/012_playlist_pictures.sql. */
+export const PLAYLIST_PICTURES = "playlist-pictures";
 
 export { isLocalTrackId, mergePlaylistOrder } from "./playlistOrder";
 export interface NewPhysical { format: PhysicalFormat; releaseId?: string; artistName?: string; title?: string; note?: string }
@@ -66,6 +73,8 @@ interface Library {
   createPlaylist: (name: string, trackIds?: string[]) => Promise<Playlist>;
   renamePlaylist: (id: string, name: string) => Promise<void>;
   deletePlaylist: (id: string) => Promise<void>;
+  /** Saves a picture for a playlist with your account (any computer shows it), or removes it (null). */
+  setPlaylistPicture: (id: string, picture: Blob | null) => Promise<void>;
   addToPlaylist: (id: string, trackIds: string[]) => Promise<void>;
   removeFromPlaylist: (id: string, index: number) => Promise<void>;
   follow: (artistId: string) => Promise<void>;
@@ -287,7 +296,27 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.from("playlists").delete().eq("id", id);
     if (error) setPlaylists(before);
     check(error);
+    // Its picture goes too.
+    const path = before.find((p) => p.id === id)?.coverPath?.split("?")[0];
+    if (path) void supabase.storage.from(PLAYLIST_PICTURES).remove([path]);
   }, [gate, serverPlaylists, rememberOrder]);
+
+  const setPlaylistPicture = useCallback(async (id: string, picture: Blob | null) => {
+    const uid = gate("edit playlists");
+    const path = `${uid}/${id}.jpg`;
+    if (picture) {
+      const { error } = await supabase.storage.from(PLAYLIST_PICTURES).upload(path, picture, { contentType: picture.type || "image/jpeg", upsert: true });
+      check(error);
+    } else {
+      await supabase.storage.from(PLAYLIST_PICTURES).remove([path]);
+    }
+    // A new version each time, so every computer shows the new picture rather than the old one.
+    const coverPath = picture ? `${path}?v=${Date.now()}` : null;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("playlists").update({ cover_path: coverPath, updated_at: now }).eq("id", id);
+    check(error);
+    setPlaylists((ps) => ps.map((p) => (p.id === id ? { ...p, coverPath: coverPath ?? undefined, updatedAt: now } : p)));
+  }, [gate]);
 
   const follow = useCallback(async (artistId: string) => {
     gate("follow artists");
@@ -348,10 +377,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     isSongInCrate: (trackId, releaseId) => saved.some((s) => s.releaseId === releaseId) || crateSongs.some((x) => x.trackId === trackId),
     addSongs, removeSongs, crateSongs,
     isFollowing: (id) => following.includes(id),
-    save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
+    save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist,
     follow, unfollow, setFavorite, rateAlbum, setDisplayName,
     needsAccount, dismissNeedsAccount: () => setNeedsAccount(null),
-  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
+  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }
@@ -373,7 +402,8 @@ function physicalFromRow(r: Record<string, unknown>): PhysicalItem {
   };
 }
 function playlistFromRow(r: Record<string, unknown>): Playlist {
-  return { id: String(r.id), name: String(r.name ?? ""), trackIds: (r.track_ids as string[]) ?? [], updatedAt: String(r.updated_at ?? ""), localCount: 0 };
+  return { id: String(r.id), name: String(r.name ?? ""), trackIds: (r.track_ids as string[]) ?? [], updatedAt: String(r.updated_at ?? ""), localCount: 0,
+    coverPath: typeof r.cover_path === "string" && r.cover_path ? r.cover_path : undefined };
 }
 
 export function useLibrary() {

@@ -15,7 +15,7 @@ import { Button, PlayButton, ReleaseCard, Sleeve, Sticker, TrackRow, useAllDownl
 import { AddToPlaylist } from "../components/AddToPlaylist";
 import { AlbumRating } from "../components/AlbumRating";
 import { HistoryList } from "../components/HistoryList";
-import { PlaylistCover, choosePlaylistCover, clearPlaylistCover, playlistCoverKey, usePlaylistTracks } from "../components/PlaylistCover";
+import { PlaylistCover, choosePlaylistCover, clearPlaylistCover, usePlaylistPicture, usePlaylistTracks } from "../components/PlaylistCover";
 
 /**
  * Your Crate. The overview has a shelf for each part: Albums, Singles,
@@ -521,7 +521,7 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [coverMenu]);
-  const own = useFileCover(playlistCoverKey(pl.id));
+  const own = usePlaylistPicture(pl);
   const tracks = usePlaylistTracks(pl.trackIds);
   const playable = tracks.filter(Boolean) as Track[];
   const artistOf = (t: Track) => c.artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer");
@@ -534,14 +534,14 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
           <div ref={pick} className="playlist-cover-pick">
             <button type="button" className="playlist-cover-btn" aria-haspopup={own ? "menu" : undefined} aria-expanded={own ? coverMenu : undefined}
               aria-label={own ? "Change or remove the playlist's picture" : "Choose a picture for the playlist"} title={own ? "Change or remove the picture" : "Choose a picture"}
-              onClick={() => { setCoverMsg(""); if (own) setCoverMenu((o) => !o); else void choosePlaylistCover(pl.id).then((e) => setCoverMsg(e ?? "")); }}>
+              onClick={() => { setCoverMsg(""); if (own) setCoverMenu((o) => !o); else void choosePlaylistCover(pl.id, lib.setPlaylistPicture).then((e) => setCoverMsg(e ?? "")); }}>
               <PlaylistCover playlist={pl} style={{ width: 200 }} />
               <span className="playlist-cover-hint" aria-hidden="true"><ImagePlus size={22} /></span>
             </button>
             {own && coverMenu && (
               <span className="atp-menu playlist-cover-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => { setCoverMenu(false); void choosePlaylistCover(pl.id).then((e) => setCoverMsg(e ?? "")); }}>Change picture</button>
-                <button type="button" role="menuitem" onClick={() => { setCoverMenu(false); void clearPlaylistCover(pl.id); }}>Remove picture</button>
+                <button type="button" role="menuitem" onClick={() => { setCoverMenu(false); void choosePlaylistCover(pl.id, lib.setPlaylistPicture).then((e) => setCoverMsg(e ?? "")); }}>Change picture</button>
+                <button type="button" role="menuitem" onClick={() => { setCoverMenu(false); void clearPlaylistCover(pl.id, lib.setPlaylistPicture); }}>Remove picture</button>
               </span>
             )}
           </div>
