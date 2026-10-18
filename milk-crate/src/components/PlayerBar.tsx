@@ -6,7 +6,7 @@ import { sleeveSeed } from "../lib/sleeve";
 import { ListMusic, Maximize2, Repeat, Repeat1, Shuffle, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { Go } from "../App";
 import { SeekBar } from "./SeekBar";
-import { FavoriteButton, Glyph, PlayButton, Sleeve } from "./ui";
+import { Glyph, PlayButton, Sleeve } from "./ui";
 import { fileArtist, useFileCover } from "../lib/fileTags";
 
 /** The persistent player along the bottom of the window. */
@@ -25,14 +25,16 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
       <div className="mc-player-now">
         {t ? (
           <>
-            <button type="button" className="mc-player-art" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive}>
-              <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artist) : t.title} />
-            </button>
+            {/* The cover nearly fills the bar; the heart is a little glass bubble on its corner. */}
+            <div className="mc-player-cover">
+              <button type="button" className="mc-player-art" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive}>
+                <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artist) : t.title} />
+              </button>
+              <GlassHeart on={p.isFavorite(t.id)} title={t.title} onToggle={() => p.toggleFavorite(t.id)} />
+            </div>
             <div style={{ minWidth: 0 }}>
-              {/* The heart sits on the song's line, right after its name. */}
               <div className="mc-player-title-row">
                 <span className="mc-track-title">{t.title}</span>
-                <FavoriteButton on={p.isFavorite(t.id)} title={t.title} onToggle={() => p.toggleFavorite(t.id)} />
               </div>
               <div className="mc-track-artist">{artist}</div>
             </div>
@@ -96,6 +98,27 @@ export function RepeatButton() {
       title={p.repeat === "off" ? "Repeat off" : p.repeat === "all" ? "Repeating the queue" : "Repeating this song"}
       onClick={() => p.setRepeat(p.repeat === "off" ? "all" : p.repeat === "all" ? "one" : "off")}>
       {p.repeat === "one" ? <Repeat1 size={17} strokeWidth={1.9} aria-hidden="true" /> : <Repeat size={17} strokeWidth={1.9} aria-hidden="true" />}
+    </button>
+  );
+}
+
+const HEART = "M12 21.2C11.7 21 3.9 16.2 2.1 11.3 .8 7.6 3.4 3.8 7.4 3.8c1.9 0 3.5.9 4.6 2.3 1.1-1.4 2.7-2.3 4.6-2.3 4 0 6.6 3.8 5.3 7.5-1.8 4.9-9.6 9.7-9.9 9.9Z";
+
+/**
+ * Favorite, as a heart-shaped bubble of glass on the cover's corner: it pops up when you hover the
+ * cover (or tab to it), and once the song is a favorite it stays, tinted with the accent.
+ */
+function GlassHeart({ on, title, onToggle }: { on: boolean; title: string; onToggle: () => void }) {
+  return (
+    <button type="button" className={`glass-heart${on ? " on" : ""}`} aria-pressed={on}
+      aria-label={on ? `Remove ${title} from favorites` : `Add ${title} to favorites`} title={on ? "Favorite" : "Add to favorites"} onClick={onToggle}>
+      <svg className="glass-heart-shadow" viewBox="0 0 24 24" aria-hidden="true"><path d={HEART} /></svg>
+      <span className="glass-heart-bubble" aria-hidden="true" />
+      <svg className="glass-heart-rim" viewBox="0 0 24 24" aria-hidden="true">
+        <path d={HEART} className="glass-heart-edge" />
+        <path d="M4.6 9.2c.1-1.9 1.4-3.3 3-3.5" className="glass-heart-shine" />
+        <circle cx="15.8" cy="7.3" r=".9" className="glass-heart-glint" />
+      </svg>
     </button>
   );
 }

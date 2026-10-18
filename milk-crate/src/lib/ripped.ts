@@ -4,7 +4,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { usePlayer } from "./player";
-import { getCover, groupComputer, type ComputerAlbum } from "./fileTags";
+import { getCover, groupComputer, replaceCover, type ComputerAlbum } from "./fileTags";
+import { imageAsDataUrl } from "./cd";
+import { isDesktop, pickImage } from "./localFiles";
 
 export interface RippedAlbum extends ComputerAlbum {
   /** When it was ripped (ms). */
@@ -30,10 +32,37 @@ export function useFileCovers(keys: (string | undefined)[]): Record<string, stri
   const joined = keys.filter(Boolean).join("\n");
   useEffect(() => {
     let live = true;
-    for (const key of joined ? joined.split("\n") : []) {
-      void getCover(key).then((url) => live && url && setCovers((c) => (c[key] === url ? c : { ...c, [key]: url })));
-    }
-    return () => { live = false; };
+    const load = (key: string) => void getCover(key).then((url) => live && url && setCovers((c) => (c[key] === url ? c : { ...c, [key]: url })));
+    const keys = joined ? joined.split("\n") : [];
+    keys.forEach(load);
+    const onChange = (e: Event) => { const k = (e as CustomEvent<string>).detail; if (keys.includes(k)) load(k); };
+    window.addEventListener("mc:cover", onChange);
+    return () => { live = false; window.removeEventListener("mc:cover", onChange); };
   }, [joined]);
   return covers;
+}
+
+/**
+ * Pick a new picture for a ripped CD's cover. It's saved into the album's files (so other players
+ * see it too) and everywhere Milk Crate shows the album. Returns an error to show, or null.
+ */
+export async function changeRippedCover(album: ComputerAlbum, updateTracks: (tracks: ComputerAlbum["tracks"]) => void): Promise<string | null> {
+  const src = await pickImage();
+  if (!src) return null;
+  const url = await imageAsDataUrl(src).catch(() => null);
+  if (!url) return "That picture needs to be a JPEG or PNG.";
+  if (isDesktop()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const files = album.tracks.map((t) => t.id.replace(/^local:/, ""));
+    try {
+      await invoke("cd_set_cover", { files, cover: url });
+    } catch (e) {
+      return String(e);
+    }
+  }
+  const key = album.cover ?? album.key;
+  await replaceCover(key, await (await fetch(url)).blob());
+  // An album that had no cover: its songs now point at the new one.
+  if (!album.cover) updateTracks(album.tracks.map((t) => ({ ...t, tags: { ...t.tags, cover: key } })));
+  return null;
 }

@@ -112,6 +112,12 @@ mod cd {
         CANCEL.store(true, Ordering::Relaxed);
     }
 
+    /// A new cover for a ripped CD: into its FLAC files and the album folder's cover image.
+    #[tauri::command]
+    pub async fn cd_set_cover(files: Vec<String>, cover: String) -> Result<(), String> {
+        joined(spawn_blocking(move || cdrip::set_cover(&files.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>(), &cover)).await)
+    }
+
     #[tauri::command]
     pub async fn cd_eject(id: String) -> Result<(), String> {
         joined(spawn_blocking(move || cdrip::find(&id)?.eject()).await)
@@ -143,7 +149,8 @@ pub fn run() {
             cd::cd_cover,
             cd::cd_rip,
             cd::cd_cancel,
-            cd::cd_eject
+            cd::cd_eject,
+            cd::cd_set_cover
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

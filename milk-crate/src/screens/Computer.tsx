@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Disc3, FolderPlus, Lock, Shuffle, X } from "lucide-react";
+import { Disc3, FolderPlus, ImagePlus, Lock, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
 import { useLibrary } from "../lib/library";
 import { pickAudioFiles, tracksFromPaths } from "../lib/localFiles";
 import { canRip } from "../lib/cd";
 import { CdRipper } from "../components/CdRipper";
+import { changeRippedCover } from "../lib/ripped";
 import { albumKey, fileArtist, groupComputer, tagTrack, useFileCover, type ComputerAlbum } from "../lib/fileTags";
 import { formatTime } from "../lib/format";
 import type { Track } from "../lib/types";
@@ -159,6 +160,10 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   const cover = useFileCover(a.cover);
   const [sure, setSure] = useState(false);
   const total = a.tracks.reduce((s, t) => s + (t.duration || 0), 0);
+  // A CD you ripped can get a different cover.
+  const ripped = p.rippedCds.some((r) => r.key === a.key);
+  const [coverMsg, setCoverMsg] = useState("");
+  const newCover = async () => { setCoverMsg(""); setCoverMsg((await changeRippedCover(a, p.updateLocalTracks)) ?? ""); };
   return (
     <div className="screen">
       <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "computer" })}>← Your Computer</button>
@@ -179,7 +184,11 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
             ) : (
               <Button variant="ghost" onClick={() => setSure(true)}>Remove…</Button>
             )}
+            {ripped && (
+              <Button variant="ghost" onClick={() => void newCover()}><ImagePlus size={16} aria-hidden="true" /> Change cover</Button>
+            )}
           </div>
+          {coverMsg && <p className="form-error" role="alert">{coverMsg}</p>}
           {sure && <p className="caption muted">The files stay on your computer. This only takes them off Your Computer in Milk Crate.</p>}
         </div>
       </header>

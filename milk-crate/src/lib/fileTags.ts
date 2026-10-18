@@ -154,8 +154,8 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 /** Shrinks a cover to a small JPEG (so hundreds of albums take a few MB) and saves it. */
-async function saveCover(key: string, blob: Blob): Promise<boolean> {
-  if (memo.get(key)) return true;
+async function saveCover(key: string, blob: Blob, replace = false): Promise<boolean> {
+  if (memo.get(key) && !replace) return true;
   const bmp = await createImageBitmap(blob);
   const size = 320;
   const scale = Math.min(1, size / Math.max(bmp.width, bmp.height));
@@ -174,6 +174,12 @@ async function saveCover(key: string, blob: Blob): Promise<boolean> {
   });
   memo.set(key, url);
   return true;
+}
+
+/** A new picture for an album's cover in Your Computer; everything showing that cover updates. */
+export async function replaceCover(key: string, blob: Blob) {
+  await saveCover(key, blob, true);
+  window.dispatchEvent(new CustomEvent("mc:cover", { detail: key }));
 }
 
 export async function getCover(key: string): Promise<string | null> {
@@ -198,8 +204,11 @@ export function useFileCover(key?: string): string | undefined {
   useEffect(() => {
     if (!key) { setUrl(undefined); return; }
     let live = true;
-    void getCover(key).then((u) => live && setUrl(u ?? undefined));
-    return () => { live = false; };
+    const load = () => void getCover(key).then((u) => live && setUrl(u ?? undefined));
+    load();
+    const onChange = (e: Event) => { if ((e as CustomEvent<string>).detail === key) load(); };
+    window.addEventListener("mc:cover", onChange);
+    return () => { live = false; window.removeEventListener("mc:cover", onChange); };
   }, [key]);
   return url;
 }

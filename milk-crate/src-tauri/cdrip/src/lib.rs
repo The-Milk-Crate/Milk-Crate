@@ -280,6 +280,29 @@ pub fn rip(disc: &Disc, plan: &Plan, music: &Path, on_progress: &dyn Fn(Progress
     }
 }
 
+/// A new front cover for songs you ripped: written into each FLAC file and as the album folder's
+/// cover.jpg (or .png). Only touches .flac files. `data_url`: "data:image/jpeg;base64,…" (JPEG or PNG).
+pub fn set_cover(files: &[PathBuf], data_url: &str) -> Result<(), String> {
+    let (mime, bytes) = decode_cover(data_url).ok_or("That picture needs to be a JPEG or PNG.")?;
+    let mut dirs = Vec::new();
+    for f in files.iter().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("flac"))) {
+        let mut tag = metaflac::Tag::read_from_path(f).map_err(|e| format!("Couldn't open {}: {e}", f.display()))?;
+        tag.add_picture(mime.clone(), metaflac::block::PictureType::CoverFront, bytes.clone());
+        tag.write_to_path(f).map_err(|e| format!("Couldn't save the cover into {}: {e}", f.display()))?;
+        if let Some(d) = f.parent() {
+            if !dirs.contains(&d.to_path_buf()) {
+                dirs.push(d.to_path_buf());
+            }
+        }
+    }
+    for d in dirs {
+        let (keep, drop) = if mime == "image/png" { ("cover.png", "cover.jpg") } else { ("cover.jpg", "cover.png") };
+        let _ = std::fs::remove_file(d.join(drop));
+        let _ = std::fs::write(d.join(keep), &bytes);
+    }
+    Ok(())
+}
+
 /// Deletes what a rip saved, then the album folders it leaves empty (up to Music › Milk Crate).
 fn remove_rip(saved: &[PathBuf], cover: Option<&Path>, dir: &Path, music: &Path) {
     for f in saved {
@@ -483,6 +506,27 @@ mod tests {
         assert!(err.starts_with("Couldn't read any"));
         assert!(!root.join("Music2/Milk Crate/B").exists());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn sets_a_new_cover_on_ripped_files() {
+        let dir = std::env::temp_dir().join(format!("cdrip-cover-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("01 A.flac");
+        let tags = flac::Tags { title: "A".into(), ..Default::default() };
+        flac::write(&f, &[0i32; 2000], &tags, Some(("image/jpeg", &[0xFF, 0xD8, 0xFF, 1]))).unwrap();
+        std::fs::write(dir.join("cover.jpg"), [0xFF, 0xD8, 0xFF, 1]).unwrap();
+        let png = b"\x89PNG\r\n\x1a\nrest".to_vec();
+        let url = data_url("image/png", &png);
+        set_cover(&[f.clone(), dir.join("notes.txt")], &url).unwrap();
+        let tag = metaflac::Tag::read_from_path(&f).unwrap();
+        let pics: Vec<_> = tag.pictures().collect();
+        assert_eq!(pics.len(), 1, "the old cover is replaced, not added to");
+        assert_eq!(pics[0].mime_type, "image/png");
+        assert_eq!(pics[0].data, png);
+        assert!(dir.join("cover.png").exists() && !dir.join("cover.jpg").exists());
+        assert!(set_cover(&[f], "data:text/plain;base64,aGk=").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
