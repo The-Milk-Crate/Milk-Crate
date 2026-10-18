@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Disc3, ImagePlus, LoaderCircle, Lock, X } from "lucide-react";
-import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUrl, lookupDisc, ripDisc, type CdMatch, type Disc, type RipProgress } from "../lib/cd";
+import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUrl, lookupDisc, ripDisc, type CdMatch, type Disc, type RipProgress, type Ripped } from "../lib/cd";
 import { pickImage } from "../lib/localFiles";
 import { setLeaveGuard } from "../lib/leaveGuard";
 import { formatTime } from "../lib/format";
@@ -49,7 +49,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
   const [coverBusy, setCoverBusy] = useState(false);
   const [progress, setProgress] = useState<RipProgress | null>(null);
   const [ripping, setRipping] = useState(false);
-  const [done, setDone] = useState<{ count: number; folder: string } | null>(null);
+  const [done, setDone] = useState<{ count: number; folder: string; skipped: Ripped["skipped"] } | null>(null);
   const [error, setError] = useState("");
   const [notes, setNotes] = useState<string[]>([]);
 
@@ -126,7 +126,8 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
     else setError("That picture needs to be a JPEG or PNG.");
   };
 
-  const rip = async () => {
+  /** `only`: just these track numbers (trying skipped songs again). */
+  const rip = async (only?: number[]) => {
     if (!disc || !draft) return;
     setError("");
     setRipping(true);
@@ -134,7 +135,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
     const artist = draft.artist.trim() || "Unknown Artist";
     const album = draft.album.trim() || "Unknown Album";
     try {
-      const files = await ripDisc(
+      const { files, skipped } = await ripDisc(
         disc.id,
         {
           album,
@@ -143,13 +144,20 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
           releaseId: chosen?.releaseId ?? null,
           disc: chosen?.disc ?? 1,
           discs: chosen?.discs ?? 1,
-          tracks: disc.tracks.map((t, i) => ({ number: t.number, title: draft.titles[i]?.trim() || `Track ${String(t.number).padStart(2, "0")}`, artist: draft.artists[i]?.trim() ?? "" })),
+          tracks: disc.tracks
+            .map((t, i) => ({ number: t.number, title: draft.titles[i]?.trim() || `Track ${String(t.number).padStart(2, "0")}`, artist: draft.artists[i]?.trim() ?? "" }))
+            .filter((t) => !only || only.includes(t.number)),
           cover: draft.cover,
         },
         setProgress,
       );
       await onRipped(files);
-      setDone({ count: files.length, folder: albumFolder(artist, album) });
+      // Trying skipped songs again: count them with the ones saved the first time.
+      setDone((before) => ({
+        count: files.length + (only && before ? before.count : 0),
+        folder: albumFolder(artist, album),
+        skipped,
+      }));
     } catch (e) {
       const msg = String(e);
       setError(msg === "Stopped" ? "Stopped. Songs already saved are kept." : msg);
@@ -202,7 +210,6 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
               </span>
               <p className="caption muted" role="status">
                 {found === "looking" && "Looking up this CD on MusicBrainz…"}
-                {found === "found" && (chosen?.exact ? "Found it on MusicBrainz. Fix anything that's off before you rip." : "Found a close match on MusicBrainz. Check the names before you rip.")}
                 {found === "unknown" && "This CD isn't on MusicBrainz. Type in the names and they'll be saved in the files."}
                 {found === "offline" && "Couldn't reach MusicBrainz. Type in the names, or check your connection."}
               </p>
@@ -237,7 +244,8 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
 
           <ol className="cd-ripper-tracks">
             {disc.tracks.map((t, i) => {
-              const state = progress && ripping ? (i + 1 < progress.at ? "done" : i + 1 === progress.at ? "now" : "") : done ? "done" : "";
+              const state = progress && ripping ? (i + 1 < progress.at ? "done" : i + 1 === progress.at ? "now" : "")
+                : done ? (done.skipped.some((s) => s.number === t.number) ? "skipped" : "done") : "";
               return (
                 <li key={t.number} className={`cd-ripper-track ${state}`}>
                   <span className="numeral muted">{String(t.number).padStart(2, "0")}</span>
@@ -260,7 +268,12 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
             </div>
           )}
           {done && !ripping && (
-            <p className="form-info" role="status">Saved {done.count} songs as FLAC in {done.folder}. They're in Your Computer now.</p>
+            <p className="form-info" role="status">
+              Saved {done.count} {done.count === 1 ? "song" : "songs"} as FLAC in {done.folder}. They're in Your Computer now.
+              {done.skipped.length > 0 && (
+                <> Skipped {done.skipped.map((s) => `${s.number} · ${s.title}`).join(", ")}: {done.skipped.length === 1 ? "it couldn't" : "they couldn't"} be read, so the disc may be scratched or dirty there. Wipe it with a soft cloth, from the middle out, and try {done.skipped.length === 1 ? "it" : "them"} again.</>
+              )}
+            </p>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
 
@@ -273,8 +286,13 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
               <Button onClick={() => void cancelRip()}>Stop</Button>
             ) : (
               <>
-                <Button variant="primary" onClick={() => void rip()} disabled={found === "looking"}>
-                  <Disc3 size={16} aria-hidden="true" /> {done ? "Rip again" : "Rip to FLAC"}
+                {done && done.skipped.length > 0 ? (
+                  <Button variant="primary" onClick={() => void rip(done.skipped.map((s) => s.number))}>
+                    <Disc3 size={16} aria-hidden="true" /> Try the skipped {done.skipped.length === 1 ? "song" : "songs"} again
+                  </Button>
+                ) : null}
+                <Button variant={done && done.skipped.length > 0 ? "quiet" : "primary"} onClick={() => void rip()} disabled={found === "looking"}>
+                  <Disc3 size={16} aria-hidden="true" /> {done ? "Rip the whole CD again" : "Rip to FLAC"}
                 </Button>
                 <Button variant="ghost" onClick={eject}>Eject</Button>
               </>

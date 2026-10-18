@@ -1,4 +1,6 @@
+import { useRef, useState } from "react";
 import { usePlayer } from "../lib/player";
+import { EqPopover } from "./EqPopover";
 import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
 import { ListMusic, Maximize2, Repeat, Repeat1, Shuffle, Volume1, Volume2, VolumeX } from "lucide-react";
@@ -10,6 +12,8 @@ import { fileArtist, useFileCover } from "../lib/fileTags";
 /** The persistent player along the bottom of the window. */
 export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onImmersive: () => void; queueOpen: boolean; onQueue: () => void }) {
   const p = usePlayer();
+  const [eqOpen, setEqOpen] = useState(false);
+  const eqBtn = useRef<HTMLButtonElement>(null);
   const { artistById, releaseById } = useCatalog();
   const t = p.current;
   const artist = t ? artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer") : "";
@@ -57,8 +61,9 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
           <input type="range" className="volume-slider" min={0} max={100} step={1} aria-label="Volume"
             value={Math.round((p.muted ? 0 : p.volume) * 100)} onChange={(e) => p.setVolume(Number(e.target.value) / 100)}
             style={{ "--fill": `${Math.round((p.muted ? 0 : p.volume) * 100)}%` } as React.CSSProperties} />
-          <button type="button" className={`eq-btn${p.eqOn ? " on" : ""}`} aria-label={`Equalizer settings (equalizer ${p.eqOn ? "on" : "off"})`}
-            title={`Equalizer ${p.eqOn ? "on" : "off"}. Open equalizer settings.`} onClick={() => go({ name: "settings", tab: "sound" })}>EQ</button>
+          <button ref={eqBtn} type="button" className={`eq-btn${p.eqOn ? " on" : ""}`} aria-label={`Equalizer (${p.eqOn ? "on" : "off"})`}
+            aria-expanded={eqOpen} aria-haspopup="dialog" title={`Equalizer ${p.eqOn ? "on" : "off"}`} onClick={() => setEqOpen((o) => !o)}>EQ</button>
+          {eqOpen && <EqPopover anchor={eqBtn} onClose={() => setEqOpen(false)} onMore={() => go({ name: "settings", tab: "sound" })} />}
         </div>
         <button type="button" className={`mc-icon-btn${queueOpen ? " on" : ""}`} aria-label="Queue" aria-pressed={queueOpen} title="Queue" onClick={onQueue}>
           <ListMusic size={18} strokeWidth={1.75} aria-hidden="true" />

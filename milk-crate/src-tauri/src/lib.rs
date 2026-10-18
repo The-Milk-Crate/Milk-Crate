@@ -81,7 +81,7 @@ mod cd {
 
     /// Rips into Music › Milk Crate › Artist › Album. Returns the saved files in track order.
     #[tauri::command]
-    pub async fn cd_rip(app: tauri::AppHandle, id: String, plan: cdrip::Plan) -> Result<Vec<String>, String> {
+    pub async fn cd_rip(app: tauri::AppHandle, id: String, plan: cdrip::Plan) -> Result<cdrip::Ripped, String> {
         CANCEL.store(false, Ordering::Relaxed);
         DISCARD.store(false, Ordering::Relaxed);
         let music = app.path().audio_dir().map_err(|e| format!("Couldn't find your Music folder: {e}"))?;
@@ -97,8 +97,7 @@ mod cd {
                         let _ = app.emit("cd-rip-progress", p);
                     }
                 };
-                let files = cdrip::rip(&disc, &plan, &music, &report, &CANCEL, &DISCARD)?;
-                Ok(files.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
+                cdrip::rip(&disc, &plan, &music, &report, &CANCEL, &DISCARD)
             })
             .await,
         )

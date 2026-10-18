@@ -64,11 +64,17 @@ export const cancelRip = (discard = false) => call<void>("cd_cancel", { discard 
 export const ejectDisc = (id: string) => call<void>("cd_eject", { id });
 
 /** Rips the disc; `onProgress` hears about each step. Returns the saved files, in track order. */
-export async function ripDisc(id: string, plan: RipPlan, onProgress: (p: RipProgress) => void): Promise<string[]> {
+/** What a rip saved, and the songs it skipped because they couldn't be read (scratches, dirt). */
+export interface Ripped {
+  files: string[];
+  skipped: { number: number; title: string; reason: string }[];
+}
+
+export async function ripDisc(id: string, plan: RipPlan, onProgress: (p: RipProgress) => void): Promise<Ripped> {
   const { listen } = await import("@tauri-apps/api/event");
   const stop = await listen<RipProgress>("cd-rip-progress", (e) => onProgress(e.payload));
   try {
-    return await call<string[]>("cd_rip", { id, plan });
+    return await call<Ripped>("cd_rip", { id, plan });
   } finally {
     stop();
   }

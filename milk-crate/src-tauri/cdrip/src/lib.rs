@@ -166,7 +166,23 @@ fn decode_cover(data_url: &str) -> Option<(String, Vec<u8>)> {
 ///
 /// Stopping (`cancel`) keeps the songs already saved. Stopping with `discard` also set deletes
 /// everything this rip saved (and the album folder, if that leaves it empty).
-pub fn rip(disc: &Disc, plan: &Plan, music: &Path, on_progress: &dyn Fn(Progress), cancel: &AtomicBool, discard: &AtomicBool) -> Result<Vec<PathBuf>, String> {
+/// What a rip saved, and the songs it had to skip (couldn't be read: scratches, dirt).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ripped {
+    pub files: Vec<PathBuf>,
+    pub skipped: Vec<Skipped>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Skipped {
+    pub number: u8,
+    pub title: String,
+    pub reason: String,
+}
+
+pub fn rip(disc: &Disc, plan: &Plan, music: &Path, on_progress: &dyn Fn(Progress), cancel: &AtomicBool, discard: &AtomicBool) -> Result<Ripped, String> {
     use std::sync::atomic::Ordering;
     let artist = if plan.album_artist.trim().is_empty() { "Unknown Artist" } else { plan.album_artist.trim() };
     let dir = flac::album_dir(music, artist, &plan.album, plan.disc, plan.discs);
@@ -200,13 +216,21 @@ pub fn rip(disc: &Disc, plan: &Plan, music: &Path, on_progress: &dyn Fn(Progress
         });
         let mut before = 0f32;
         let mut result = Ok(());
+        let mut skipped = Vec::new();
         for (i, t) in plan.tracks.iter().enumerate() {
             let base = before;
             let report = |f: f32| on_progress(Progress { at: i + 1, of: plan.tracks.len(), number: t.number, track: f, overall: (base + f * lengths[i]) / total });
             report(0.0);
             let samples = match disc.read_track(t.number, &report, cancel) {
                 Ok(s) => s,
-                Err(e) => { result = Err(e); break; }
+                Err(e) if cancel.load(Ordering::Relaxed) => { result = Err(e); break; }
+                // A song that can't be read (scratched, dirty): skip it and go on to the next.
+                Err(e) => {
+                    skipped.push(Skipped { number: t.number, title: t.title.clone(), reason: e });
+                    before += lengths[i];
+                    report(1.0);
+                    continue;
+                }
             };
             let tags = flac::Tags {
                 title: t.title.clone(),
@@ -229,18 +253,23 @@ pub fn rip(disc: &Disc, plan: &Plan, music: &Path, on_progress: &dyn Fn(Progress
         }
         drop(tx);
         let written = writer.join().unwrap_or_else(|_| Err(("Saving stopped unexpectedly".to_string(), vec![])));
-        (result, written)
+        (result.map(|_| skipped), written)
     });
 
     let (saved, write_error) = match written {
         Ok(saved) => (saved, None),
         Err((e, saved)) => (saved, Some(e)),
     };
+    let skipped = read_result.as_ref().map(|s| s.clone()).unwrap_or_default();
     let failed = read_result.err().or(write_error).or_else(|| cancel.load(Ordering::Relaxed).then(|| "Stopped".to_string()));
     match failed {
         None => {
             on_progress(Progress { at: plan.tracks.len(), of: plan.tracks.len(), number: plan.tracks.last().map(|t| t.number).unwrap_or(0), track: 1.0, overall: 1.0 });
-            Ok(saved)
+            if saved.is_empty() && !skipped.is_empty() {
+                remove_rip(&saved, cover_file.as_deref(), &dir, music);
+                return Err("Couldn't read any of the songs on this disc. It may be scratched or dirty: try wiping it with a soft cloth, from the middle out.".into());
+            }
+            Ok(Ripped { files: saved, skipped })
         }
         Some(e) => {
             if discard.load(Ordering::Relaxed) {
@@ -337,7 +366,7 @@ mod tests {
         };
         let seen = Mutex::new(Vec::new());
         let music = root.join("Music");
-        let files = rip(&disc, &plan, &music, &|p| seen.lock().unwrap().push(p.overall), &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+        let files = rip(&disc, &plan, &music, &|p| seen.lock().unwrap().push(p.overall), &AtomicBool::new(false), &AtomicBool::new(false)).unwrap().files;
         let album = music.join("Milk Crate/Pamelo/Cavities");
         assert_eq!(files, vec![album.join("01 Wash Your Tongue.flac"), album.join("02 Cupid's Dart _ Pulp.flac")]);
         assert!(album.join("cover.jpg").exists());
@@ -408,6 +437,51 @@ mod tests {
         rip(&disc, &plan, &music, &|p| if p.at == 2 && p.track > 0.0 { stop.set(true); cancel.store(true, std::sync::atomic::Ordering::Relaxed); }, &cancel, &discard).unwrap_err();
         assert!(stop.get());
         assert!(album.join("01 A.flac").exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn skips_a_song_it_cant_read_and_keeps_going() {
+        let root = std::env::temp_dir().join(format!("cdrip-skip-{}", std::process::id()));
+        let vol = root.join("vols").join("CD");
+        std::fs::create_dir_all(&vol).unwrap();
+        std::fs::write(vol.join(".TOC.plist"), r#"<?xml version="1.0"?><plist version="1.0"><dict><key>Sessions</key><array><dict><key>Leadout Block</key><integer>300</integer><key>Track Array</key><array><dict><key>Point</key><integer>1</integer><key>Start Block</key><integer>0</integer></dict><dict><key>Point</key><integer>2</integer><key>Start Block</key><integer>100</integer></dict><dict><key>Point</key><integer>3</integer><key>Start Block</key><integer>200</integer></dict></array></dict></array></dict></plist>"#).unwrap();
+        let aiff = |n: usize| {
+            let data = vec![0u8; n * 4];
+            let mut body = b"AIFFCOMM".to_vec();
+            body.extend(18u32.to_be_bytes());
+            body.extend(2u16.to_be_bytes());
+            body.extend((n as u32).to_be_bytes());
+            body.extend(16u16.to_be_bytes());
+            body.extend([0x40, 0x0E, 0xAC, 0x44, 0, 0, 0, 0, 0, 0]);
+            body.extend(b"SSND");
+            body.extend(((data.len() + 8) as u32).to_be_bytes());
+            body.extend([0u8; 8]);
+            body.extend(data);
+            let mut f = b"FORM".to_vec();
+            f.extend((body.len() as u32).to_be_bytes());
+            f.extend(body);
+            f
+        };
+        std::fs::write(vol.join("1 Audio Track.aiff"), aiff(1000)).unwrap();
+        std::fs::write(vol.join("2 Audio Track.aiff"), b"FORM\0\0\0\x04AIFF").unwrap(); // unreadable
+        std::fs::write(vol.join("3 Audio Track.aiff"), aiff(1000)).unwrap();
+        let disc = mac_discs(&root.join("vols")).pop().unwrap();
+        let t = |n: u8, title: &str| PlanTrack { number: n, title: title.into(), artist: "".into() };
+        let plan = Plan { album: "A".into(), album_artist: "B".into(), year: None, release_id: None, disc: 1, discs: 1, tracks: vec![t(1, "One"), t(2, "Two"), t(3, "Three")], cover: None };
+        let seen = Mutex::new(Vec::new());
+        let r = rip(&disc, &plan, &root.join("Music"), &|p| seen.lock().unwrap().push(p.overall), &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+        assert_eq!(r.files.len(), 2);
+        assert!(r.files[1].ends_with("03 Three.flac"));
+        assert_eq!(r.skipped.len(), 1);
+        assert_eq!((r.skipped[0].number, r.skipped[0].title.as_str()), (2, "Two"));
+        assert!((seen.lock().unwrap().last().unwrap() - 1.0).abs() < 1e-3);
+
+        // Nothing readable at all: an error, and nothing left behind.
+        let plan = Plan { tracks: vec![t(2, "Two")], ..plan };
+        let err = rip(&disc, &plan, &root.join("Music2"), &|_| {}, &AtomicBool::new(false), &AtomicBool::new(false)).unwrap_err();
+        assert!(err.starts_with("Couldn't read any"));
+        assert!(!root.join("Music2/Milk Crate/B").exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
