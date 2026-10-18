@@ -7,6 +7,7 @@
  * Only approved artists appear on public screens (the server enforces this
  * too). An artist always sees their own profile, approved or not.
  */
+import { useLiveRefresh } from "./liveRefresh";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { byId } from "./format";
 import { load, save } from "./storage";
@@ -178,6 +179,9 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       setError(String(e?.message ?? e));
     });
   }, [refresh, userId]);
+
+  // New releases and changes show up while the app stays open (quietly; an error keeps what's there).
+  useLiveRefresh(() => void refresh().catch(() => {}));
 
   const myProfile = userId ? remote.artists.find((a) => a.ownerId === userId) : undefined;
 

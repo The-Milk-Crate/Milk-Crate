@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronRight, Heart, ImagePlus, Plus, Shuffle, Trash2, X } from "lucide-react";
 import type { CrateTab, Go } from "../App";
 import { useCatalog } from "../lib/catalog";
@@ -268,7 +268,6 @@ const PAGE_TITLE: Record<CrateTab, string> = { albums: "Albums", singles: "Album
 function CratePage({ go, tab }: { go: Go; tab: CrateTab }) {
   return (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate" })}>← Your Crate</button>
       <h1 className="display-lg">{PAGE_TITLE[tab]}</h1>
       {(tab === "albums" || tab === "singles") && <Entries go={go} />}
       {(tab === "songs" || tab === "favorites") && <Songs go={go} favoritesFirst={tab === "favorites"} />}
@@ -512,6 +511,16 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
   const [name, setName] = useState(pl.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [coverMsg, setCoverMsg] = useState("");
+  const [coverMenu, setCoverMenu] = useState(false);
+  const pick = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!coverMenu) return;
+    const close = (e: Event) => { if (!pick.current?.contains(e.target as Node)) setCoverMenu(false); };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setCoverMenu(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [coverMenu]);
   const own = useFileCover(playlistCoverKey(pl.id));
   const tracks = usePlaylistTracks(pl.trackIds);
   const playable = tracks.filter(Boolean) as Track[];
@@ -519,17 +528,23 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
 
   return (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: "playlists" })}>← Playlists</button>
       <header className="album-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", flex: "none" }}>
-          <PlaylistCover playlist={pl} style={{ width: 200 }} />
-          <span style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <button type="button" className="link-btn caption" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-              onClick={() => { setCoverMsg(""); void choosePlaylistCover(pl.id).then((e) => setCoverMsg(e ?? "")); }}>
-              <ImagePlus size={14} aria-hidden="true" /> {own ? "Change picture" : "Choose a picture"}
+          {/* Click the cover to pick a picture (or, with one picked, change or remove it: then Milk Crate makes one). */}
+          <div ref={pick} className="playlist-cover-pick">
+            <button type="button" className="playlist-cover-btn" aria-haspopup={own ? "menu" : undefined} aria-expanded={own ? coverMenu : undefined}
+              aria-label={own ? "Change or remove the playlist's picture" : "Choose a picture for the playlist"} title={own ? "Change or remove the picture" : "Choose a picture"}
+              onClick={() => { setCoverMsg(""); if (own) setCoverMenu((o) => !o); else void choosePlaylistCover(pl.id).then((e) => setCoverMsg(e ?? "")); }}>
+              <PlaylistCover playlist={pl} style={{ width: 200 }} />
+              <span className="playlist-cover-hint" aria-hidden="true"><ImagePlus size={22} /></span>
             </button>
-            {own && <button type="button" className="link-btn caption muted" onClick={() => void clearPlaylistCover(pl.id)}>Let Milk Crate make one</button>}
-          </span>
+            {own && coverMenu && (
+              <span className="atp-menu playlist-cover-menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => { setCoverMenu(false); void choosePlaylistCover(pl.id).then((e) => setCoverMsg(e ?? "")); }}>Change picture</button>
+                <button type="button" role="menuitem" onClick={() => { setCoverMenu(false); void clearPlaylistCover(pl.id); }}>Remove picture</button>
+              </span>
+            )}
+          </div>
           {coverMsg && <span className="form-error caption" role="alert">{coverMsg}</span>}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: "1 1 320px", minWidth: 0 }}>
@@ -646,7 +661,7 @@ function CrateAlbum({ go, releaseId }: { go: Go; releaseId: string }) {
   const inCrate = tracks.filter((t) => mine.has(t.id));
   const rest = tracks.filter((t) => !mine.has(t.id));
   const owned = lib.physical.filter((x) => x.releaseId === r.id);
-  const back = entry && entry.kind !== "album" ? { tab: "singles" as const, label: "← Singles" } : { tab: "albums" as const, label: "← Albums" };
+  const back = { tab: "albums" as const };
   const kindLabel = entry ? (entry.whole ? "In your crate" : `${KIND_LABEL[entry.kind]} in your crate · ${plural(inCrate.length, "song")} of ${tracks.length}`) : "Not in your crate";
 
   const row = (t: Track, i: number, list: Track[], dim: boolean) => (
@@ -658,7 +673,6 @@ function CrateAlbum({ go, releaseId }: { go: Go; releaseId: string }) {
 
   return (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "crate", tab: back.tab })}>{back.label}</button>
       <header className="album-head">
         <Sleeve src={r.art} seed={sleeveSeed(r.title, a?.name ?? "")} alt={`${r.title} cover`} style={{ width: 200, flex: "none" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: "1 1 320px", minWidth: 0 }}>

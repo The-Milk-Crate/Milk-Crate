@@ -64,7 +64,6 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
   const open = album ? albums.find((a) => a.key === album) : undefined;
   if (album) return open ? <ComputerAlbumView go={go} album={open} /> : (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "computer" })}>← Your Computer</button>
       <p className="muted">That album isn't here anymore.</p>
     </div>
   );
@@ -151,7 +150,6 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   const newCover = async () => { setCoverMsg(""); setCoverMsg((await changeRippedCover(a, p.updateLocalTracks)) ?? ""); };
   return (
     <div className="screen">
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "computer" })}>← Your Computer</button>
       <header className="album-head">
         <Sleeve src={cover} seed={`${a.title}|${a.artist}`} alt={`${a.title} cover`} style={{ width: 200, flex: "none" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: "1 1 320px", minWidth: 0 }}>

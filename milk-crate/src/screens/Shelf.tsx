@@ -92,7 +92,7 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
             </button>
           )}
           {canRip() && (!current || current.id === "cds") && (
-            <Button onClick={() => setRipOpen(true)} disabled={ripOpen}><Disc3 size={16} aria-hidden="true" /> Rip a CD</Button>
+            <Button onClick={() => { setRipOpen(true); setTimeout(() => document.querySelector(".cd-ripper")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }} disabled={ripOpen}><Disc3 size={16} aria-hidden="true" /> Rip a CD</Button>
           )}
           <Button variant={adding || !sections.length ? "ghost" : "primary"} onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
             <Plus size={16} aria-hidden="true" /> Add to your shelf
@@ -105,10 +105,12 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
           intro={!sections.length} />
       )}
 
-      {/* The same ripper as in Your Computer: a ripped CD lands on this shelf. */}
-      {ripOpen && (!current || current.id === "cds") && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
 
       {current && <ShelfSection key={current.id} current={current} sections={sections} go={go} />}
+
+      {/* Beneath the CDs: the same ripper as in Your Computer; a ripped CD lands on this shelf. */}
+      {ripOpen && (!current || current.id === "cds") && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
+
     </div>
   );
 }

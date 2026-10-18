@@ -101,7 +101,6 @@ export function EditRelease({ releaseId, go }: { releaseId: string; go: Go }) {
 
   return (
     <div className="screen" style={{ maxWidth: 900 }}>
-      <button type="button" className="link-btn caption" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "upload" })}>← For Artists</button>
       <header style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <span className="catalog eyebrow">Edit release</span>
         <h1 className="display-lg" style={{ overflowWrap: "anywhere" }}>{release.title}</h1>

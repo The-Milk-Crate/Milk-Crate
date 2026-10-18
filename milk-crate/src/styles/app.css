@@ -1199,3 +1199,11 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .link-albums { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
 .link-album { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: var(--radius-sm); cursor: pointer; }
 .link-album:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+
+/* A playlist's cover is the button for its picture (src/screens/Crate.tsx). */
+.playlist-cover-pick { position: relative; }
+.playlist-cover-btn { position: relative; display: block; padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--radius-md); }
+.playlist-cover-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.playlist-cover-hint { position: absolute; inset: 0; display: grid; place-items: center; border-radius: var(--radius-md); color: #fff; background: rgba(0, 0, 0, .35); opacity: 0; transition: opacity .15s ease-out; }
+.playlist-cover-btn:hover .playlist-cover-hint, .playlist-cover-btn:focus-visible .playlist-cover-hint { opacity: 1; }
+.playlist-cover-menu { left: 12px; top: calc(100% - 12px); right: auto; }

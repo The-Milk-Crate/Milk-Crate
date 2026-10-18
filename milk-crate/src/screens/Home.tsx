@@ -66,8 +66,11 @@ export function Home({ go }: { go: Go }) {
     ? similarArtists(followed, notFollowed, artistSounds(c.artists, c.tracks), 8).map((s) => ({ artist: s.artist, line: s.reason }))
     : notFollowed.filter((a) => nearIds.has(a.id)).sort((a, b) => b.since - a.since).slice(0, 8).map((a) => ({ artist: a, line: `New around ${scene?.home.name}` }));
 
-  // Recently added to your crate.
-  const added = lib.saved.slice(0, 8).map((s) => c.releaseById[s.releaseId]).filter(Boolean);
+  // Recently added to your crate: albums you saved and CDs you ripped, newest first.
+  const added = [
+    ...lib.saved.filter((s) => c.releaseById[s.releaseId]).map((s) => ({ id: s.releaseId, at: Date.parse(s.addedAt) || 0 })),
+    ...ripped.map((a) => ({ id: `cd:${a.key}`, at: a.rippedAt })),
+  ].sort((a, b) => b.at - a.at).slice(0, 8).map((x) => x.id);
 
   const hour = new Date().getHours();
   const hello = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
@@ -115,7 +118,7 @@ export function Home({ go }: { go: Go }) {
           <section className="section">
             <h2 className="display-md">Recently added to your crate</h2>
             {added.length ? (
-              <div className="release-grid">{added.map((r) => card(r))}</div>
+              <div className="release-grid">{added.map(rotationCard)}</div>
             ) : (
               <div className="empty">
                 <span>{lib.signedIn ? "Albums you add to your crate show up here." : "Sign in to start your crate: save albums, add your records and make playlists."}</span>

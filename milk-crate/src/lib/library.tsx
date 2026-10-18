@@ -8,11 +8,12 @@
  * Without an account these are empty, and trying to save something asks the
  * person to sign up (see needsAccount).
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./auth";
 import { useCatalog } from "./catalog";
 import { supabase } from "./supabase";
 import { usePersistentState } from "./storage";
+import { useLiveRefresh } from "./liveRefresh";
 import { isLocalTrackId, mergePlaylistOrder } from "./playlistOrder";
 import type { PhysicalFormat, Rating } from "./types";
 
@@ -117,10 +118,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayNameState] = useState<string>();
   const [needsAccount, setNeedsAccount] = useState<string | null>(null);
 
+  // Reloaded now and then while the app is open, so changes made on your other computers show up.
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((t) => t + 1));
+  const loadedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
-    setSaved([]); setCrateSongs([]); setPhysical([]); setPlaylists([]); setFollowing([]); setFavorites([]); setAlbumRatings({}); setDisplayNameState(undefined);
+    const fresh = loadedFor.current !== (userId ?? "");
+    loadedFor.current = userId ?? "";
+    if (fresh) { setSaved([]); setCrateSongs([]); setPhysical([]); setPlaylists([]); setFollowing([]); setFavorites([]); setAlbumRatings({}); setDisplayNameState(undefined); }
     if (!userId) { setReady(true); return; }
-    setReady(false);
+    if (fresh) setReady(false);
     let live = true;
     Promise.all([
       supabase.from("crate_items").select("*").order("added_at", { ascending: false }),
@@ -133,6 +140,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       supabase.from("crate_songs").select("track_id,added_at").order("added_at", { ascending: false }),
     ]).then(([c, ph, pl, f, fav, ar, pr, cs]) => {
       if (!live) return;
+      // A refresh that failed (offline) keeps what's already here.
+      if (!fresh && [c, ph, pl, f, fav, ar, cs].some((x) => x.error)) return;
       setSaved((c.data ?? []).map((x) => ({ releaseId: x.release_id, addedAt: x.added_at })));
       setCrateSongs((cs.data ?? []).map((x) => ({ trackId: x.track_id as string, addedAt: x.added_at as string })));
       setPhysical((ph.data ?? []).map(physicalFromRow));
@@ -149,7 +158,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setReady(true);
     });
     return () => { live = false; };
-  }, [userId]);
+  }, [userId, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gate = useCallback((what: string) => {
     if (!userId) {
