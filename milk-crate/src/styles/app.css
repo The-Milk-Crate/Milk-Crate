@@ -820,6 +820,10 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .artist-panels.is-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: var(--space-5, 20px); }
 .artist-panel {
   position: relative; border-radius: var(--radius-lg); overflow: hidden; background: var(--ground-raised);
+}
+/* The artist's color outline sits above the banner so it runs around the whole panel. */
+.artist-panel::after {
+  content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--panel-edge) 38%, transparent);
 }
 :root[data-glass="on"] .artist-panel { background: var(--glass-panel, var(--ground-raised)); }
