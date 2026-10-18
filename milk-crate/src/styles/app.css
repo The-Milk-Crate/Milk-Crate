@@ -1150,3 +1150,23 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .eqp-track[aria-disabled="true"] .eqp-knob {
   background: radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .9), rgba(255, 255, 255, .45) 45%, rgba(255, 255, 255, .3));
 }
+
+/* The upright volume slider (src/components/VolumePopover.tsx). */
+.vol-vertical { display: flex; flex-direction: column; align-items: center; gap: 10px; height: 100%; }
+.vol-pop .vol-vertical { height: auto; }
+.vol-vertical .vol-pop-track { flex: 1 1 auto; min-height: 90px; }
+.vol-pop .vol-vertical .vol-pop-track { flex: none; }
+
+/* Immersive mode: the volume docked to the left of the song's card, as one piece with it. */
+.immersive-card { display: flex; align-items: stretch; width: min(500px, 100%); }
+.immersive-card .immersive-info { width: auto; flex: 1 1 auto; min-width: 0; border-radius: 0 20px 20px 0; border-left: 0; }
+.immersive-volume {
+  flex: none; width: 56px; box-sizing: border-box; padding: 18px 0 12px; border-radius: 20px 0 0 20px;
+  background: rgba(19, 17, 15, .4); border: 1px solid rgba(255, 250, 240, .1); border-right: 1px solid rgba(255, 250, 240, .06);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5); backdrop-filter: blur(30px) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, .08), 0 20px 60px rgba(0, 0, 0, .25);
+  transition: opacity .6s ease;
+}
+[data-theme="light"] .immersive-volume { background: rgba(250, 246, 239, .5); border-color: rgba(40, 32, 24, .1); }
+.immersive-volume .mc-icon-btn { color: var(--ink); }
+.immersive.idle .immersive-volume { opacity: .35; }

@@ -9,6 +9,7 @@ import { enterFullscreen } from "../lib/fullscreen";
 import { Backdrop } from "./Backdrop";
 import { FrostGrain } from "./FrostGrain";
 import { SeekBar } from "./SeekBar";
+import { VerticalVolume } from "./VolumePopover";
 import { RepeatButton, ShuffleButton } from "./PlayerBar";
 import { albumKey, fileArtist, useFileCover } from "../lib/fileTags";
 import { Glyph, PlayButton, Sleeve } from "./ui";
@@ -114,6 +115,11 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
           <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artistName) : sleeveSeed(localAlbum?.title ?? t.title, artistName)}
             alt={release ? `${release.title} cover` : localAlbum ? `${localAlbum.title} cover` : ""} />
         )}
+        <div className="immersive-card">
+        {/* The volume, docked to the song's card on the side facing the cover. */}
+        <div className="immersive-volume">
+          <VerticalVolume />
+        </div>
         <div className="immersive-info">
           <FrostGrain source="immersive" saturate={1.5} />
           {release && (
@@ -149,6 +155,7 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
               <ScrollText size={15} strokeWidth={1.75} aria-hidden="true" /> {showInfo ? "Show the cover" : t.lyrics ? "Lyrics" : "Credits"}
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>

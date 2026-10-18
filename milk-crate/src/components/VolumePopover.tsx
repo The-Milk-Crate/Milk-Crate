@@ -17,14 +17,9 @@ export function VolumeIcon({ size = 18 }: { size?: number }) {
  * an upright slider (drag, scroll, arrow keys), the level, and mute. Closes like the equalizer.
  */
 export function VolumePopover({ anchor, onClose }: { anchor: RefObject<HTMLElement | null>; onClose: () => void }) {
-  const p = usePlayer();
   const box = useRef<HTMLDivElement>(null);
-  const track = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; bottom: number } | null>(null);
   const [closing, setClosing] = useState(false);
-  const level = Math.round((p.muted ? 0 : p.volume) * 100);
-  const set = (v: number) => p.setVolume(Math.max(0, Math.min(100, Math.round(v))) / 100);
-
   useLayoutEffect(() => {
     const measure = () => {
       const bar = document.querySelector(".shell-player")?.getBoundingClientRect();
@@ -56,13 +51,34 @@ export function VolumePopover({ anchor, onClose }: { anchor: RefObject<HTMLEleme
     return () => { window.removeEventListener("keydown", onKey, true); window.removeEventListener("pointerdown", onDown, true); };
   }, [close, anchor]);
 
-  useEffect(() => { track.current?.focus({ preventScroll: true }); }, [place !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!place) return null;
+  return createPortal(
+    <div ref={box} className={`eq-pop vol-pop${closing ? " is-closing" : ""}`} role="dialog" aria-label="Volume"
+      style={{ left: place.left, bottom: place.bottom }}>
+      <VerticalVolume autoFocus />
+    </div>,
+    document.body,
+  );
+}
 
-  // Scrolling over the pop-out turns it up or down.
+/**
+ * An upright volume slider: the level, the slider (drag, scroll over it, arrow keys) and mute.
+ * In the volume pop-out and docked beside the song in immersive mode.
+ */
+export function VerticalVolume({ autoFocus = false, className = "" }: { autoFocus?: boolean; className?: string }) {
+  const p = usePlayer();
+  const box = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  const level = Math.round((p.muted ? 0 : p.volume) * 100);
+  const set = (v: number) => p.setVolume(Math.max(0, Math.min(100, Math.round(v))) / 100);
+
+  useEffect(() => { if (autoFocus) track.current?.focus({ preventScroll: true }); }, [autoFocus]);
+
+  // Scrolling over it turns it up or down.
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); set(level + (e.deltaY < 0 ? 5 : -5)); };
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); e.stopPropagation(); set(level + (e.deltaY < 0 ? 5 : -5)); };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   });
@@ -81,15 +97,13 @@ export function VolumePopover({ anchor, onClose }: { anchor: RefObject<HTMLEleme
   };
   const key = (e: KeyboardEvent) => {
     const step = ({ ArrowUp: 5, ArrowRight: 5, ArrowDown: -5, ArrowLeft: -5, PageUp: 20, PageDown: -20 } as Record<string, number>)[e.key];
-    if (step !== undefined) { e.preventDefault(); set(level + step); }
+    if (step !== undefined) { e.preventDefault(); e.stopPropagation(); set(level + step); }
     else if (e.key === "Home") { e.preventDefault(); set(100); }
     else if (e.key === "End") { e.preventDefault(); set(0); }
   };
 
-  if (!place) return null;
-  return createPortal(
-    <div ref={box} className={`eq-pop vol-pop${closing ? " is-closing" : ""}`} role="dialog" aria-label="Volume"
-      style={{ left: place.left, bottom: place.bottom }}>
+  return (
+    <div ref={box} className={`vol-vertical${className ? ` ${className}` : ""}`}>
       <span className="vol-pop-level numeral" aria-hidden="true">{level}</span>
       <div ref={track} className="vol-pop-track" role="slider" tabIndex={0} aria-label="Volume" aria-orientation="vertical"
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={level} aria-valuetext={`${level}%`}
@@ -100,8 +114,7 @@ export function VolumePopover({ anchor, onClose }: { anchor: RefObject<HTMLEleme
       <button type="button" className="mc-icon-btn" aria-label={p.muted ? "Unmute" : "Mute"} aria-pressed={p.muted} onClick={() => p.setMuted(!p.muted)}>
         <VolumeIcon />
       </button>
-    </div>,
-    document.body,
+    </div>
   );
 }
 
