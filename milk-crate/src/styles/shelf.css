@@ -33,7 +33,11 @@
 /* The cover is a full square (never cropped); the hinge takes the rest of the case's width. */
 .cd-case { position: absolute; inset: 0; display: flex; border-radius: var(--radius-sm); overflow: hidden; background: #2f2a25; }
 .cd-case .mc-sleeve { flex: none; height: 100%; width: auto; aspect-ratio: 1; border-radius: 0; }
-.cd-case .mc-sleeve img { object-fit: contain; }
+/* Covers that aren't square are zoomed to fill the square edge to edge. */
+.cd-case .mc-sleeve img { object-fit: cover; }
+/* A thin outline in the cover's second color around the hinge and cover together. */
+.cd-case::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
+  box-shadow: inset 0 0 0 2px var(--rim, transparent); }
 /* The hinge: frosted glass tinted with a color from the cover. */
 .cd-hinge { position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden; background: color-mix(in srgb, var(--ridge) 55%, #15110e); }
 .cd-hinge-blur { position: absolute; inset: -14px; background-size: cover; background-position: left center; filter: blur(7px) saturate(1.5); opacity: .5; }

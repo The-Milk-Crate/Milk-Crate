@@ -152,6 +152,54 @@ export function dominantHue(pixels: RGB[]): number | null {
   return ((Math.atan2(sums[best][1], sums[best][0]) * 180) / Math.PI + 360) % 360;
 }
 
+/**
+ * The album's two signature hues: the strongest, and the strongest one at least 60° away from it
+ * that carries a fair share of the color (null if the art is really one color, or greyscale).
+ */
+export function twoHues(pixels: RGB[]): [number | null, number | null] {
+  const buckets = new Array(24).fill(0);
+  const sums = new Array(24).fill(0).map(() => [0, 0]);
+  for (const px of pixels) {
+    const { L, C, h } = rgbToOklch(px);
+    if (C < 0.04 || L < 0.2 || L > 0.97) continue;
+    const i = Math.floor(h / 15) % 24;
+    const w = C * C;
+    buckets[i] += w;
+    sums[i][0] += Math.cos((h * Math.PI) / 180) * w;
+    sums[i][1] += Math.sin((h * Math.PI) / 180) * w;
+  }
+  const hueOf = (i: number) => ((Math.atan2(sums[i][1], sums[i][0]) * 180) / Math.PI + 360) % 360;
+  const first = buckets.indexOf(Math.max(...buckets));
+  if (!buckets[first]) return [null, null];
+  let second = -1;
+  buckets.forEach((w, i) => {
+    const apart = Math.min(Math.abs(i - first), 24 - Math.abs(i - first));
+    if (apart >= 4 && w >= buckets[first] * 0.06 && (second < 0 || w > buckets[second])) second = i;
+  });
+  return [hueOf(first), second < 0 ? null : hueOf(second)];
+}
+
+/** The pixels of album art (an image URL), small. */
+async function artPixels(src: string): Promise<RGB[]> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = src;
+  await img.decode();
+  const size = 48;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return [];
+  ctx.drawImage(img, 0, 0, size, size);
+  const data = ctx.getImageData(0, 0, size, size).data;
+  const px: RGB[] = [];
+  for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 128) px.push([data[i], data[i + 1], data[i + 2]]);
+  return px;
+}
+
+/** Reads album art and returns its two signature hues (see twoHues). */
+export const huesFromImage = async (src: string) => twoHues(await artPixels(src));
+
 /** Reads album art (an image URL) and returns its signature hue. */
 export async function hueFromImage(src: string): Promise<number | null> {
   const img = new Image();

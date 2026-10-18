@@ -1,4 +1,4 @@
-import { accentForHue, hueFromImage } from "../lib/accent";
+import { accentForHue, huesFromImage, oklchToHex } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, ShelfFormat } from "../App";
@@ -258,10 +258,7 @@ function Cover({ it, kind }: { it: ShelfItem; kind: ShelfFormat }) {
     );
   if (kind === "cds")
     return (
-      <span className="cd-case">
-        <CdRidge art={it.art} fallback={it.color} />
-        <Sleeve src={it.art} seed={it.seed} alt="" />
-      </span>
+      <CdCase it={it} />
     );
   if (kind === "cassettes")
     return (
@@ -282,25 +279,47 @@ function Cover({ it, kind }: { it: ShelfItem; kind: ShelfFormat }) {
   return <Sleeve src={it.art} seed={it.seed} alt="" />;
 }
 
-const ridgeHues = new Map<string, Promise<number | null>>();
+const caseHues = new Map<string, Promise<[number | null, number | null]>>();
 
 /**
- * The jewel case's hinge, as a strip of frosted glass: the cover's edge blurred behind it,
- * tinted with a color from the cover (the same one the app's accent would take from it).
+ * A jewel case's two colors from its cover: the hinge's tint (the cover's main color) and the thin
+ * outline around the whole case (its second color, or a deeper shade of the first), so the hinge
+ * and the cover read as one piece.
  */
-function CdRidge({ art, fallback }: { art?: string; fallback: string }) {
-  const [tint, setTint] = useState<string | null>(null);
+function useCaseColors(art: string | undefined, fallback: string) {
+  const [hues, setHues] = useState<[number | null, number | null]>([null, null]);
   useEffect(() => {
-    if (!art) { setTint(null); return; }
+    setHues([null, null]);
+    if (!art) return;
     let live = true;
-    if (!ridgeHues.has(art)) ridgeHues.set(art, hueFromImage(art).catch(() => null));
-    void ridgeHues.get(art)!.then((h) => live && setTint(h == null ? null : accentForHue(h, "dark").accent));
+    if (!caseHues.has(art)) caseHues.set(art, huesFromImage(art).catch(() => [null, null] as [null, null]));
+    void caseHues.get(art)!.then((h) => live && setHues(h));
     return () => { live = false; };
   }, [art]);
-  const color = art ? tint ?? "#b9b2a8" : fallback;
+  const [h1, h2] = hues;
+  if (!art) return { ridge: fallback, rim: "rgba(255, 255, 255, .22)" };
+  if (h1 == null) return { ridge: "#b9b2a8", rim: "rgba(255, 255, 255, .3)" };
+  return {
+    ridge: accentForHue(h1, "dark").accent,
+    rim: h2 != null ? accentForHue(h2, "dark").accent : oklchToHex(0.5, 0.1, h1),
+  };
+}
+
+/** The jewel case's hinge, as a strip of frosted glass: the cover's edge blurred behind it, tinted with the cover's color. */
+function CdRidge({ art }: { art?: string }) {
   return (
-    <span className="cd-hinge" style={{ "--ridge": color } as CSSProperties}>
+    <span className="cd-hinge">
       {art && <span className="cd-hinge-blur" style={{ backgroundImage: `url("${art}")` }} />}
+    </span>
+  );
+}
+
+function CdCase({ it }: { it: ShelfItem }) {
+  const { ridge, rim } = useCaseColors(it.art, it.color);
+  return (
+    <span className="cd-case" style={{ "--ridge": ridge, "--rim": rim } as CSSProperties}>
+      <CdRidge art={it.art} />
+      <Sleeve src={it.art} seed={it.seed} alt="" />
     </span>
   );
 }
