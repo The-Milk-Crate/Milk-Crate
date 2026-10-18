@@ -159,6 +159,7 @@ const SHOWN = 10;
 function useStackScale(kind: ShelfFormat) {
   const box = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -169,6 +170,7 @@ function useStackScale(kind: ShelfFormat) {
       // Leave room above for the page header and tabs, below for the controls and the player.
       const byHeight = (window.innerHeight - 420) / (base.h * GROW + 40);
       setScale(Math.max(1, Math.min(1.75, byWidth, byHeight)));
+      setWidth(el.clientWidth);
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -176,11 +178,11 @@ function useStackScale(kind: ShelfFormat) {
     window.addEventListener("resize", fit);
     return () => { ro.disconnect(); window.removeEventListener("resize", fit); };
   }, [kind]);
-  return { box, scale };
+  return { box, scale, width };
 }
 
 function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat; go: Go }) {
-  const { box, scale } = useStackScale(kind);
+  const { box, scale, width } = useStackScale(kind);
   const base = SIZES[kind];
   const size = { ...base, w: Math.round(base.w * scale), h: Math.round(base.h * scale), strip: Math.round(base.strip * scale) };
   const { index, setIndex, wasDrag, handlers } = useFlipper(items.length, {
@@ -229,12 +231,15 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
             if (Math.abs(j) > SHOWN) return null;
             // Neighbors tuck behind the one you're on, a strip of each showing.
             const offset = j === 0 ? 0 : Math.sign(j) * (big + Math.abs(j) * size.strip);
+            // Whole pixels, and moved with transform (not left/top): sliding items with fractional
+            // edges left a faint streak along their top edge on scaled displays.
+            const x = Math.round(width / 2 - size.w / 2 + offset);
             const style = {
-              left: `calc(50% - ${size.w / 2}px + ${offset}px)`,
-              top: (stageH - size.h) / 2,
+              left: 0,
+              top: Math.round((stageH - size.h) / 2),
               width: size.w, height: size.h,
               zIndex: 100 - Math.abs(j),
-              transform: j === 0 ? `scale(${GROW})` : "none",
+              transform: `translate3d(${x}px, 0, 0)${j === 0 ? ` scale(${GROW})` : ""}`,
             } as CSSProperties;
             return (
               <button key={it.item.id} type="button" tabIndex={-1} className={`flat-item is-${kind}${j === 0 ? " is-front" : ""}`} style={style}

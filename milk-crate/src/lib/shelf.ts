@@ -109,6 +109,8 @@ let ctx: AudioContext | null = null;
  */
 export function flipSound(kind: "sleeve" | "case" | "tape") {
   if (!shelfSoundsOn()) return;
+  // Not over the music: only when nothing's playing (the player marks the page while it plays).
+  if (typeof document !== "undefined" && document.documentElement.dataset.playing === "true") return;
   try {
     ctx ??= new AudioContext();
     const len = kind === "sleeve" ? 0.05 : 0.03;
