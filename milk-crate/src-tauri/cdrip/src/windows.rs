@@ -41,10 +41,14 @@ mod imp {
     const GENERIC_READ: u32 = 0x8000_0000;
     const FILE_SHARE_READ_WRITE: u32 = 0x1 | 0x2;
     const OPEN_EXISTING: u32 = 3;
+    const DRIVE_REMOVABLE: u32 = 2;
     const DRIVE_CDROM: u32 = 5;
+    const FILE_DEVICE_CD_ROM: u32 = 2;
     const IOCTL_CDROM_READ_TOC: u32 = 0x0002_4000;
     const IOCTL_CDROM_RAW_READ: u32 = 0x0002_403E;
     const IOCTL_STORAGE_EJECT_MEDIA: u32 = 0x002D_4808;
+    const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D_1080;
+    const IOCTL_STORAGE_CHECK_VERIFY: u32 = 0x002D_4800;
     const CDDA: u32 = 2;
     /// Sectors per read (the driver's limit is about 64 KB).
     const CHUNK: u32 = 20;
@@ -56,6 +60,7 @@ mod imp {
         fn CloseHandle(handle: *mut c_void) -> i32;
         fn GetLogicalDrives() -> u32;
         fn GetDriveTypeW(root: *const u16) -> u32;
+        fn GetLastError() -> u32;
     }
 
     #[repr(C)]
@@ -69,14 +74,27 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
+    /// Plain words for the Windows errors a CD drive gives.
+    fn why(code: u32) -> String {
+        match code {
+            2 | 3 => "Windows can't see the drive right now".into(),
+            5 => "Windows denied access to the drive (error 5). Another program may be using it".into(),
+            21 => "no disc in it, or it's still spinning up".into(),
+            32 => "another program is using it".into(),
+            1117 => "the drive stopped responding (try unplugging and plugging it back in)".into(),
+            _ => format!("Windows error {code}"),
+        }
+    }
+
     struct Drive(*mut c_void);
     impl Drive {
-        fn open(letter: char) -> Option<Drive> {
-            let path = wide(&format!(r"\\.\{letter}:"));
-            let h = unsafe { CreateFileW(path.as_ptr(), GENERIC_READ, FILE_SHARE_READ_WRITE, std::ptr::null(), OPEN_EXISTING, 0, std::ptr::null_mut()) };
-            if h.is_null() || h as isize == -1 { None } else { Some(Drive(h)) }
+        /// `path` is "D:" or a device name like "CdRom0".
+        fn open(path: &str) -> Result<Drive, u32> {
+            let p = wide(&format!(r"\\.\{path}"));
+            let h = unsafe { CreateFileW(p.as_ptr(), GENERIC_READ, FILE_SHARE_READ_WRITE, std::ptr::null(), OPEN_EXISTING, 0, std::ptr::null_mut()) };
+            if h.is_null() || h as isize == -1 { Err(unsafe { GetLastError() }) } else { Ok(Drive(h)) }
         }
-        fn ioctl(&self, code: u32, input: &[u8], output: &mut [u8]) -> Option<usize> {
+        fn ioctl(&self, code: u32, input: &[u8], output: &mut [u8]) -> Result<usize, u32> {
             let mut got = 0u32;
             let ok = unsafe {
                 DeviceIoControl(
@@ -90,7 +108,29 @@ mod imp {
                     std::ptr::null_mut(),
                 )
             };
-            (ok != 0).then_some(got as usize)
+            if ok != 0 { Ok(got as usize) } else { Err(unsafe { GetLastError() }) }
+        }
+        /// (device type, number) of the drive, to match drive letters to \\.\CdRomN devices.
+        fn device_number(&self) -> Option<(u32, u32)> {
+            let mut buf = [0u8; 12];
+            self.ioctl(IOCTL_STORAGE_GET_DEVICE_NUMBER, &[], &mut buf).ok()?;
+            Some((u32::from_le_bytes(buf[0..4].try_into().ok()?), u32::from_le_bytes(buf[4..8].try_into().ok()?)))
+        }
+        fn read_toc(&self) -> Result<Option<Toc>, u32> {
+            // Wakes a USB drive and checks there's a disc before asking for the contents.
+            let _ = self.ioctl(IOCTL_STORAGE_CHECK_VERIFY, &[], &mut []);
+            let mut buf = vec![0u8; 804]; // sizeof(CDROM_TOC)
+            let mut last = 0;
+            for attempt in 0..3 {
+                match self.ioctl(IOCTL_CDROM_READ_TOC, &[], &mut buf) {
+                    Ok(_) => return Ok(parse_cdrom_toc(&buf)),
+                    Err(e) => last = e,
+                }
+                if attempt < 2 {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
+            }
+            Err(last)
         }
     }
     impl Drop for Drive {
@@ -100,39 +140,77 @@ mod imp {
     }
 
     pub struct WinDisc {
-        pub letter: char,
+        /// "D:" or "CdRom1" (a drive with no letter).
+        pub path: String,
         pub toc: Toc,
     }
 
-    /// Every CD drive with an audio CD in it.
-    pub fn scan() -> Vec<WinDisc> {
+    /// Every CD drive with an audio CD in it, plus a note on each drive that was skipped and why.
+    pub fn scan() -> (Vec<WinDisc>, Vec<String>) {
         let mask = unsafe { GetLogicalDrives() };
-        let mut out = Vec::new();
+        let mut discs = Vec::new();
+        let mut notes = Vec::new();
+        let mut seen_cd_numbers = Vec::new();
+        // Opens a drive and reads its disc. `surely_cd`: Windows already says it's a CD drive. Notes are
+        // only kept for CD drives (a USB stick doesn't answer the CD questions, which is expected).
+        // Returns the drive's CD device number, if it is one.
+        let try_drive = |path: String, name: String, surely_cd: bool, discs: &mut Vec<WinDisc>, notes: &mut Vec<String>| -> Option<u32> {
+            let drive = match Drive::open(&path) {
+                Ok(d) => d,
+                Err(e) => {
+                    if surely_cd { notes.push(format!("{name}: couldn't open it ({})", why(e))); }
+                    return None;
+                }
+            };
+            let number = match drive.device_number() {
+                Some((FILE_DEVICE_CD_ROM, n)) => Some(n),
+                _ => None,
+            };
+            if !surely_cd && number.is_none() {
+                return None;
+            }
+            match drive.read_toc() {
+                Ok(Some(toc)) => discs.push(WinDisc { path: path.clone(), toc }),
+                Ok(None) => notes.push(format!("{name}: the disc in it has no music tracks (it's a data disc)")),
+                Err(e) => notes.push(format!("{name}: {}", why(e))),
+            }
+            number
+        };
         for i in 0..26u32 {
             if mask & (1 << i) == 0 {
                 continue;
             }
             let letter = (b'A' + i as u8) as char;
-            let root = wide(&format!("{letter}:\\"));
-            if unsafe { GetDriveTypeW(root.as_ptr()) } != DRIVE_CDROM {
+            let kind = unsafe { GetDriveTypeW(wide(&format!("{letter}:\\")).as_ptr()) };
+            // Some USB CD drives show up as "removable", so those are asked too.
+            if kind != DRIVE_CDROM && kind != DRIVE_REMOVABLE {
                 continue;
             }
-            let Some(drive) = Drive::open(letter) else { continue };
-            let mut buf = vec![0u8; 804]; // sizeof(CDROM_TOC)
-            if drive.ioctl(IOCTL_CDROM_READ_TOC, &[], &mut buf).is_none() {
-                continue; // empty drive
-            }
-            if let Some(toc) = parse_cdrom_toc(&buf) {
-                out.push(WinDisc { letter, toc });
+            if let Some(n) = try_drive(format!("{letter}:"), format!("CD drive ({letter}:)"), kind == DRIVE_CDROM, &mut discs, &mut notes) {
+                seen_cd_numbers.push(n);
             }
         }
-        out
+        // CD drives without a drive letter (it happens with some USB drives).
+        for n in 0..10u32 {
+            if seen_cd_numbers.contains(&n) {
+                continue;
+            }
+            let path = format!("CdRom{n}");
+            if Drive::open(&path).is_err() {
+                continue;
+            }
+            try_drive(path, format!("CD drive {} (no drive letter)", n + 1), true, &mut discs, &mut notes);
+        }
+        if discs.is_empty() && notes.is_empty() {
+            notes.push("Windows doesn't list any CD drives. Check the drive shows up in File Explorer under This PC.".into());
+        }
+        (discs, notes)
     }
 
     /// Reads one track's audio (interleaved 16-bit stereo, as i32 for the encoder).
     pub fn read_track(disc: &WinDisc, n: u8, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<Vec<i32>, String> {
         let (start, len) = disc.toc.span(n).ok_or(format!("Track {n} isn't on the disc"))?;
-        let drive = Drive::open(disc.letter).ok_or("Couldn't open the CD drive")?;
+        let drive = Drive::open(&disc.path).map_err(|e| format!("Couldn't open the CD drive: {}", why(e)))?;
         let lba = start - 150;
         let mut samples = Vec::with_capacity(len as usize * SECTOR_BYTES / 2);
         let mut buf = vec![0u8; CHUNK as usize * SECTOR_BYTES];
@@ -146,14 +224,14 @@ mod imp {
             let input = unsafe { std::slice::from_raw_parts(&info as *const RawReadInfo as *const u8, std::mem::size_of::<RawReadInfo>()) };
             let want = count as usize * SECTOR_BYTES;
             // Scratches: try a few times before giving up.
-            let mut got = None;
+            let mut got = Err(0);
             for _ in 0..5 {
                 got = drive.ioctl(IOCTL_CDROM_RAW_READ, input, &mut buf[..want]);
-                if got == Some(want) {
+                if got == Ok(want) {
                     break;
                 }
             }
-            if got != Some(want) {
+            if got != Ok(want) {
                 return Err(format!("Couldn't read track {n} at {}:{:02}. The disc may be scratched or dirty.", done / 75 / 60, done / 75 % 60));
             }
             samples.extend(buf[..want].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as i32));
@@ -164,8 +242,8 @@ mod imp {
     }
 
     pub fn eject(disc: &WinDisc) -> Result<(), String> {
-        let drive = Drive::open(disc.letter).ok_or("Couldn't open the CD drive")?;
-        drive.ioctl(IOCTL_STORAGE_EJECT_MEDIA, &[], &mut []).map(|_| ()).ok_or_else(|| "The drive didn't eject".to_string())
+        let drive = Drive::open(&disc.path).map_err(|e| format!("Couldn't open the CD drive: {}", why(e)))?;
+        drive.ioctl(IOCTL_STORAGE_EJECT_MEDIA, &[], &mut []).map(|_| ()).map_err(|_| "The drive didn't eject".to_string())
     }
 }
 

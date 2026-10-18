@@ -47,10 +47,22 @@ mod cd {
         r.map_err(|e| e.to_string())?
     }
 
+    #[derive(serde::Serialize)]
+    pub struct Scan {
+        discs: Vec<cdrip::DiscInfo>,
+        /// Why drives were skipped ("CD drive (E:): no disc in it…"), shown when no CD is found.
+        notes: Vec<String>,
+    }
+
     /// Audio CDs in the drives right now.
     #[tauri::command]
-    pub async fn cd_discs() -> Vec<cdrip::DiscInfo> {
-        spawn_blocking(|| cdrip::discs().iter().map(|d| d.info()).collect()).await.unwrap_or_default()
+    pub async fn cd_discs() -> Result<Scan, String> {
+        spawn_blocking(|| {
+            let (discs, notes) = cdrip::scan();
+            Scan { discs: discs.iter().map(|d| d.info()).collect(), notes }
+        })
+        .await
+        .map_err(|e| e.to_string())
     }
 
     /// Albums on MusicBrainz that match the disc (best first). Empty when it isn't known.

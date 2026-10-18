@@ -50,6 +50,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
   const [ripping, setRipping] = useState(false);
   const [done, setDone] = useState<{ count: number; folder: string } | null>(null);
   const [error, setError] = useState("");
+  const [notes, setNotes] = useState<string[]>([]);
 
   // Watch the drives until there's a CD (and notice when it's taken out).
   const discId = disc?.discId;
@@ -59,9 +60,10 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
     let live = true;
     const check = async () => {
       if (busy.current) return;
-      const all = await findDiscs().catch(() => [] as Disc[]);
+      const found = await findDiscs().catch((e) => ({ discs: [] as Disc[], notes: [`Couldn't check the CD drives: ${String(e)}`] }));
       if (!live) return;
-      const d = all[0] ?? null;
+      setNotes(found.notes);
+      const d = found.discs[0] ?? null;
       setDisc((old) => (old?.discId === d?.discId && old?.id === d?.id ? old : d));
     };
     void check();
@@ -169,7 +171,10 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
       {disc === null && (
         <div className="empty cd-ripper-empty">
           <Disc3 size={28} strokeWidth={1.5} aria-hidden="true" />
-          <span>Put an audio CD in your drive. It'll show up here.</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span>Put an audio CD in your drive. It'll show up here.</span>
+            {notes.map((n) => <span key={n} className="caption muted">{n}</span>)}
+          </div>
         </div>
       )}
 

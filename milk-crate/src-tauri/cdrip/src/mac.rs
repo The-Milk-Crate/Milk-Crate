@@ -18,15 +18,27 @@ pub struct MacDisc {
 
 /// Every audio CD mounted under `root` (normally /Volumes).
 pub fn scan(root: &Path) -> Vec<MacDisc> {
-    let Ok(entries) = std::fs::read_dir(root) else { return vec![] };
+    scan_with_notes(root).0
+}
+
+/// Audio CDs under `root`, plus notes on CD-looking volumes that couldn't be used and why.
+pub fn scan_with_notes(root: &Path) -> (Vec<MacDisc>, Vec<String>) {
     let mut out = Vec::new();
+    let mut notes = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else { return (out, notes) };
     for e in entries.flatten() {
         let volume = e.path();
-        let Ok(toc_value) = plist::Value::from_file(volume.join(".TOC.plist")) else { continue };
-        let Some(toc) = parse_toc(&toc_value) else { continue };
-        let mut files: Vec<(u8, PathBuf)> = std::fs::read_dir(&volume)
-            .into_iter()
-            .flatten()
+        let label = volume.file_name().and_then(|n| n.to_str()).unwrap_or("Audio CD").to_string();
+        let listing = match std::fs::read_dir(&volume) {
+            Ok(l) => l,
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::PermissionDenied && volume.join(".TOC.plist").exists() {
+                    notes.push(format!("{label}: macOS is keeping Milk Crate out of the CD. Open System Settings › Privacy & Security › Files and Folders, and turn on Removable Volumes for Milk Crate."));
+                }
+                continue;
+            }
+        };
+        let mut files: Vec<(u8, PathBuf)> = listing
             .flatten()
             .filter_map(|f| {
                 let p = f.path();
@@ -39,13 +51,69 @@ pub fn scan(root: &Path) -> Vec<MacDisc> {
             })
             .collect();
         files.sort_by_key(|(n, _)| *n);
+        let toc = match plist::Value::from_file(volume.join(".TOC.plist")) {
+            Ok(v) => parse_toc(&v),
+            // No readable table of contents: work it out from the track files (exact lengths; the
+            // gaps between songs are unknown, so a lookup may only find near matches).
+            Err(_) if !files.is_empty() => toc_from_files(&files),
+            Err(_) => continue,
+        };
+        let Some(toc) = toc else {
+            notes.push(format!("{label}: couldn't read the CD's track list"));
+            continue;
+        };
         if files.is_empty() {
+            notes.push(format!("{label}: the disc in it has no music tracks (it's a data disc)"));
             continue;
         }
-        let label = volume.file_name().and_then(|n| n.to_str()).unwrap_or("Audio CD").to_string();
         out.push(MacDisc { volume, label, toc, files });
     }
-    out
+    (out, notes)
+}
+
+/// A table of contents from the track files' lengths alone.
+fn toc_from_files(files: &[(u8, PathBuf)]) -> Option<Toc> {
+    let mut tracks = Vec::new();
+    let mut at = 150u32;
+    for (n, p) in files {
+        tracks.push(RawTrack { number: *n, start: at, data: false });
+        at += aiff_frames(p)?.div_ceil(588); // 588 stereo frames per CD sector
+    }
+    Toc::from_raw(&tracks, at)
+}
+
+/// Number of stereo sample frames in an AIFF file (from its COMM chunk).
+fn aiff_frames(path: &Path) -> Option<u32> {
+    let mut f = File::open(path).ok()?;
+    let mut head = [0u8; 12];
+    f.read_exact(&mut head).ok()?;
+    loop {
+        let mut ch = [0u8; 8];
+        f.read_exact(&mut ch).ok()?;
+        let size = u32::from_be_bytes([ch[4], ch[5], ch[6], ch[7]]) as i64;
+        if &ch[0..4] == b"COMM" {
+            let mut c = [0u8; 6];
+            f.read_exact(&mut c).ok()?;
+            return Some(u32::from_be_bytes([c[2], c[3], c[4], c[5]]));
+        }
+        f.seek(SeekFrom::Current(size + (size & 1))).ok()?;
+    }
+}
+
+/// Whether macOS sees a CD drive, and what's in it (from `drutil status`), for when no disc shows up.
+pub fn drive_note() -> Option<String> {
+    let out = std::process::Command::new("drutil").arg("status").output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    if text.trim().is_empty() {
+        return Some("macOS doesn't see a CD drive. Check it's plugged in (some USB drives need both plugs, or a powered port).".into());
+    }
+    let kind = text.lines().find_map(|l| l.trim().strip_prefix("Type:")).map(|t| t.trim().to_string());
+    Some(match kind.as_deref() {
+        Some(t) if t.contains("No Media") => "The CD drive is connected, but there's no disc in it.".into(),
+        Some(t) if t.contains("CD-ROM") || t.contains("CD-R") => format!("The CD drive has a disc in it ({t}), but macOS hasn't opened it as an audio CD yet. Give it a few seconds, or check it shows up in Finder."),
+        Some(t) => format!("The CD drive has a {t} in it, not an audio CD."),
+        None => "The CD drive is connected.".into(),
+    })
 }
 
 /// Reads .TOC.plist. Its "Start Block"s don't count the 2-second lead-in, so 150 is added.
@@ -190,6 +258,11 @@ mod tests {
         let cancel = AtomicBool::new(false);
         assert_eq!(read_track(d, 1, &|_| {}, &cancel).unwrap(), vec![1, -1, 300, -300]);
         assert_eq!(read_track(d, 2, &|_| {}, &cancel).unwrap(), vec![5, 6]);
+        // Without a readable .TOC.plist, the track list comes from the files.
+        std::fs::remove_file(vol.join(".TOC.plist")).unwrap();
+        let d = scan(&root).pop().unwrap();
+        assert_eq!(d.toc.offsets, vec![150, 151]);
+        assert_eq!(d.toc.leadout, 152);
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

@@ -70,22 +70,41 @@ impl Disc {
 
 /// Every audio CD in a drive right now.
 pub fn discs() -> Vec<Disc> {
-    let mut out: Vec<Disc> = Vec::new();
-    #[cfg(windows)]
-    for d in windows::scan() {
-        out.push(Disc { id: format!("{}:", d.letter), label: format!("CD drive ({}:)", d.letter), toc: d.toc.clone(), source: Source::Win(d) });
-    }
-    if cfg!(target_os = "macos") {
-        out.extend(mac_discs(Path::new("/Volumes")));
-    }
-    out
+    scan().0
 }
 
+/// The discs, plus plain-words notes on drives that couldn't be used (no disc, no access…),
+/// so the app can say why nothing shows up.
+pub fn scan() -> (Vec<Disc>, Vec<String>) {
+    let mut out: Vec<Disc> = Vec::new();
+    let mut notes = Vec::new();
+    #[cfg(windows)]
+    {
+        let (found, why) = windows::scan();
+        notes.extend(why);
+        for d in found {
+            let label = if d.path.ends_with(':') { format!("CD drive ({})", d.path) } else { "CD drive".to_string() };
+            out.push(Disc { id: d.path.clone(), label, toc: d.toc.clone(), source: Source::Win(d) });
+        }
+    }
+    if cfg!(target_os = "macos") {
+        let (found, why) = mac::scan_with_notes(Path::new("/Volumes"));
+        notes.extend(why);
+        out.extend(found.into_iter().map(mac_disc));
+        if out.is_empty() && notes.is_empty() {
+            notes.extend(mac::drive_note());
+        }
+    }
+    (out, notes)
+}
+
+fn mac_disc(d: mac::MacDisc) -> Disc {
+    Disc { id: d.volume.to_string_lossy().into_owned(), label: d.label.clone(), toc: d.toc.clone(), source: Source::Mac(d) }
+}
+
+#[cfg(test)]
 fn mac_discs(root: &Path) -> Vec<Disc> {
-    mac::scan(root)
-        .into_iter()
-        .map(|d| Disc { id: d.volume.to_string_lossy().into_owned(), label: d.label.clone(), toc: d.toc.clone(), source: Source::Mac(d) })
-        .collect()
+    mac::scan(root).into_iter().map(mac_disc).collect()
 }
 
 pub fn find(id: &str) -> Result<Disc, String> {

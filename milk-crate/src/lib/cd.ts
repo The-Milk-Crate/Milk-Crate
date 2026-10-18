@@ -55,7 +55,8 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   return invoke<T>(cmd, args);
 }
 
-export const findDiscs = () => call<Disc[]>("cd_discs");
+/** The CDs in the drives, and plain-words notes on drives that couldn't be used (no disc, no access…). */
+export const findDiscs = () => call<{ discs: Disc[]; notes: string[] }>("cd_discs");
 export const lookupDisc = (id: string) => call<CdMatch[]>("cd_lookup", { id });
 export const fetchCover = (releaseId: string) => call<string | null>("cd_cover", { releaseId });
 export const cancelRip = () => call<void>("cd_cancel");
