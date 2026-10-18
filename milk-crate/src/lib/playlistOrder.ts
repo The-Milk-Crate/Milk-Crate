@@ -1,7 +1,7 @@
 /** Where songs from this computer sit in a playlist (see library.tsx). */
 
-/** A song from this computer (a ripped CD or your files), not Milk Crate's catalog. */
-export const isLocalTrackId = (id: string) => id.startsWith("local:");
+/** A song from your computers (a ripped CD or your files: "local:<path>" here, "song:…" described), not Milk Crate's catalog. */
+export const isLocalTrackId = (id: string) => id.startsWith("local:") || id.startsWith("song:");
 
 /**
  * A playlist's full order: the songs saved in your account (server), with this computer's songs

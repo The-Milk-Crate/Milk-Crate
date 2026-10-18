@@ -15,7 +15,7 @@
  * time so it starts right away; downloaded songs play from this computer.
  * Media keys and the system's now-playing controls work through MediaSession.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { shuffle, songWeight, weightedShuffle } from "./shuffle";
 import { load, save, usePersistentState } from "./storage";
 import { useAuth } from "./auth";
@@ -30,6 +30,7 @@ import { cachedLoudness, measureTrack } from "./normalizer";
 import { useDownloads } from "./downloads";
 import { useCatalog } from "./catalog";
 import { supabase } from "./supabase";
+import { fromPortable, isSongKey, setComputerSongs, toPortable, useComputerSongsVersion } from "./songKeys";
 
 export type Repeat = "off" | "all" | "one";
 /** A song counts as played (for artists' stats) after this long, or half of it if it's shorter. */
@@ -148,7 +149,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Files from this computer: favorites stay here. (Ones you had rated 5 stars start out as favorites.)
   const [startingLocalFavorites] = useState(fiveStarLocal);
   const [localFavorites, setLocalFavorites] = usePersistentState<string[]>("mc.localFavorites", startingLocalFavorites);
-  const favorites = useMemo(() => new Set([...localFavorites, ...library.favorites]), [localFavorites, library.favorites]);
+  // Signed in (and the server keeps them): favorites from your computers come from your account, so
+  // they're the same on every computer of yours that has the song. Otherwise this computer's.
+  const songsVersion = useComputerSongsVersion();
+  const synced = !!library.signedIn && library.computerFavorites !== null;
+  const favorites = useMemo(() => new Set(synced
+    ? [...library.favorites, ...library.computerFavorites!.map(fromPortable)]
+    : [...localFavorites, ...library.favorites]),
+  [synced, localFavorites, library.favorites, library.computerFavorites, songsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const [localHistory, setLocalHistory] = usePersistentState<Play[]>("mc.history", []);
   const auth = useAuth();
   const catalog = useCatalog();
@@ -191,6 +199,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => out.current!.setNormalizer(normalizerOn, normalizerDb, current?.id), [normalizerOn, normalizerDb, current?.id]);
 
   const localTracks = useMemo(() => [...stored, ...sessionTracks], [stored, sessionTracks]);
+  // So playlists and favorites can find this computer's copy of a song (see songKeys.ts).
+  useLayoutEffect(() => setComputerSongs(localTracks), [localTracks]);
+
+  // Once per account on this computer: favorites from this computer go to your account.
+  const { setComputerFavorite } = library;
+  useEffect(() => {
+    if (!synced || !auth.userId) return;
+    const flag = `mc.localFavoritesSent.${auth.userId}`;
+    if (load<boolean>(flag, false)) return;
+    const have = new Set(library.computerFavorites);
+    const keys = localFavorites.map(toPortable).filter((k) => isSongKey(k) && !have.has(k));
+    // Wait until this computer's songs are known (a favorite with no description yet).
+    if (localFavorites.some((id) => localTracks.some((t) => t.id === id) && !isSongKey(toPortable(id)))) return;
+    void setComputerFavorite(keys, true).then(() => save(flag, true), () => {});
+  }, [synced, auth.userId, songsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once: fix the header of FLAC files ripped before Milk Crate wrote it correctly
   // (a song with a very short last block wouldn't play). Only two bytes change, only when needed.
@@ -633,7 +656,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     isFavorite: (trackId: string) => favorites.has(trackId),
     toggleFavorite: (trackId: string) => {
       const on = !favorites.has(trackId);
-      if (trackId.startsWith("local:")) setLocalFavorites((f) => (on ? [trackId, ...f] : f.filter((x) => x !== trackId)));
+      if (trackId.startsWith("local:")) {
+        setLocalFavorites((f) => (on ? [trackId, ...f.filter((x) => x !== trackId)] : f.filter((x) => x !== trackId)));
+        const key = toPortable(trackId);
+        if (synced && isSongKey(key)) void attempt(() => library.setComputerFavorite([key], on));
+      }
       else void attempt(() => library.setFavorite(trackId, on));
     },
     setWeighted,

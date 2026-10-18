@@ -15,6 +15,7 @@ import { supabase } from "./supabase";
 import { usePersistentState } from "./storage";
 import { useLiveRefresh } from "./liveRefresh";
 import { isLocalTrackId, mergePlaylistOrder } from "./playlistOrder";
+import { fromPortable, isSongKey, toPortable, useComputerSongsVersion } from "./songKeys";
 import type { PhysicalFormat, Rating } from "./types";
 
 export interface SavedAlbum { releaseId: string; addedAt: string }
@@ -22,12 +23,15 @@ export interface SavedAlbum { releaseId: string; addedAt: string }
 export interface CrateSong { trackId: string; addedAt: string }
 export interface PhysicalItem { id: string; format: PhysicalFormat; releaseId?: string; artistName: string; title: string; note: string; addedAt: string }
 /**
- * A playlist. `trackIds` is its songs in order, including songs from this computer (ids "local:…",
- * e.g. a ripped CD) — those are kept on this computer only and never sent to Milk Crate's servers.
- * `localCount` is how many of them there are.
+ * A playlist. `trackIds` is its songs in order, including songs from your computers: "local:…" for
+ * this computer's copy (e.g. a ripped CD), "song:…" for one this computer doesn't have. The music
+ * never leaves your computers; only a description of each song is kept with the playlist (see songKeys.ts).
+ * `localCount` is how many play here, `missingCount` how many aren't on this computer.
  */
 export interface Playlist {
-  id: string; name: string; trackIds: string[]; updatedAt: string; localCount: number;
+  id: string; name: string; trackIds: string[]; updatedAt: string; localCount: number; missingCount: number;
+  /** The full order as saved with your account when it has songs from your computers (described), else none. */
+  songOrder?: string[];
   /** The picture you chose, kept with your account ("<user>/<playlist>.jpg?v=…"); none: Milk Crate makes one. */
   coverPath?: string;
 }
@@ -80,6 +84,10 @@ interface Library {
   follow: (artistId: string) => Promise<void>;
   unfollow: (artistId: string) => Promise<void>;
   isFavorite: (trackId: string) => boolean;
+  /** Favorite songs from your computers, described (see songKeys.ts); null while the server doesn't keep them (013 not run). */
+  computerFavorites: string[] | null;
+  /** Favorites songs from your computers (by description), or takes them out. */
+  setComputerFavorite: (keys: string[], on: boolean) => Promise<void>;
   /** Adds or removes a song from your favorites. */
   setFavorite: (trackId: string, on: boolean) => Promise<void>;
   /** Rates an album 1–5 stars (0 clears your rating). */
@@ -94,6 +102,7 @@ const LibraryContext = createContext<Library | null>(null);
 
 const SETUP_HINT = "the server needs a one-time update: run supabase/004_crates_and_ratings.sql in the Supabase SQL Editor.";
 const SETUP_HINT_011 = "the server needs a one-time update: run supabase/011_crate_songs.sql in the Supabase SQL Editor.";
+const SETUP_HINT_013 = "the server needs a one-time update: run supabase/013_computer_songs.sql in the Supabase SQL Editor.";
 const SETUP_HINT_007 = "the server needs a one-time update: run supabase/007_albums_favorites_streams.sql in the Supabase SQL Editor.";
 const check = (error: { message: string } | null, hint = SETUP_HINT) => {
   if (!error) return;
@@ -109,12 +118,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [crateSongs, setCrateSongs] = useState<CrateSong[]>([]);
   const [physical, setPhysical] = useState<PhysicalItem[]>([]);
   const [serverPlaylists, setPlaylists] = useState<Playlist[]>([]);
-  // Where this computer's songs sit in each playlist (see mergePlaylistOrder). Never leaves this computer.
+  // Where this computer's songs sit in each playlist (see mergePlaylistOrder), from before playlists
+  // kept that with your account (supabase/013_computer_songs.sql), and while the server doesn't have it yet.
   const [localOrder, setLocalOrder] = usePersistentState<Record<string, string[]>>("mc.playlistOrder", {});
+  const songsVersion = useComputerSongsVersion();
   const playlists = useMemo(() => serverPlaylists.map((p) => {
-    const trackIds = mergePlaylistOrder(localOrder[p.id], p.trackIds);
-    return { ...p, trackIds, localCount: trackIds.filter(isLocalTrackId).length };
-  }), [serverPlaylists, localOrder]);
+    const trackIds = mergePlaylistOrder(p.songOrder ?? localOrder[p.id], p.trackIds).map(fromPortable);
+    return { ...p, trackIds, localCount: trackIds.filter((id) => id.startsWith("local:")).length, missingCount: trackIds.filter(isSongKey).length };
+  }), [serverPlaylists, localOrder, songsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const rememberOrder = useCallback((id: string, all: string[] | null) => setLocalOrder((o) => {
     const next = { ...o };
     if (all && all.some(isLocalTrackId)) next[id] = all;
@@ -123,6 +134,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }), [setLocalOrder]);
   const [following, setFollowing] = useState<string[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
+  // Favorite songs from your computers, described (null: the server doesn't keep them yet, see 013).
+  const [computerFavorites, setComputerFavorites] = useState<string[] | null>(null);
   const [albumRatings, setAlbumRatings] = useState<Record<string, Rating>>({});
   const [displayName, setDisplayNameState] = useState<string>();
   const [needsAccount, setNeedsAccount] = useState<string | null>(null);
@@ -134,7 +147,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const fresh = loadedFor.current !== (userId ?? "");
     loadedFor.current = userId ?? "";
-    if (fresh) { setSaved([]); setCrateSongs([]); setPhysical([]); setPlaylists([]); setFollowing([]); setFavorites([]); setAlbumRatings({}); setDisplayNameState(undefined); }
+    if (fresh) { setSaved([]); setCrateSongs([]); setPhysical([]); setPlaylists([]); setFollowing([]); setFavorites([]); setComputerFavorites(null); setAlbumRatings({}); setDisplayNameState(undefined); }
     if (!userId) { setReady(true); return; }
     if (fresh) setReady(false);
     let live = true;
@@ -147,7 +160,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       supabase.from("album_ratings").select("release_id,stars"),
       supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
       supabase.from("crate_songs").select("track_id,added_at").order("added_at", { ascending: false }),
-    ]).then(([c, ph, pl, f, fav, ar, pr, cs]) => {
+      supabase.from("computer_favorites").select("song_key").order("created_at", { ascending: false }),
+    ]).then(([c, ph, pl, f, fav, ar, pr, cs, cf]) => {
       if (!live) return;
       // A refresh that failed (offline) keeps what's already here.
       if (!fresh && [c, ph, pl, f, fav, ar, cs].some((x) => x.error)) return;
@@ -157,6 +171,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setPlaylists((pl.data ?? []).map(playlistFromRow));
       setFollowing((f.data ?? []).map((x) => x.artist_id));
       setFavorites((fav.data ?? []).map((x) => x.track_id as string));
+      if (!cf.error) setComputerFavorites((cf.data ?? []).map((x) => x.song_key as string));
+      else if (fresh) setComputerFavorites(null);
       setAlbumRatings(Object.fromEntries((ar.data ?? []).map((x) => [x.release_id, x.stars as Rating])));
       setDisplayNameState(pr.data?.display_name ?? undefined);
       // The name chosen when signing up becomes the display name the first time the account signs in.
@@ -251,31 +267,66 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     check(error);
   }, [gate, physical]);
 
-  const writePlaylist = useCallback(async (id: string, patch: { name?: string; track_ids?: string[] }) => {
+  // False once the server turns out not to keep playlists' full order yet (013 not run).
+  const songOrderOk = useRef(true);
+  const writePlaylist = useCallback(async (id: string, patch: { name?: string; track_ids?: string[]; song_order?: string[] | null }) => {
     const before = serverPlaylists;
     const now = new Date().toISOString();
-    setPlaylists((ps) => ps.map((p) => (p.id === id ? { ...p, ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.track_ids ? { trackIds: patch.track_ids } : {}), updatedAt: now } : p)));
-    const { error } = await supabase.from("playlists").update({ ...patch, updated_at: now }).eq("id", id);
+    if (!songOrderOk.current) delete patch.song_order;
+    setPlaylists((ps) => ps.map((p) => (p.id === id ? {
+      ...p, ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.track_ids ? { trackIds: patch.track_ids } : {}),
+      ...(patch.song_order !== undefined ? { songOrder: patch.song_order ?? undefined } : {}), updatedAt: now,
+    } : p)));
+    let { error } = await supabase.from("playlists").update({ ...patch, updated_at: now }).eq("id", id);
+    if (error && "song_order" in patch && /song_order/.test(error.message)) {
+      songOrderOk.current = false;
+      const { song_order: _skip, ...rest } = patch; // eslint-disable-line @typescript-eslint/no-unused-vars
+      ({ error } = await supabase.from("playlists").update({ ...rest, updated_at: now }).eq("id", id));
+    }
     if (error) setPlaylists(before);
     check(error);
   }, [serverPlaylists]);
 
-  /** Saves a playlist's full order: catalog songs to your account, this computer's songs here only. */
+  /** What's saved with your account for a playlist's full order: catalog songs by id, and the full order described when it has songs from your computers. */
+  const orderRow = (all: string[]) => {
+    const described = all.map(toPortable).filter((t) => !t.startsWith("local:")); // a file only this session knows can't be described
+    return { track_ids: all.filter((t) => !isLocalTrackId(t)), song_order: described.some(isSongKey) ? described : null };
+  };
+
+  /** Saves a playlist's full order, with your account (and on this computer, until the server keeps it). */
   const writeOrder = useCallback(async (id: string, all: string[]) => {
     rememberOrder(id, all);
-    await writePlaylist(id, { track_ids: all.filter((t) => !isLocalTrackId(t)) });
+    await writePlaylist(id, orderRow(all));
   }, [rememberOrder, writePlaylist]);
+
+  // Playlists whose computer songs were only remembered on this computer: saved with your account once.
+  const sentOrder = useRef(new Set<string>());
+  useEffect(() => {
+    if (!ready || !userId || !songOrderOk.current) return;
+    for (const p of serverPlaylists) {
+      const mine = localOrder[p.id];
+      if (p.songOrder || !mine || sentOrder.current.has(p.id)) continue;
+      // Wait until this computer's songs are known (they're described from their tags).
+      if (mine.some((t) => t.startsWith("local:") && toPortable(t) === t)) continue;
+      sentOrder.current.add(p.id);
+      void writePlaylist(p.id, orderRow(mergePlaylistOrder(mine, p.trackIds))).catch(() => {});
+    }
+  }, [ready, userId, serverPlaylists, localOrder, songsVersion, writePlaylist]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createPlaylist = useCallback(async (name: string, trackIds: string[] = []) => {
     gate("make playlists");
-    const { data, error } = await supabase.from("playlists")
-      .insert({ name: name.trim() || "New playlist", track_ids: trackIds.filter((t) => !isLocalTrackId(t)) }).select().single();
+    const row = { name: name.trim() || "New playlist", ...orderRow(trackIds) };
+    let { data, error } = await supabase.from("playlists").insert(row).select().single();
+    if (error && /song_order/.test(error.message)) {
+      songOrderOk.current = false;
+      ({ data, error } = await supabase.from("playlists").insert({ name: row.name, track_ids: row.track_ids }).select().single());
+    }
     check(error);
     const p = playlistFromRow(data);
     setPlaylists((ps) => [p, ...ps]);
     rememberOrder(p.id, trackIds);
-    return { ...p, trackIds, localCount: trackIds.filter(isLocalTrackId).length };
-  }, [gate, rememberOrder]);
+    return { ...p, trackIds, localCount: trackIds.filter((t) => t.startsWith("local:")).length, missingCount: 0 };
+  }, [gate, rememberOrder]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renamePlaylist = useCallback(async (id: string, name: string) => { gate("edit playlists"); await writePlaylist(id, { name: name.trim() || "Untitled playlist" }); }, [gate, writePlaylist]);
   const addToPlaylist = useCallback(async (id: string, trackIds: string[]) => {
@@ -346,6 +397,22 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     check(error, SETUP_HINT_007);
   }, [gate, favorites]);
 
+  /** Favorites songs from your computers (described: see songKeys.ts), or takes them out. */
+  const setComputerFavorite = useCallback(async (keys: string[], on: boolean) => {
+    gate("favorite songs");
+    if (!keys.length) return;
+    const before = computerFavorites;
+    setComputerFavorites((f) => {
+      const rest = (f ?? []).filter((x) => !keys.includes(x));
+      return on ? [...keys, ...rest] : rest;
+    });
+    const { error } = on
+      ? await supabase.from("computer_favorites").upsert(keys.map((song_key) => ({ song_key })), { onConflict: "user_id,song_key", ignoreDuplicates: true })
+      : await supabase.from("computer_favorites").delete().in("song_key", keys);
+    if (error) setComputerFavorites(before);
+    check(error, SETUP_HINT_013);
+  }, [gate, computerFavorites]);
+
   const rateAlbum = useCallback(async (releaseId: string, stars: Rating) => {
     gate("rate albums");
     const before = albumRatings[releaseId];
@@ -371,7 +438,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const value = useMemo<Library>(() => ({
-    signedIn: !!userId, ready, saved, physical, playlists, following, favorites, albumRatings, displayName,
+    signedIn: !!userId, ready, saved, physical, playlists, following, favorites, computerFavorites, setComputerFavorite, albumRatings, displayName,
     isFavorite: (trackId: string) => favoriteSet.has(trackId),
     isSaved: (id) => saved.some((s) => s.releaseId === id),
     isSongInCrate: (trackId, releaseId) => saved.some((s) => s.releaseId === releaseId) || crateSongs.some((x) => x.trackId === trackId),
@@ -380,7 +447,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist,
     follow, unfollow, setFavorite, rateAlbum, setDisplayName,
     needsAccount, dismissNeedsAccount: () => setNeedsAccount(null),
-  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
+  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, computerFavorites, setComputerFavorite, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }
@@ -402,7 +469,8 @@ function physicalFromRow(r: Record<string, unknown>): PhysicalItem {
   };
 }
 function playlistFromRow(r: Record<string, unknown>): Playlist {
-  return { id: String(r.id), name: String(r.name ?? ""), trackIds: (r.track_ids as string[]) ?? [], updatedAt: String(r.updated_at ?? ""), localCount: 0,
+  return { id: String(r.id), name: String(r.name ?? ""), trackIds: (r.track_ids as string[]) ?? [], updatedAt: String(r.updated_at ?? ""), localCount: 0, missingCount: 0,
+    songOrder: Array.isArray(r.song_order) && r.song_order.length ? (r.song_order as string[]) : undefined,
     coverPath: typeof r.cover_path === "string" && r.cover_path ? r.cover_path : undefined };
 }
 

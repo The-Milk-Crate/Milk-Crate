@@ -552,8 +552,8 @@ function PlaylistPage({ go, pl }: { go: Go; pl: Playlist }) {
           <input className="title-input display-lg" value={name} aria-label="Playlist name" maxLength={100}
             onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() !== pl.name && void attempt(() => lib.renamePlaylist(pl.id, name))}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
-          {pl.localCount > 0 && (
-            <p className="caption muted">{plural(pl.localCount, "song")} from your computer {pl.localCount === 1 ? "is" : "are"} in here. They stay on this computer and play only here.</p>
+          {pl.missingCount > 0 && (
+            <p className="caption muted">{plural(pl.missingCount, "song")} from your ripped CDs {pl.missingCount === 1 ? "isn't" : "aren't"} on this computer. Use "Send to another computer" on the computer that has it, and {pl.missingCount === 1 ? "it shows" : "they show"} up here.</p>
           )}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <PlayButton size="lg" playing={false} onClick={() => p.playQueue(playable)} />
