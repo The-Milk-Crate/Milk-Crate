@@ -42,6 +42,8 @@ mod cd {
     use tauri::{async_runtime::spawn_blocking, Emitter, Manager};
 
     static CANCEL: AtomicBool = AtomicBool::new(false);
+    /// Set with CANCEL when the listener chose to throw the rip away: its files get deleted.
+    static DISCARD: AtomicBool = AtomicBool::new(false);
 
     fn joined<T>(r: Result<Result<T, String>, tauri::Error>) -> Result<T, String> {
         r.map_err(|e| e.to_string())?
@@ -81,6 +83,7 @@ mod cd {
     #[tauri::command]
     pub async fn cd_rip(app: tauri::AppHandle, id: String, plan: cdrip::Plan) -> Result<Vec<String>, String> {
         CANCEL.store(false, Ordering::Relaxed);
+        DISCARD.store(false, Ordering::Relaxed);
         let music = app.path().audio_dir().map_err(|e| format!("Couldn't find your Music folder: {e}"))?;
         joined(
             spawn_blocking(move || {
@@ -94,15 +97,19 @@ mod cd {
                         let _ = app.emit("cd-rip-progress", p);
                     }
                 };
-                let files = cdrip::rip(&disc, &plan, &music, &report, &CANCEL)?;
+                let files = cdrip::rip(&disc, &plan, &music, &report, &CANCEL, &DISCARD)?;
                 Ok(files.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
             })
             .await,
         )
     }
 
+    /// Stops the rip. `discard`: also delete the songs it already saved.
     #[tauri::command]
-    pub fn cd_cancel() {
+    pub fn cd_cancel(discard: Option<bool>) {
+        if discard.unwrap_or(false) {
+            DISCARD.store(true, Ordering::Relaxed);
+        }
         CANCEL.store(true, Ordering::Relaxed);
     }
 

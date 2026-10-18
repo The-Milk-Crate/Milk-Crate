@@ -49,9 +49,12 @@ mod imp {
     const IOCTL_STORAGE_EJECT_MEDIA: u32 = 0x002D_4808;
     const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D_1080;
     const IOCTL_STORAGE_CHECK_VERIFY: u32 = 0x002D_4800;
+    const IOCTL_CDROM_SET_SPEED: u32 = 0x0002_4060;
     const CDDA: u32 = 2;
-    /// Sectors per read (the driver's limit is about 64 KB).
-    const CHUNK: u32 = 20;
+    /// Sectors per read, biggest first. Drives that refuse a big read get the next size down.
+    const CHUNKS: [u32; 3] = [64, 26, 13];
+    /// The biggest read this drive has managed (0 = not tried yet).
+    static CHUNK_OK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -61,6 +64,14 @@ mod imp {
         fn GetLogicalDrives() -> u32;
         fn GetDriveTypeW(root: *const u16) -> u32;
         fn GetLastError() -> u32;
+    }
+
+    #[repr(C)]
+    struct SetSpeed {
+        request_type: u32, // CdromSetSpeed
+        read_speed: u16,   // KB/s; 0xFFFF = as fast as the drive goes
+        write_speed: u16,
+        rotation: u32,     // CdromDefaultRotation
     }
 
     #[repr(C)]
@@ -207,32 +218,51 @@ mod imp {
         (discs, notes)
     }
 
+    fn as_bytes<T>(v: &T) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(v as *const T as *const u8, std::mem::size_of::<T>()) }
+    }
+
+    /// Reads `count` sectors at `lba` into `out`, trying a few times (scratches, a drive catching up).
+    fn read_sectors(drive: &Drive, lba: u32, count: u32, out: &mut [u8], tries: u32) -> bool {
+        let info = RawReadInfo { disk_offset: lba as i64 * 2048, sector_count: count, track_mode: CDDA };
+        let want = count as usize * SECTOR_BYTES;
+        (0..tries).any(|_| drive.ioctl(IOCTL_CDROM_RAW_READ, as_bytes(&info), &mut out[..want]) == Ok(want))
+    }
+
     /// Reads one track's audio (interleaved 16-bit stereo, as i32 for the encoder).
     pub fn read_track(disc: &WinDisc, n: u8, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<Vec<i32>, String> {
         let (start, len) = disc.toc.span(n).ok_or(format!("Track {n} isn't on the disc"))?;
         let drive = Drive::open(&disc.path).map_err(|e| format!("Couldn't open the CD drive: {}", why(e)))?;
+        // Windows often slows drives down for audio; ask for full speed (drives that can't, ignore it).
+        let speed = SetSpeed { request_type: 0, read_speed: 0xFFFF, write_speed: 0xFFFF, rotation: 0 };
+        let _ = drive.ioctl(IOCTL_CDROM_SET_SPEED, as_bytes(&speed), &mut []);
         let lba = start - 150;
         let mut samples = Vec::with_capacity(len as usize * SECTOR_BYTES / 2);
-        let mut buf = vec![0u8; CHUNK as usize * SECTOR_BYTES];
+        let mut buf = vec![0u8; CHUNKS[0] as usize * SECTOR_BYTES];
         let mut done = 0u32;
+        // Find the biggest read this drive accepts (once per run).
+        let mut chunk = CHUNK_OK.load(Ordering::Relaxed);
+        if chunk == 0 {
+            chunk = *CHUNKS.iter().find(|&&c| read_sectors(&drive, lba, c.min(len), &mut buf, 2)).unwrap_or(&1);
+            CHUNK_OK.store(chunk, Ordering::Relaxed);
+        }
         while done < len {
             if cancel.load(Ordering::Relaxed) {
                 return Err("Stopped".into());
             }
-            let count = CHUNK.min(len - done);
-            let info = RawReadInfo { disk_offset: (lba + done) as i64 * 2048, sector_count: count, track_mode: CDDA };
-            let input = unsafe { std::slice::from_raw_parts(&info as *const RawReadInfo as *const u8, std::mem::size_of::<RawReadInfo>()) };
+            let count = chunk.min(len - done);
             let want = count as usize * SECTOR_BYTES;
-            // Scratches: try a few times before giving up.
-            let mut got = Err(0);
-            for _ in 0..5 {
-                got = drive.ioctl(IOCTL_CDROM_RAW_READ, input, &mut buf[..want]);
-                if got == Ok(want) {
-                    break;
+            if !read_sectors(&drive, lba + done, count, &mut buf, 3) {
+                // A rough patch: go over it one sector at a time, a few tries each.
+                for k in 0..count {
+                    let at = k as usize * SECTOR_BYTES;
+                    let mut one = [0u8; SECTOR_BYTES];
+                    if !read_sectors(&drive, lba + done + k, 1, &mut one, 6) {
+                        let t = done + k;
+                        return Err(format!("Couldn't read track {n} at {}:{:02}. The disc may be scratched or dirty.", t / 75 / 60, t / 75 % 60));
+                    }
+                    buf[at..at + SECTOR_BYTES].copy_from_slice(&one);
                 }
-            }
-            if got != Ok(want) {
-                return Err(format!("Couldn't read track {n} at {}:{:02}. The disc may be scratched or dirty.", done / 75 / 60, done / 75 % 60));
             }
             samples.extend(buf[..want].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as i32));
             done += count;

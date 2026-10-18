@@ -2,7 +2,7 @@
  * Milk Crate UI primitives — the React/TypeScript versions of the components
  * in the Milk Crate design system. Class names match src/styles/components.css.
  */
-import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode, Ref } from "react";
 import type { Rating } from "../lib/types";
 import { sleeveDesign, sleeveSeed } from "../lib/sleeve";
 import { useDownloadedTracks } from "../lib/downloads";
@@ -49,6 +49,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "quiet" | "ghost";
   size?: "md" | "sm";
   icon?: keyof typeof Glyph;
+  ref?: Ref<HTMLButtonElement>;
 };
 export function Button({ variant = "quiet", size = "md", icon, className, children, ...rest }: ButtonProps) {
   const Icon = icon ? Glyph[icon] : null;

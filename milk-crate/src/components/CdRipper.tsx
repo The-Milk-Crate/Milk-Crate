@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Disc3, ImagePlus, LoaderCircle, X } from "lucide-react";
 import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUrl, lookupDisc, ripDisc, type CdMatch, type Disc, type RipProgress } from "../lib/cd";
 import { pickImage } from "../lib/localFiles";
+import { setLeaveGuard } from "../lib/leaveGuard";
 import { formatTime } from "../lib/format";
 import { Button, Sleeve } from "./ui";
 
@@ -51,6 +52,13 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
   const [done, setDone] = useState<{ count: number; folder: string } | null>(null);
   const [error, setError] = useState("");
   const [notes, setNotes] = useState<string[]>([]);
+
+  // While ripping, leaving the page asks first; going anyway cancels the rip and deletes its files.
+  useEffect(() => {
+    if (!ripping) return;
+    setLeaveGuard({ onProceed: () => void cancelRip(true) });
+    return () => setLeaveGuard(null);
+  }, [ripping]);
 
   // Watch the drives until there's a CD (and notice when it's taken out).
   const discId = disc?.discId;

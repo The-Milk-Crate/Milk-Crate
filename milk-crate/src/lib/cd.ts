@@ -59,7 +59,8 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 export const findDiscs = () => call<{ discs: Disc[]; notes: string[] }>("cd_discs");
 export const lookupDisc = (id: string) => call<CdMatch[]>("cd_lookup", { id });
 export const fetchCover = (releaseId: string) => call<string | null>("cd_cover", { releaseId });
-export const cancelRip = () => call<void>("cd_cancel");
+/** Stops the rip. `discard`: also delete the songs it already saved. */
+export const cancelRip = (discard = false) => call<void>("cd_cancel", { discard });
 export const ejectDisc = (id: string) => call<void>("cd_eject", { id });
 
 /** Rips the disc; `onProgress` hears about each step. Returns the saved files, in track order. */

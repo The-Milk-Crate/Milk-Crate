@@ -38,6 +38,8 @@ import { FrostGrain } from "./components/FrostGrain";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchPalette } from "./components/SearchPalette";
 import { FeedbackDialog } from "./components/FeedbackDialog";
+import { HoldOn } from "./components/HoldOn";
+import { leaveGuard } from "./lib/leaveGuard";
 import { usePersistentState } from "./lib/storage";
 import { listenForLinks } from "./lib/share";
 import { reportErrors } from "./lib/errors";
@@ -156,15 +158,23 @@ function Shell() {
   const [ahead, setAhead] = useState<Visit[]>([]);
   const restoreScroll = useRef<number | null>(null);
   const here = (): Visit => ({ route, scroll: main.current?.scrollTop ?? 0 });
+  // A page change while something can't be left halfway (a CD rip) asks first: "Hold On."
+  const [holding, setHolding] = useState<(() => void) | null>(null);
+  const guarded = (leave: () => void) => (leaveGuard() ? setHolding(() => leave) : leave());
   const go: Go = (r) => {
+    if (JSON.stringify(r) === JSON.stringify(route)) { setQueueOpen(false); main.current?.scrollTo({ top: 0 }); return; }
+    guarded(() => goNow(r));
+  };
+  const goNow: Go = (r) => {
     setQueueOpen(false);
-    if (JSON.stringify(r) === JSON.stringify(route)) { main.current?.scrollTo({ top: 0 }); return; }
     setPast((h) => [...h, here()].slice(-100));
     setAhead([]);
     setRoute(r);
     restoreScroll.current = 0;
   };
-  const back = () => {
+  const back = () => { if (past.length) guarded(backNow); };
+  const forward = () => { if (ahead.length) guarded(forwardNow); };
+  const backNow = () => {
     const prev = past[past.length - 1];
     if (!prev) return;
     setPast((h) => h.slice(0, -1));
@@ -173,7 +183,7 @@ function Shell() {
     restoreScroll.current = prev.scroll;
     setQueueOpen(false);
   };
-  const forward = () => {
+  const forwardNow = () => {
     const next = ahead[0];
     if (!next) return;
     setAhead((f) => f.slice(1));
@@ -269,6 +279,10 @@ function Shell() {
       {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
       {search !== null && <SearchPalette go={go} initial={search} onClose={() => setSearch(null)} />}
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
+      {holding && (
+        <HoldOn onBack={() => setHolding(null)}
+          onProceed={() => { leaveGuard()?.onProceed(); const leave = holding; setHolding(null); leave(); }} />
+      )}
       <NeedsAccount go={go} />
       {immersive && <Immersive go={go} onClose={() => setImmersive(false)} />}
     </>

@@ -178,7 +178,7 @@ pub fn read_aiff(path: &Path, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Re
                 }
                 let total = size.saturating_sub(8 + offset) as usize;
                 let mut samples = Vec::with_capacity(total / 2);
-                let mut buf = vec![0u8; 2352 * 32];
+                let mut buf = vec![0u8; 2352 * 448]; // about 1 MB per read
                 let mut done = 0usize;
                 while done < total {
                     if cancel.load(Ordering::Relaxed) {
