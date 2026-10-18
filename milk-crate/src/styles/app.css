@@ -1177,3 +1177,8 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .add-songs-row:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
 .add-songs-title { font-weight: 650; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .add-songs-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cd-ripper-discs { flex: 0 0 auto; }
+.cd-ripper-discs-row { display: flex; align-items: center; gap: 6px; }
+.cd-ripper-discs-row input { width: 44px; text-align: center; }
+.cd-ripper-next { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius-md); background: var(--accent-soft); color: var(--ink); }
+.cd-ripper-next > svg { color: var(--accent); flex: none; }

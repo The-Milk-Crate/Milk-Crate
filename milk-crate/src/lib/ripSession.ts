@@ -6,7 +6,9 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { CdMatch, Disc, RipProgress, Ripped } from "./cd";
 
 export type Found = "looking" | "found" | "unknown" | "offline";
-export interface Draft { album: string; artist: string; year: string; titles: string[]; artists: string[]; cover: string | null }
+export interface Draft { album: string; artist: string; year: string; titles: string[]; artists: string[]; cover: string | null; disc: number; discs: number }
+/** A set of several CDs: the next disc to put in, and what carries over to it from the one just ripped. */
+export interface NextDisc { disc: number; discs: number; album: string; artist: string; year: string; cover: string | null; releaseId?: string; after: string }
 export interface RipDone { count: number; folder: string; skipped: Ripped["skipped"]; album: string; artist: string; albumKey?: string }
 
 export interface RipState {
@@ -31,11 +33,13 @@ export interface RipState {
   notes: string[];
   /** A rip that finished while the ripper wasn't on screen. */
   notice: RipDone | null;
+  /** After disc 1 of a set: waiting for the next disc. */
+  nextDisc: NextDisc | null;
 }
 
 let state: RipState = {
   open: false, shown: false, disc: undefined, matches: [], pick: 0, found: "looking", draft: null,
-  coverBusy: false, progress: null, ripping: false, done: null, error: "", notes: [], notice: null,
+  coverBusy: false, progress: null, ripping: false, done: null, error: "", notes: [], notice: null, nextDisc: null,
 };
 const listeners = new Set<() => void>();
 

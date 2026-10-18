@@ -14,6 +14,8 @@ const blank = (d: Disc): Draft => ({
   titles: d.tracks.map((t) => `Track ${String(t.number).padStart(2, "0")}`),
   artists: d.tracks.map(() => ""),
   cover: null,
+  disc: 1,
+  discs: 1,
 });
 
 const fromMatch = (m: CdMatch): Draft => ({
@@ -24,6 +26,8 @@ const fromMatch = (m: CdMatch): Draft => ({
   // A song's own artist only when it differs from the album's (features, compilations).
   artists: m.tracks.map((t) => (t.artist === m.artist ? "" : t.artist)),
   cover: null,
+  disc: m.disc || 1,
+  discs: Math.max(m.discs || 1, m.disc || 1),
 });
 
 /**
@@ -44,6 +48,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
   const [done, setDone] = useRip("done");
   const [error, setError] = useRip("error");
   const [notes, setNotes] = useRip("notes");
+  const [nextDisc] = useRip("nextDisc");
 
   // On screen: a rip that finishes now needs no notice.
   useEffect(() => {
@@ -80,13 +85,24 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
     setFound("looking");
     setMatches([]);
     setPick(0);
-    setDraft(blank(disc));
+    // The next disc of a set: it keeps the album's name, artist, year and cover.
+    const next = ripState().nextDisc;
+    const carry = (d: Draft): Draft => (next ? { ...d, album: next.album, artist: next.artist, year: next.year, cover: next.cover, disc: next.disc, discs: next.discs } : d);
+    setDraft(carry(blank(disc)));
     lookupDisc(disc.id)
       .then((m) => {
         if (!live) return;
-        setMatches(m);
-        setFound(m.length ? "found" : "unknown");
-        if (m.length) setDraft(fromMatch(m[0]));
+        // Same release, this disc of it, first (MusicBrainz knows which disc of the set it is).
+        const at = next ? m.findIndex((x) => x.releaseId === next.releaseId && x.disc === next.disc) : -1;
+        const list = at > 0 ? [m[at], ...m.filter((_, i) => i !== at)] : m;
+        setMatches(list);
+        setFound(list.length ? "found" : "unknown");
+        if (next && at >= 0) {
+          setRip({ coverFor: list[0].releaseId });
+          setDraft({ ...fromMatch(list[0]), album: next.album, artist: next.artist, year: next.year, cover: next.cover });
+        } else if (list.length && !next) setDraft(fromMatch(list[0]));
+        else if (list.length && next) setDraft(carry({ ...fromMatch(list[0]) }));
+        if (next) setRip({ nextDisc: null });
       })
       .catch(() => live && setFound("offline"));
     return () => { live = false; };
@@ -133,8 +149,8 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
           albumArtist: artist,
           year: draft.year.trim() || null,
           releaseId: chosen?.releaseId ?? null,
-          disc: chosen?.disc ?? 1,
-          discs: chosen?.discs ?? 1,
+          disc: draft.disc,
+          discs: draft.discs,
           tracks: disc.tracks
             .map((t, i) => ({ number: t.number, title: draft.titles[i]?.trim() || `Track ${String(t.number).padStart(2, "0")}`, artist: draft.artists[i]?.trim() ?? "" }))
             .filter((t) => !only || only.includes(t.number)),
@@ -148,6 +164,14 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
       const result = { count: files.length + (only && before ? before.count : 0), folder: albumFolder(artist, album), skipped, album, artist, albumKey };
       // Finished while you were elsewhere in the app: say so in the corner.
       setRip((s) => ({ done: result, notice: s.shown ? null : result }));
+      // One disc of a set: ask for the next one.
+      if (!only && draft.discs > draft.disc) {
+        setRip({
+          nextDisc: { disc: draft.disc + 1, discs: draft.discs, album, artist, year: draft.year, cover: draft.cover, releaseId: chosen?.releaseId, after: disc.discId },
+        });
+        // Out it comes, ready for the next one.
+        void ejectDisc(disc.id).catch(() => {});
+      }
     } catch (e) {
       const msg = String(e);
       setRip({ error: msg === "Stopped" ? "Stopped. Songs already saved are kept." : msg });
@@ -173,6 +197,17 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
         <button type="button" className="mc-icon-btn" aria-label="Close" onClick={onClose} disabled={ripping}><X size={18} aria-hidden="true" /></button>
       </div>
 
+      {nextDisc && !ripping && (
+        <div className="cd-ripper-next" role="status">
+          <Disc3 size={22} strokeWidth={1.6} aria-hidden="true" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+            <strong>Disc {nextDisc.disc - 1} is done. Put in disc {nextDisc.disc} of {nextDisc.discs}.</strong>
+            <span className="caption muted">{nextDisc.album} keeps its name, artist and cover, and the songs go in a Disc {nextDisc.disc} folder beside the others.</span>
+          </div>
+          {disc && disc.discId === nextDisc.after && <Button size="sm" onClick={eject}>Eject</Button>}
+          <button type="button" className="link-btn caption" onClick={() => setRip({ nextDisc: null })}>That's all of them</button>
+        </div>
+      )}
       {disc === undefined && <p className="muted cd-ripper-wait"><LoaderCircle className="spin" size={16} aria-hidden="true" /> Checking your CD drive…</p>}
       {disc === null && (
         <div className="empty cd-ripper-empty">
@@ -228,6 +263,17 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
                   <span className="caption">Year</span>
                   <input value={draft.year} inputMode="numeric" maxLength={4} onChange={(e) => setDraft({ ...draft, year: e.target.value.replace(/\D/g, "") })} disabled={ripping} />
                 </label>
+                {/* A set of several CDs: which one this is, and how many there are. */}
+                <div className="field cd-ripper-discs" role="group" aria-label="Disc">
+                  <span className="caption">Disc</span>
+                  <span className="cd-ripper-discs-row">
+                    <input aria-label="This disc" inputMode="numeric" value={draft.disc} disabled={ripping}
+                      onChange={(e) => { const n = Math.max(1, Math.min(20, Number(e.target.value.replace(/\D/g, "")) || 1)); setDraft({ ...draft, disc: n, discs: Math.max(draft.discs, n) }); }} />
+                    <span className="caption muted">of</span>
+                    <input aria-label="Discs in this album" inputMode="numeric" value={draft.discs} disabled={ripping}
+                      onChange={(e) => { const n = Math.max(1, Math.min(20, Number(e.target.value.replace(/\D/g, "")) || 1)); setDraft({ ...draft, discs: n, disc: Math.min(draft.disc, n) }); }} />
+                  </span>
+                </div>
               </div>
             </div>
           </div>
