@@ -9,7 +9,7 @@ import { enterFullscreen } from "../lib/fullscreen";
 import { Backdrop } from "./Backdrop";
 import { FrostGrain } from "./FrostGrain";
 import { SeekBar } from "./SeekBar";
-import { VerticalVolume } from "./VolumePopover";
+import { VolumeIcon } from "./VolumePopover";
 import { RepeatButton, ShuffleButton } from "./PlayerBar";
 import { albumKey, fileArtist, useFileCover } from "../lib/fileTags";
 import { Glyph, PlayButton, Sleeve } from "./ui";
@@ -115,12 +115,9 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
           <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artistName) : sleeveSeed(localAlbum?.title ?? t.title, artistName)}
             alt={release ? `${release.title} cover` : localAlbum ? `${localAlbum.title} cover` : ""} />
         )}
+        <div className="immersive-side">
         <div className="immersive-card">
         <FrostGrain source="immersive" saturate={1.5} />
-        {/* The volume, on the song's card (one piece of glass) on the side facing the cover. */}
-        <div className="immersive-volume">
-          <VerticalVolume />
-        </div>
         <div className="immersive-info">
           {release && (
             <button type="button" className="catalog eyebrow immersive-link" onClick={() => openPage({ name: "album", releaseId: release.id })}>
@@ -157,7 +154,38 @@ export function Immersive({ go, onClose }: { go: Go; onClose: () => void }) {
           )}
         </div>
         </div>
+        {/* The volume: its own glass pill under the song's card. */}
+        <ImmersiveVolume />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ImmersiveVolume() {
+  const p = usePlayer();
+  const level = Math.round((p.muted ? 0 : p.volume) * 100);
+  const box = useRef<HTMLDivElement>(null);
+  // Scrolling over it turns it up or down.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      p.setVolume(Math.max(0, Math.min(100, level + (e.deltaY < 0 ? 5 : -5))) / 100);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
+  return (
+    <div ref={box} className="immersive-volume">
+      <FrostGrain source="immersive" saturate={1.5} />
+      <button type="button" className="mc-icon-btn" aria-label={p.muted ? "Unmute" : "Mute"} aria-pressed={p.muted} onClick={() => p.setMuted(!p.muted)}>
+        <VolumeIcon />
+      </button>
+      <input type="range" className="volume-slider" min={0} max={100} step={1} aria-label="Volume" value={level}
+        onChange={(e) => p.setVolume(Number(e.target.value) / 100)}
+        style={{ "--fill": `${level}%` } as React.CSSProperties} />
     </div>
   );
 }
