@@ -157,6 +157,71 @@ mod cd {
     }
 }
 
+/// Milk Crate to Milk Crate on the same network (Your Computer › Send or receive CDs).
+/// The work happens in the cdlink crate. The receiver reports with "link-receive" events,
+/// the sender with "link-send-progress".
+mod link {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use tauri::{async_runtime::spawn_blocking, Emitter, Manager};
+
+    static RECEIVER: Mutex<Option<cdlink::Receiver>> = Mutex::new(None);
+    static CANCEL: AtomicBool = AtomicBool::new(false);
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Receiving {
+        code: String,
+        name: String,
+    }
+
+    /// Starts waiting for your other computer (signed in to `account`). Returns the code to type there.
+    #[tauri::command]
+    pub fn link_receive_start(app: tauri::AppHandle, account: String) -> Result<Receiving, String> {
+        let music = app.path().audio_dir().map_err(|e| format!("Couldn't find your Music folder: {e}"))?;
+        let name = cdlink::computer_name();
+        let emit = app.clone();
+        let rx = cdlink::Receiver::start(name.clone(), cdlink::account_tag(&account), music.join("Milk Crate"), move |e| {
+            let _ = emit.emit("link-receive", e);
+        })
+        .map_err(|e| format!("Couldn't start listening: {e}"))?;
+        let code = rx.code.clone();
+        *RECEIVER.lock().unwrap() = Some(rx);
+        Ok(Receiving { code, name })
+    }
+
+    #[tauri::command]
+    pub fn link_receive_stop() {
+        RECEIVER.lock().unwrap().take();
+    }
+
+    /// Computers on the network waiting to receive.
+    #[tauri::command]
+    pub async fn link_find(account: String) -> Vec<cdlink::Peer> {
+        spawn_blocking(move || cdlink::discover(&cdlink::account_tag(&account), std::time::Duration::from_millis(1600))).await.unwrap_or_default()
+    }
+
+    /// Sends songs (and their albums' covers) to a computer that's receiving. Returns how many files went.
+    #[tauri::command]
+    pub async fn link_send(app: tauri::AppHandle, addr: String, code: String, account: String, songs: Vec<String>) -> Result<usize, String> {
+        CANCEL.store(false, Ordering::Relaxed);
+        spawn_blocking(move || {
+            let files = cdlink::with_covers(&songs.into_iter().map(PathBuf::from).collect::<Vec<_>>());
+            cdlink::send(&addr, &code, &cdlink::account_tag(&account), &cdlink::computer_name(), &files, &|p| {
+                let _ = app.emit("link-send-progress", p);
+            }, &CANCEL)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    #[tauri::command]
+    pub fn link_send_cancel() {
+        CANCEL.store(true, Ordering::Relaxed);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -185,7 +250,12 @@ pub fn run() {
             cd::cd_rip,
             cd::cd_cancel,
             cd::cd_eject,
-            cd::cd_set_cover
+            cd::cd_set_cover,
+            link::link_receive_start,
+            link::link_receive_stop,
+            link::link_find,
+            link::link_send,
+            link::link_send_cancel
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

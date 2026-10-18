@@ -1182,3 +1182,20 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .cd-ripper-discs-row input { width: 44px; text-align: center; }
 .cd-ripper-next { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius-md); background: var(--accent-soft); color: var(--ink); }
 .cd-ripper-next > svg { color: var(--accent); flex: none; }
+
+/* Send to another computer (src/components/ComputerLink.tsx). */
+.link-panel { gap: var(--space-4); }
+.link-code-box { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-radius: var(--radius-md); background: var(--accent-soft); }
+.link-code { font-family: var(--font-mono); font-size: 44px; line-height: 1; letter-spacing: .12em; color: var(--accent); }
+.link-receive, .link-send { display: flex; flex-direction: column; gap: var(--space-4); }
+.link-step { display: flex; flex-direction: column; gap: 8px; }
+.link-step-head { display: flex; justify-content: space-between; align-items: center; }
+.link-step-head .link-btn { display: inline-flex; align-items: center; gap: 4px; }
+.link-peers { display: flex; flex-wrap: wrap; gap: 8px; }
+.link-peer { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: none; color: var(--ink); cursor: pointer; text-align: left; }
+.link-peer.on { border-color: var(--accent); background: var(--accent-soft); }
+.link-peer:disabled { opacity: .5; cursor: default; }
+.link-code-input { width: 140px; height: 44px; padding: 0 12px; font-family: var(--font-mono); font-size: 22px; letter-spacing: .12em; border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--ground-sunken); color: var(--ink); }
+.link-albums { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.link-album { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: var(--radius-sm); cursor: pointer; }
+.link-album:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }

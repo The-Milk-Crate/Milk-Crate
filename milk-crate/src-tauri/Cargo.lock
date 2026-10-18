@@ -452,6 +452,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cdlink"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cdrip"
 version = "0.1.0"
 dependencies = [
@@ -2281,6 +2289,7 @@ dependencies = [
 name = "milk-crate"
 version = "0.1.0"
 dependencies = [
+ "cdlink",
  "cdrip",
  "serde",
  "serde_json",

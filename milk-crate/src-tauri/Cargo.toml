@@ -27,6 +27,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # CD ripping: reading the disc, MusicBrainz lookup, FLAC with tags and cover (./cdrip, tested on its own).
 cdrip = { path = "cdrip" }
+# Sending ripped CDs to your other computer on the same network (./cdlink, tested on its own).
+cdlink = { path = "cdlink" }
 
 # Opening a share link while Milk Crate is already running hands it to that window instead of opening a second one.
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]

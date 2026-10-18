@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Disc3, FolderPlus, ImagePlus, Lock, Shuffle, X } from "lucide-react";
+import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, Lock, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
 import { useLibrary } from "../lib/library";
-import { pickAudioFiles } from "../lib/localFiles";
+import { isDesktop, pickAudioFiles } from "../lib/localFiles";
 import { canRip } from "../lib/cd";
 import { CdRipper } from "../components/CdRipper";
+import { ComputerLink } from "../components/ComputerLink";
 import { useRip } from "../lib/ripSession";
 import { AddToPlaylist } from "../components/AddToPlaylist";
 import { changeRippedCover } from "../lib/ripped";
@@ -32,6 +33,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
 
   // A ripped CD: its new files join Your Computer, tags (names, cover) read from the files.
   const addRipped = useAddRipped();
+  const [linkOpen, setLinkOpen] = useState(false);
 
   // Files added before tags were read: read them once.
   const tried = useRef(new Set<string>());
@@ -77,6 +79,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
           {p.localTracks.length > 1 && <Button onClick={() => p.shuffleAll(p.localTracks)}><Shuffle size={16} aria-hidden="true" /> Shuffle</Button>}
           {canRip() && <Button onClick={() => setRipOpen(true)} disabled={ripOpen}><Disc3 size={16} aria-hidden="true" /> Rip a CD</Button>}
+          {isDesktop() && <Button onClick={() => setLinkOpen(true)} disabled={linkOpen}><ArrowLeftRight size={16} aria-hidden="true" /> Send to another computer</Button>}
           <Button variant="primary" onClick={() => void add()} disabled={!!work}><FolderPlus size={16} aria-hidden="true" /> Add audio files</Button>
         </div>
       </header>
@@ -89,6 +92,7 @@ export function Computer({ go, album }: { go: Go; album?: string }) {
         </span>
       </p>
       {ripOpen && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
+      {linkOpen && <ComputerLink onClose={() => setLinkOpen(false)} />}
       {work && <p className="form-info" role="status">Reading tags… {work.done} of {work.total}</p>}
       {msg && !work && <p className="form-info" role="status">{msg}</p>}
 

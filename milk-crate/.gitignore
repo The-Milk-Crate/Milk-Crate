@@ -16,3 +16,4 @@ release/
 *.key
 milkcrate-signing-secrets.txt
 src-tauri/cdrip/target
+src-tauri/cdlink/target
