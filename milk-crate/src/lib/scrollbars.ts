@@ -50,29 +50,77 @@ function areaFor(start: Element | null, axis: Axis): HTMLElement | null {
   return null;
 }
 
-/* ---------- Smooth scrolling that adds up (several wheel clicks in a row go further) ---------- */
+/* ---------- Momentum scrolling ----------
+ * Each wheel click or arrow press gives the area a push; it glides and eases to a stop.
+ * Pushes that come quickly one after another stack up, so spinning the wheel faster
+ * speeds up (acceleration), and a single click still moves a short, gentle distance.
+ */
 
-const pending = new WeakMap<HTMLElement, { x: number; y: number; at: number }>();
+interface Glide { vx: number; vy: number; x: number; y: number; last: number; pushAt: number; streak: number; raf: number }
+const glides = new WeakMap<HTMLElement, Glide>();
+const GLIDE = 0.14;      // s: how long a push takes to fade (bigger = longer glide)
+const MAX_SPEED = 6000;  // px/s
 
-function scrollByAdding(el: HTMLElement, dx: number, dy: number) {
+function push(el: HTMLElement, dx: number, dy: number) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    el.scrollLeft += dx;
+    el.scrollTop += dy;
+    return;
+  }
   const now = performance.now();
-  const p = pending.get(el);
-  const fresh = !p || now - p.at > 250;
+  let g = glides.get(el);
+  if (!g || !g.raf) {
+    g = { vx: 0, vy: 0, x: el.scrollLeft, y: el.scrollTop, last: now, pushAt: 0, streak: 0, raf: 0 };
+    glides.set(el, g);
+  }
+  // Quick pushes in a row build up: up to 2.8× after a few fast clicks.
+  // Only for wheel clicks and key presses; a trackpad's stream of tiny nudges doesn't build up.
+  const coarse = Math.abs(dx) + Math.abs(dy) >= 40;
+  g.streak = coarse && now - g.pushAt < 140 ? Math.min(g.streak + 1, 6) : 0;
+  g.pushAt = now;
+  const boost = 1 + g.streak * 0.3;
+  // A push of d px moves about d px on its own (distance = speed × GLIDE).
+  const clamp = (v: number) => Math.max(-MAX_SPEED, Math.min(MAX_SPEED, v));
+  // Reversing direction cancels the glide instead of fighting it.
+  if (dx && Math.sign(dx) !== Math.sign(g.vx)) g.vx = 0;
+  if (dy && Math.sign(dy) !== Math.sign(g.vy)) g.vy = 0;
+  g.vx = clamp(g.vx + (dx * boost) / GLIDE);
+  g.vy = clamp(g.vy + (dy * boost) / GLIDE);
+  if (!g.raf) g.raf = requestAnimationFrame(glideFrame(el, g));
+}
+
+const glideFrame = (el: HTMLElement, g: Glide) => function frame(now: number) {
+  // A frame's timestamp can be a hair earlier than the push that started it.
+  const dt = Math.max(0, Math.min(0.05, (now - g.last) / 1000));
+  g.last = now;
+  // Someone else scrolled it meanwhile (a drag, the system): carry on from there.
+  if (Math.abs(el.scrollLeft - g.x) > 2) g.x = el.scrollLeft;
+  if (Math.abs(el.scrollTop - g.y) > 2) g.y = el.scrollTop;
   const maxX = el.scrollWidth - el.clientWidth;
   const maxY = el.scrollHeight - el.clientHeight;
-  const x = Math.max(0, Math.min(maxX, (fresh ? el.scrollLeft : p.x) + dx));
-  const y = Math.max(0, Math.min(maxY, (fresh ? el.scrollTop : p.y) + dy));
-  pending.set(el, { x, y, at: now });
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollTo({ left: x, top: y, behavior: reduce ? "auto" : "smooth" });
-}
+  g.x += g.vx * dt;
+  g.y += g.vy * dt;
+  // Stop at an end only when heading into it.
+  if ((g.x <= 0 && g.vx < 0) || (g.x >= maxX && g.vx > 0)) g.vx = 0;
+  if ((g.y <= 0 && g.vy < 0) || (g.y >= maxY && g.vy > 0)) g.vy = 0;
+  g.x = Math.max(0, Math.min(maxX, g.x));
+  g.y = Math.max(0, Math.min(maxY, g.y));
+  el.scrollLeft = g.x;
+  el.scrollTop = g.y;
+  const fade = Math.exp(-dt / GLIDE);
+  g.vx *= fade;
+  g.vy *= fade;
+  const a = areas.get(el);
+  if (a) place(a); // keep the pill in step with the content this same frame
+  if (Math.abs(g.vx) < 8 && Math.abs(g.vy) < 8) { g.raf = 0; g.vx = g.vy = 0; return; }
+  g.raf = requestAnimationFrame(frame);
+};
 
 /** Room left to scroll `el` in the direction of `delta`. */
 function canMove(el: HTMLElement, axis: Axis, delta: number) {
   const pos = axis === "x" ? el.scrollLeft : el.scrollTop;
   const max = axis === "x" ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight;
-  // A few px of slack: rows that snap to their cards stop a little short of their very ends.
-  return delta < 0 ? pos > 8 : pos < max - 8;
+  return delta < 0 ? pos > 1 : pos < max - 1;
 }
 
 /* ---------- The pills ---------- */
@@ -223,7 +271,7 @@ function onWheel(e: WheelEvent) {
       // At either end, let the wheel move the page instead.
       if (!canMove(area as HTMLElement, "x", dy)) return;
       e.preventDefault();
-      scrollByAdding(area as HTMLElement, dy, 0);
+      push(area as HTMLElement, dy, 0);
       return;
     }
     if (area !== n) return;
@@ -247,7 +295,7 @@ function onKey(e: KeyboardEvent) {
   const step = axis === "x" ? Math.min(area.clientWidth * 0.8, 160) : 80;
   if (!canMove(area, axis, sign)) return;
   e.preventDefault();
-  scrollByAdding(area, axis === "x" ? step * sign : 0, axis === "y" ? step * sign : 0);
+  push(area, axis === "x" ? step * sign : 0, axis === "y" ? step * sign : 0);
 }
 
 /** Turn it all on. Returns a function that turns it off. */
