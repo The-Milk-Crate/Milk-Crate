@@ -6,6 +6,7 @@ import { sceneSummary, type Place } from "../lib/geo";
 import { AuthForm } from "../components/AuthForm";
 import { CityPicker } from "../components/CityPicker";
 import { Button } from "../components/ui";
+import { replayTutorial } from "../components/Tutorial";
 import { attempt, useLibrary } from "../lib/library";
 import { checkNewPassword, hasEmail, MIN_PASSWORD } from "../lib/security";
 
@@ -55,6 +56,12 @@ export function Account({ go }: { go: Go }) {
       </section>
 
       {auth.session && <DisplayName />}
+
+      <section className="panel">
+        <h2 className="display-md">Tutorial</h2>
+        <p className="muted">Take the quick tour of Milk Crate again: what each part of the app is for, one stop at a time.</p>
+        <div><Button onClick={replayTutorial}>Replay the tutorial</Button></div>
+      </section>
 
       {auth.session ? (
         <section className="panel">

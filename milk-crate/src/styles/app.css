@@ -1056,6 +1056,8 @@ button.catalog.immersive-link { color: var(--ink-muted); }
   .settings-layout { grid-template-columns: 1fr; }
   .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
   .settings-nav-group { display: none; }
+  /* The title keeps its own row; the categories wrap underneath it. */
+  .settings-nav-head { flex: 1 0 100%; }
 }
 
 /* A CD rip going on, or just finished, while you're elsewhere in the app (src/components/RipNotice.tsx). */
