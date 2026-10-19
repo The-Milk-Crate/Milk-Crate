@@ -11,6 +11,7 @@ import { accentForColor } from "../lib/accent";
 import { EQ_BANDS, EQ_MAX_DB, EQ_PRESETS, FLAT } from "../lib/audioOut";
 import { CEILING_DBTP, TARGET_LUFS } from "../lib/loudness";
 import { Button, DownloadedMark, Sleeve } from "../components/ui";
+import { replayTutorial } from "../components/Tutorial";
 import { useCatalog } from "../lib/catalog";
 import { formatBytes, useDownloads } from "../lib/downloads";
 import { sleeveSeed } from "../lib/sleeve";
@@ -70,6 +71,7 @@ export function SettingsFrame({ go, at, wide = false, children }: { go: Go; at: 
           <div className="settings-nav-head">
             <h1 className="display-md">Settings</h1>
             <span className="catalog eyebrow">{version ? `Milk Crate ${version}` : "Milk Crate"}</span>
+            <Button size="sm" style={{ alignSelf: "flex-start", marginTop: 8 }} onClick={replayTutorial}>Replay the tutorial</Button>
           </div>
           {app.map(item)}
           <span className="settings-nav-group catalog eyebrow">You</span>

@@ -85,7 +85,7 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
         <button type="button" className={`mc-icon-btn${queueOpen ? " on" : ""}`} aria-label="Queue" aria-pressed={queueOpen} title="Queue" onClick={onQueue}>
           <ListMusic size={18} strokeWidth={1.75} aria-hidden="true" />
         </button>
-        <button type="button" className="mc-icon-btn" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive} disabled={!t}>
+        <button type="button" className="mc-icon-btn" data-tour="immersive" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive} disabled={!t}>
           <Maximize2 size={18} strokeWidth={1.75} aria-hidden="true" />
         </button>
       </div>

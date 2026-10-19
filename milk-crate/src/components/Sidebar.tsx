@@ -73,6 +73,7 @@ export function Sidebar({ route, go, collapsed, onToggle }: { route: Route; go: 
       <button key={key ?? name} type="button" className={sub ? "nav-item nav-sub" : "nav-item"} tabIndex={sub && active !== name ? -1 : undefined}
         aria-current={(sub ? active === name && subKey === key : active === name && !folder) ? "page" : undefined}
         data-open={folder ? "" : undefined}
+        data-tour={sub || name === "crate" || name === "shelf" ? undefined : name}
         onClick={() => go(to ?? ({ name } as Route))}
         aria-label={collapsed || (name === "inbox" && unread) ? `${label}${name === "inbox" && unread ? `, ${unread} new` : ""}` : undefined} title={collapsed ? label : undefined}>
         <Icon size={20} strokeWidth={1.75} aria-hidden="true" style={{ flex: "none" }} />
@@ -83,7 +84,7 @@ export function Sidebar({ route, go, collapsed, onToggle }: { route: Route; go: 
   };
   // Folders stay in the page and open or close with an animation.
   const folder = (n: NavItem, items: NavItem[], label: string) => (
-    <div key={n.name} className={`nav-folder${active === n.name && items.length ? " is-open" : ""}`}>
+    <div key={n.name} data-tour={n.name} className={`nav-folder${active === n.name && items.length ? " is-open" : ""}`}>
       {item(n)}
       <div className="nav-folder-items" role="group" aria-label={label} aria-hidden={active !== n.name}>
         <div className="nav-folder-inner">{items.map((f) => item(f, true))}</div>

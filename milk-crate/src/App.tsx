@@ -47,6 +47,7 @@ import { usePersistentState } from "./lib/storage";
 import { listenForLinks } from "./lib/share";
 import { reportErrors } from "./lib/errors";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { Tutorial } from "./components/Tutorial";
 
 /** Screens the app can show. Add a case here and in <Screen> for each new one. */
 /** Your Crate's pages. No tab: the overview (recent albums, singles, favorites and plays). */
@@ -144,6 +145,14 @@ const NO_CITY_NEEDED: Route["name"][] = ["computer", "upload", "editRelease", "a
 function Shell() {
   const [route, setRoute] = useState<Route>({ name: "home" });
   const [immersive, setImmersive] = useState(false);
+  // The new-user tutorial: once, right after you pick your city; Settings can replay it.
+  const [tutorialSeen, setTutorialSeen] = usePersistentState("mc.tutorialSeen", false);
+  const [tutorial, setTutorial] = useState(false);
+  useEffect(() => {
+    const onReplay = () => { setImmersive(false); setTutorial(true); };
+    window.addEventListener("mc:tutorial", onReplay);
+    return () => window.removeEventListener("mc:tutorial", onReplay);
+  }, []);
   const [queueOpen, setQueueOpen] = useState(false);
   const [search, setSearch] = useState<string | null>(null);
   const [feedback, setFeedback] = useState(false);
@@ -314,6 +323,7 @@ function Shell() {
       )}
       <NeedsAccount go={go} />
       {immersive && <Immersive go={go} onClose={() => setImmersive(false)} />}
+      {(tutorial || !tutorialSeen) && !immersive && <Tutorial go={go} onClose={() => { setTutorial(false); setTutorialSeen(true); }} />}
     </>
   );
 }
