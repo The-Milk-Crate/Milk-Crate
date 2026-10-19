@@ -1436,3 +1436,6 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 :root[data-glass="on"] .edit-songs input { background: rgba(0, 0, 0, .28); }
 :root[data-glass="on"][data-theme="light"] .edit-songs input { background: rgba(255, 255, 255, .55); }
 .flat-item.is-front { cursor: pointer; }
+/* A multi-disc album's songs, under "Disc 1", "Disc 2"… (src/screens/Computer.tsx). */
+.disc-group + .disc-group { margin-top: var(--space-6, 24px); }
+.disc-heading { margin: 0 0 8px; padding-left: 12px; }

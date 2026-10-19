@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, PencilLine, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
+import type { Track } from "../lib/types";
 import { usePlayer } from "../lib/player";
 import { isDesktop, pickAudioFiles } from "../lib/localFiles";
 import { canRip } from "../lib/cd";
@@ -130,6 +131,18 @@ function ComputerAlbumCard({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   );
 }
 
+/** An album's songs by disc ("Disc 1", "Disc 2"…), keeping each song's place in the whole album. One disc: one group, no label. */
+function discGroups(tracks: Track[]): { disc: number; label?: string; items: { t: Track; i: number }[] }[] {
+  const groups = new Map<number, { t: Track; i: number }[]>();
+  tracks.forEach((t, i) => {
+    const d = t.tags?.discNo ?? 1;
+    if (!groups.has(d)) groups.set(d, []);
+    groups.get(d)!.push({ t, i });
+  });
+  const many = groups.size > 1;
+  return [...groups.entries()].sort(([x], [y]) => x - y).map(([disc, items]) => ({ disc, label: many ? `Disc ${disc}` : undefined, items }));
+}
+
 function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   const p = usePlayer();
   const cover = useFileCover(a.cover);
@@ -186,16 +199,21 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
             </div>
           </div>
         </form>
-        <ol className="edit-songs" aria-label="Song titles">
-          {a.tracks.map((t, i) => (
-            <li key={t.id}>
-              <span className="numeral muted" aria-hidden="true">{t.tags?.trackNo ?? i + 1}</span>
-              <input aria-label={`Title of song ${t.tags?.trackNo ?? i + 1}`} value={draft.titles[t.id] ?? t.title} maxLength={300}
-                onChange={(e) => setDraft((d) => ({ ...d, titles: { ...d.titles, [t.id]: e.target.value } }))}
-                onKeyDown={(e) => e.key === "Enter" && void save()} />
-            </li>
-          ))}
-        </ol>
+        {discGroups(a.tracks).map((g) => (
+          <section key={g.disc} className="disc-group">
+            {g.label && <h2 className="catalog eyebrow disc-heading">{g.label}</h2>}
+            <ol className="edit-songs" aria-label={g.label ? `${g.label} song titles` : "Song titles"}>
+              {g.items.map(({ t, i }) => (
+                <li key={t.id}>
+                  <span className="numeral muted" aria-hidden="true">{t.tags?.trackNo ?? i + 1}</span>
+                  <input aria-label={`Title of ${g.label ? `${g.label.toLowerCase()}, ` : ""}song ${t.tags?.trackNo ?? i + 1}`} value={draft.titles[t.id] ?? t.title} maxLength={300}
+                    onChange={(e) => setDraft((d) => ({ ...d, titles: { ...d.titles, [t.id]: e.target.value } }))}
+                    onKeyDown={(e) => e.key === "Enter" && void save()} />
+                </li>
+              ))}
+            </ol>
+          </section>
+        ))}
       </div>
     );
   }
@@ -230,11 +248,16 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
         </div>
       </header>
       <div>
-        {a.tracks.map((t, i) => (
-          <TrackRow key={t.id} trackId={t.id} index={t.tags?.trackNo ?? i + 1} title={t.title} artist={a.artist === "Various artists" ? fileArtist(t) : undefined}
-            duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
-            playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(a.tracks, i)}
-            actions={<AddToPlaylist trackIds={[t.id]} />} />
+        {discGroups(a.tracks).map((g) => (
+          <section key={g.disc} className="disc-group" aria-label={g.label}>
+            {g.label && <h2 className="catalog eyebrow disc-heading">{g.label}</h2>}
+            {g.items.map(({ t, i }) => (
+              <TrackRow key={t.id} trackId={t.id} index={t.tags?.trackNo ?? i + 1} title={t.title} artist={a.artist === "Various artists" ? fileArtist(t) : undefined}
+                duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
+                playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(a.tracks, i)}
+                actions={<AddToPlaylist trackIds={[t.id]} />} />
+            ))}
+          </section>
         ))}
       </div>
     </div>
