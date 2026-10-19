@@ -6,7 +6,6 @@
  */
 import { useSyncExternalStore } from "react";
 import { isDesktop } from "./localFiles";
-import { findSplits } from "./vinylSplit";
 
 export interface Pressing { releaseId: string; title: string; artist: string; year?: string | null; detail: string; tracks: number; vinyl: boolean }
 export interface SideTrack { position?: string; title: string; artist: string; seconds?: number | null }
@@ -58,6 +57,8 @@ export interface VinylState {
   saving: boolean;
   /** Songs saved so far (all sides). */
   saved: string[];
+  /** Sides already saved (by index). */
+  doneSides: number[];
   error: string;
   /** Recording finished (or the side ended) while you were elsewhere. */
   notice: string | null;
@@ -66,7 +67,7 @@ export interface VinylState {
 const blank: VinylState = {
   open: false, shown: false, step: "pick", query: "", results: [], searching: false, album: "", artist: "", year: "", cover: null,
   sides: [], discs: 1, side: 0, inputs: [], device: "", recording: false, paused: false, seconds: 0, env: [], left: 0, right: 0,
-  quietFor: 0, clipped: false, dead: false, take: null, start: 0, end: 0, cuts: [], unsure: [], saving: false, saved: [], error: "", notice: null,
+  quietFor: 0, clipped: false, dead: false, take: null, start: 0, end: 0, cuts: [], unsure: [], saving: false, saved: [], doneSides: [], error: "", notice: null,
 };
 let state: VinylState = blank;
 const listeners = new Set<() => void>();
@@ -100,7 +101,7 @@ export async function searchRecords(query: string) {
 }
 
 export async function chooseRecord(p: Pressing) {
-  setVinyl({ releaseId: p.releaseId, album: p.title, artist: p.artist, year: p.year ?? "", sides: [], cover: null, error: "" });
+  setVinyl({ releaseId: p.releaseId, album: p.title, artist: p.artist, year: p.year ?? "", sides: [], cover: null, error: "", side: 0, doneSides: [], saved: [] });
   try {
     const info = await call<RecordInfo | null>("vinyl_record_info", { releaseId: p.releaseId });
     if (state.releaseId !== p.releaseId) return;
@@ -120,7 +121,7 @@ const blankSides = (): Side[] => [{ label: "A", disc: 1, tracks: [] }, { label: 
 
 /** Typing the songs in by hand: one per line, for each side. */
 export function enterByHand() {
-  setVinyl({ releaseId: undefined, releaseGroupId: null, cover: null, sides: blankSides(), discs: 1, side: 0, error: "" });
+  setVinyl({ releaseId: undefined, releaseGroupId: null, cover: null, sides: blankSides(), discs: 1, side: 0, error: "", doneSides: [], saved: [] });
 }
 
 export async function loadInputs() {
@@ -143,11 +144,18 @@ function listenLevels() {
       if (!state.recording) return;
       setVinyl((s) => ({ seconds: l.seconds, left: l.left, right: l.right, quietFor: l.quietFor, clipped: s.clipped || l.clipped, dead: !!l.dead, env: l.env.length ? [...s.env, ...l.env] : s.env }));
       // The side has ended: a while of quiet after some music.
-      if (!l.paused && !l.dead && l.seconds > 60 && l.quietFor >= 8) void stopSide(true);
+      // The side has ended: a full minute of near silence, after some music.
+      if (!l.paused && !l.dead && l.quietFor >= END_QUIET && l.seconds - l.quietFor > 15) void stopSide(true);
     });
   })();
   return listening;
 }
+
+/** A minute of near silence after the music: the needle is in the run-out groove. */
+export const END_QUIET = 60;
+
+/** Which side is about to be recorded (you pick it). */
+export const chooseSide = (side: number) => setVinyl({ side });
 
 export async function startSide() {
   await listenLevels();
@@ -165,36 +173,26 @@ export async function pauseSide(paused: boolean) {
   setVinyl({ paused });
 }
 
-/** Stops recording and finds the songs. `ended`: the side ran out on its own. */
+/**
+ * Stops recording. The songs' starts are yours to set on the next step: they begin evenly spaced
+ * across the side, and the side ends where the closing minute of silence began.
+ * `ended`: the side ran out on its own.
+ */
 export async function stopSide(ended = false) {
   if (!state.recording) return;
+  const quiet = ended ? state.quietFor : 0;
   setVinyl({ recording: false });
   try {
     const take = await call<Recording>("vinyl_stop");
     const side = state.sides[state.side];
-    const lengths = side?.tracks.map((t) => t.seconds ?? null);
     const n = Math.max(1, side?.tracks.length ?? 1);
-    const found = findSplits(take.envelope, lengths && lengths.length === n ? lengths : undefined);
-    const fit = fitCuts(found.cuts, found.unsure, n, found.start, found.end);
-    setVinyl({ take, step: "check", start: found.start, end: found.end, cuts: fit.cuts, unsure: fit.unsure,
+    const end = Math.max(1, take.seconds - Math.min(quiet, take.seconds - 1) + (ended ? 2 : 0));
+    const cuts = Array.from({ length: n - 1 }, (_, i) => (end * (i + 1)) / n);
+    setVinyl({ take, step: "check", start: 0, end: Math.min(end, take.seconds), cuts, unsure: cuts.map(() => false),
       notice: ended && !state.shown ? `Side ${side?.label ?? ""} of ${state.album || "your record"} is done. Check the songs.` : null });
   } catch (e) {
     setVinyl({ error: String(e), step: "pick" });
   }
-}
-
-/** Exactly n−1 cuts for n songs: extra gaps are dropped (the least quiet), missing ones split the longest songs. */
-export function fitCuts(cuts: number[], unsure: boolean[], n: number, start: number, end: number) {
-  let list = cuts.map((c, i) => ({ c, u: unsure[i] ?? false }));
-  while (list.length > n - 1) list.splice(Math.floor(list.length / 2), 1);
-  while (list.length < n - 1) {
-    const bounds = [start, ...list.map((x) => x.c), end];
-    let at = 0;
-    for (let i = 1; i < bounds.length - 1; i++) if (bounds[i + 1] - bounds[i] > bounds[at + 1] - bounds[at]) at = i;
-    list.push({ c: (bounds[at] + bounds[at + 1]) / 2, u: true });
-    list = list.sort((a, b) => a.c - b.c);
-  }
-  return { cuts: list.map((x) => x.c), unsure: list.map((x) => x.u) };
 }
 
 export async function cancelSide() {
@@ -238,8 +236,9 @@ export async function saveSide(): Promise<string[]> {
         releaseGroupId: s.releaseGroupId ?? null, tracks: total, discs: s.discs, songs },
     });
     await call("vinyl_discard", { path: t.path }).catch(() => {});
-    const last = s.side >= s.sides.length - 1;
-    setVinyl({ saving: false, take: null, env: [], seconds: 0, saved: [...s.saved, ...files], side: last ? s.side : s.side + 1, step: last ? "done" : "record" });
+    const done = [...s.doneSides, s.side];
+    const next = s.sides.findIndex((_, i) => !done.includes(i));
+    setVinyl({ saving: false, take: null, env: [], seconds: 0, saved: [...s.saved, ...files], doneSides: done, side: next < 0 ? s.side : next, step: next < 0 ? "done" : "record" });
     return files;
   } catch (e) {
     setVinyl({ saving: false, error: String(e) });
