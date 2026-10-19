@@ -1435,3 +1435,4 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .edit-songs input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 :root[data-glass="on"] .edit-songs input { background: rgba(0, 0, 0, .28); }
 :root[data-glass="on"][data-theme="light"] .edit-songs input { background: rgba(255, 255, 255, .55); }
+.flat-item.is-front { cursor: pointer; }

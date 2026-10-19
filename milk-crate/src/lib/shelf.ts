@@ -2,7 +2,7 @@
  * Your Shelf: the records, tapes and CDs you own, shown the way they sit at home.
  * A section only shows when you have something in it.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { ShelfFormat } from "../App";
 import type { PhysicalFormat } from "./types";
 import { load, save } from "./storage";
@@ -54,14 +54,36 @@ export function useFlipper(count: number, { step = 46, axis = "y" as "x" | "y", 
     flipRef.current?.();
   }, [index]);
 
-  const onWheel = (e: WheelEvent) => {
-    const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  // The wheel flips (and only flips: the page doesn't scroll while the mouse is over the stack).
+  // A mouse wheel moves one per notch; a trackpad's small steps add up, one per 60px.
+  const onWheel = (e: globalThis.WheelEvent) => {
+    if (e.ctrlKey) return; // pinch / zoom
+    e.preventDefault();
+    const raw = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    const d = e.deltaMode === 1 ? raw * 40 : e.deltaMode === 2 ? raw * 400 : raw;
+    if (Math.abs(d) >= 50) {
+      wheel.current = 0;
+      setIndex((i) => i + Math.sign(d));
+      return;
+    }
     wheel.current += d;
     if (Math.abs(wheel.current) < 60) return;
     const n = Math.trunc(wheel.current / 60);
     wheel.current -= n * 60;
     setIndex((i) => i + n);
   };
+  const wheelFn = useRef(onWheel);
+  wheelFn.current = onWheel;
+  // A real (not passive) listener, so the page can be kept still. Put on the stack with `ref={wheelRef}`.
+  const attached = useRef<{ el: HTMLElement; fn: (e: globalThis.WheelEvent) => void } | null>(null);
+  const wheelRef = useCallback((el: HTMLElement | null) => {
+    if (attached.current) attached.current.el.removeEventListener("wheel", attached.current.fn);
+    attached.current = null;
+    if (!el) return;
+    const fn = (e: globalThis.WheelEvent) => wheelFn.current(e);
+    el.addEventListener("wheel", fn, { passive: false });
+    attached.current = { el, fn };
+  }, []);
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
     drag.current = { start: axis === "y" ? e.clientY : e.clientX, from: index, moved: false };
@@ -93,7 +115,7 @@ export function useFlipper(count: number, { step = 46, axis = "y" as "x" | "y", 
     e.preventDefault();
     setIndex((i) => i + to);
   };
-  return { index, setIndex, wasDrag, handlers: { onWheel, onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onKeyDown } };
+  return { index, setIndex, wasDrag, wheelRef, handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onKeyDown } };
 }
 
 /* ---------- A soft sound when you flip ---------- */

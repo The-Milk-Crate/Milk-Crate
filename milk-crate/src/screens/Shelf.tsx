@@ -1,7 +1,7 @@
 import { accentForHue, huesFromImage, oklchToHex } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, Disc3, Plus, Shuffle, Trash2, Volume2, VolumeX } from "lucide-react";
-import type { Go, ShelfFormat } from "../App";
+import type { Go, Route, ShelfFormat } from "../App";
 import { CdRipper } from "../components/CdRipper";
 import { canRip } from "../lib/cd";
 import { useRip } from "../lib/ripSession";
@@ -198,7 +198,7 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
   const { box, scale, width } = useStackScale(kind);
   const base = SIZES[kind];
   const size = { ...base, w: Math.round(base.w * scale), h: Math.round(base.h * scale), strip: Math.round(base.strip * scale) };
-  const { index, setIndex, wasDrag, handlers } = useFlipper(items.length, {
+  const { index, setIndex, wasDrag, wheelRef, handlers } = useFlipper(items.length, {
     axis: "x", step: size.strip,
     onFlip: () => flipSound(kind === "cds" ? "case" : kind === "cassettes" ? "tape" : "sleeve"),
   });
@@ -233,9 +233,9 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
   return (
     <div className="flat-dig">
       <div ref={box} style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
-        <div className="flat-stage" tabIndex={0} role="group" aria-roledescription="stack"
+        <div ref={wheelRef} className="flat-stage" tabIndex={0} role="group" aria-roledescription="stack"
           aria-label={`${items.length} ${size.one}s. Scroll, drag or use the arrow keys to flip.`}
-          style={{ height: stageH }} onWheel={handlers.onWheel} onPointerDown={handlers.onPointerDown} onPointerMove={handlers.onPointerMove}
+          style={{ height: stageH }} onPointerDown={handlers.onPointerDown} onPointerMove={handlers.onPointerMove}
           onPointerUp={handlers.onPointerUp} onPointerCancel={handlers.onPointerCancel}
           onKeyDown={(e) => { if (e.key === "Home" || e.key === "End") handlers.onKeyDown(e); }}>
           {items.map((it, i) => {
@@ -255,8 +255,14 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
             } as CSSProperties;
             return (
               <button key={it.item.id} type="button" tabIndex={-1} className={`flat-item is-${kind}${j === 0 ? " is-front" : ""}`} style={style}
-                aria-label={j === 0 ? `${it.title} by ${it.artist}` : `Flip to ${it.title} by ${it.artist}`}
-                onClick={() => { if (!wasDrag() && j !== 0) setIndex(i); }}>
+                aria-label={j === 0 ? (albumPage(it) ? `Open ${it.title} by ${it.artist}` : `${it.title} by ${it.artist}`) : `Flip to ${it.title} by ${it.artist}`}
+                onClick={() => {
+                  if (wasDrag()) return;
+                  if (j !== 0) return setIndex(i);
+                  // The one in front: its album page.
+                  const to = albumPage(it);
+                  if (to) go(to);
+                }}>
                 <Cover it={it} kind={kind} />
               </button>
             );
@@ -275,6 +281,13 @@ function FlatStack({ items, kind, go }: { items: ShelfItem[]; kind: ShelfFormat;
       <Holding it={front} go={go} />
     </div>
   );
+}
+
+/** The album page for something on your shelf: on Milk Crate, or the CD you ripped. */
+function albumPage(it: ShelfItem): Route | null {
+  if (it.release) return { name: "album", releaseId: it.release.id };
+  if (it.ripped) return { name: "computer", album: it.ripped.key };
+  return null;
 }
 
 /** What each format looks like: the album art, in its sleeve or case. */
