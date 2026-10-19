@@ -100,6 +100,18 @@ pub fn read_samples(path: &Path) -> Result<(Vec<i32>, usize), String> {
     Ok((out, info.sample_rate as usize))
 }
 
+/// A song's loudness, `per_sec` points a second (each the peak there, 0–1), and its length in seconds.
+pub fn envelope(path: &Path, per_sec: usize) -> Result<(Vec<f32>, f64), String> {
+    let (samples, rate) = read_samples(path)?;
+    let frames = samples.len() / 2;
+    let step = (rate / per_sec.max(1)).max(1);
+    let env = samples
+        .chunks(step * 2)
+        .map(|c| c.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as f32 / 32768.0)
+        .collect();
+    Ok((env, frames as f64 / rate as f64))
+}
+
 /// Puts new audio (16-bit stereo at `rate`) in place of `target`'s, keeping every tag and picture it has.
 pub fn replace_audio(target: &Path, samples: &[i32], rate: usize) -> Result<(), String> {
     if samples.len() < rate * 2 {

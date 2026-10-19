@@ -10,7 +10,7 @@ import { VOLUME_FOLD_PX, VolumeIcon, VolumePopover, useNarrow } from "./VolumePo
 import type { Go } from "../App";
 import { SeekBar } from "./SeekBar";
 import { Glyph, PlayButton, Sleeve } from "./ui";
-import { fileArtist, useFileCover } from "../lib/fileTags";
+import { albumKey, fileArtist, useFileCover } from "../lib/fileTags";
 
 /** The persistent player along the bottom of the window. */
 export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onImmersive: () => void; queueOpen: boolean; onQueue: () => void }) {
@@ -23,11 +23,18 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
   const [volOpen, setVolOpen] = useState(false);
   const volBtn = useRef<HTMLButtonElement>(null);
   const folded = useNarrow(VOLUME_FOLD_PX);
-  const { artistById, releaseById } = useCatalog();
+  const { artistById, releaseById, artists } = useCatalog();
   const t = p.current;
   const artist = t ? artistById[t.artistId]?.name ?? (fileArtist(t) || "Your Computer") : "";
   const release = t ? releaseById[t.releaseId] : undefined;
   const fileCover = useFileCover(t?.tags?.cover);
+  // The song's album (in your crate, or Your Computer for files) and the artist's page, if they're on Milk Crate.
+  const openAlbum = t ? () => {
+    if (release) return go({ name: "album", releaseId: release.id });
+    const key = t.id.startsWith("local:") ? albumKey(t) : undefined;
+    go(key ? { name: "computer", album: key } : { name: "computer" });
+  } : undefined;
+  const artistId = t ? (artistById[t.artistId] ? t.artistId : artists.find((a) => a.name.trim().toLowerCase() === artist.trim().toLowerCase())?.id) : undefined;
 
   return (
     <div className="mc-player" role="region" aria-label="Player">
@@ -36,16 +43,20 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
           <>
             {/* The cover nearly fills the bar; the heart sits above the song's name. */}
             <div className="mc-player-cover">
-              <button type="button" className="mc-player-art" aria-label="Immersive mode" title="Immersive mode" onClick={onImmersive}>
+              <button type="button" className="mc-player-art" aria-label={`Open ${release?.title ?? t.tags?.album ?? "the album"}`} title="Open the album" onClick={openAlbum}>
                 <Sleeve src={release?.art ?? fileCover} seed={release ? sleeveSeed(release.title, artist) : t.title} />
               </button>
             </div>
             <div className="mc-player-text">
               <HeartButton on={p.isFavorite(t.id)} title={t.title} onToggle={() => p.toggleFavorite(t.id)} />
               <div className="mc-player-title-row">
-                <span className="mc-track-title">{t.title}</span>
+                <button type="button" className="mc-track-title mc-player-link" title="Open the album" onClick={openAlbum}>{t.title}</button>
               </div>
-              <div className="mc-track-artist">{artist}</div>
+              {artistId ? (
+                <button type="button" className="mc-track-artist mc-player-link" title={`Go to ${artist}`} onClick={() => go({ name: "artist", artistId })}>{artist}</button>
+              ) : (
+                <div className="mc-track-artist">{artist}</div>
+              )}
               {p.loadError && <div className="caption mc-player-error" role="status" title={p.loadError}>Couldn't play this song</div>}
             </div>
           </>

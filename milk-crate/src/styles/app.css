@@ -372,7 +372,7 @@ button { font: inherit; }
 .eq-btn:hover { color: var(--ink); border-color: var(--ink-muted); }
 .eq-btn.on { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
 .eq-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.mc-player-art { padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: var(--radius-sm); flex: none; display: block; }
+.mc-player-art { padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--radius-sm); flex: none; display: block; }
 .mc-player-art:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Equalizer (Settings) */
@@ -1599,16 +1599,25 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 }
 
 /* ---------- Trimming a song (album page, TrimSong.tsx) ---------- */
-.trim-panel { margin: 4px 0 12px; padding: 16px 18px; border-radius: var(--panel-radius, 16px); background: rgba(0, 0, 0, .25); box-shadow: inset 0 0 0 1px var(--panel-edge, var(--line)); display: flex; flex-direction: column; gap: 14px; }
+.trim-panel { margin: 4px 0 12px; padding: 16px 18px; border-radius: var(--panel-radius, 16px); background: rgba(0, 0, 0, .25); box-shadow: inset 0 0 0 1px var(--panel-edge, var(--line)); display: flex; flex-direction: column; gap: 12px; }
 .trim-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.trim-bar { position: relative; height: 10px; border-radius: 5px; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 14%, transparent) 0 4px, transparent 4px 8px); }
-.trim-bar span { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--accent); transition: left .1s, right .1s; }
-.trim-fields { display: flex; gap: 24px; flex-wrap: wrap; }
-.trim-field { display: flex; flex-direction: column; gap: 6px; }
-.trim-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.trim-input { display: inline-flex; align-items: center; gap: 6px; }
-.trim-input input { width: 72px; height: 30px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--ground-sunken); color: var(--ink); font: 500 13px var(--font-mono); }
-.trim-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.trim-wave { padding: 30px 14px 10px; border-radius: var(--radius-sm); background: rgba(0, 0, 0, .3); }
+.trim-wave-inner { position: relative; height: 96px; cursor: pointer; touch-action: none; }
+.trim-bars { position: absolute; inset: 0; display: flex; align-items: center; gap: 2px; }
+.trim-bars span { flex: 1; border-radius: 2px; background: color-mix(in srgb, var(--accent) 75%, transparent); transition: background .1s; }
+.trim-bars span.is-cut { background: color-mix(in srgb, var(--ink) 18%, transparent); }
+.trim-shade { position: absolute; top: -4px; bottom: -4px; background: rgba(0, 0, 0, .35); pointer-events: none; }
+.trim-handle { position: absolute; top: -8px; bottom: -8px; width: 22px; margin-left: -11px; padding: 0; border: 0; background: none; cursor: ew-resize; touch-action: none; z-index: 1; }
+.trim-handle::before { content: ""; position: absolute; top: 0; bottom: 0; left: 9px; width: 4px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 1px rgba(0, 0, 0, .3); }
+.trim-handle::after { content: ""; position: absolute; top: 50%; left: 4px; width: 14px; height: 30px; margin-top: -15px; border-radius: 7px; background: var(--ink); box-shadow: 0 2px 6px rgba(0, 0, 0, .4); transition: transform .1s; }
+.trim-handle:hover::after, .trim-handle:active::after { transform: scaleY(1.12); }
+.trim-handle:focus-visible { outline: none; }
+.trim-handle:focus-visible::after { outline: 2px solid var(--focus); outline-offset: 2px; }
+.trim-handle-tag { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); padding: 2px 6px; border-radius: 4px; font: 500 11px/1.2 var(--font-mono); background: var(--ink); color: var(--ground, #13110f); white-space: nowrap; pointer-events: none; }
+.trim-handle.is-start .trim-handle-tag { transform: translateX(-20%); }
+.trim-handle.is-end .trim-handle-tag { transform: translateX(-80%); }
+.trim-wave.is-dragging .trim-wave-inner { cursor: ew-resize; }
+.trim-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- Where the sound plays (OutputPopover.tsx) ---------- */
 .eq-pop.out-pop { width: min(360px, calc(100vw - 24px)); }
@@ -1621,3 +1630,11 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .out-note { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(0, 0, 0, .2); }
 .out-foot { margin: 0; }
 .out-btn.on { color: var(--accent); }
+
+/* The song and artist in the player bar open the album and the artist's page. */
+.mc-player-link { display: block; max-width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.mc-player-title-row .mc-player-link { font-weight: 600; }
+.mc-player-link.mc-track-artist { color: var(--ink-muted); }
+.mc-player-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.mc-player-link.mc-track-artist:hover { color: var(--ink); }
+.mc-player-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }

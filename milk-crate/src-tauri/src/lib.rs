@@ -172,6 +172,20 @@ mod cd {
         joined(spawn_blocking(move || cdrip::flac::trim(&p, cut_start, cut_end)).await)
     }
 
+    #[derive(serde::Serialize)]
+    pub struct SongShape {
+        envelope: Vec<f32>,
+        seconds: f64,
+    }
+
+    /// A ripped or recorded song's loudness over time (10 points a second), for trimming it.
+    #[tauri::command]
+    pub async fn cd_envelope(app: tauri::AppHandle, path: String) -> Result<SongShape, String> {
+        let p = own_song(&app, &path)?;
+        let (envelope, seconds) = joined(spawn_blocking(move || cdrip::flac::envelope(&p, 10)).await)?;
+        Ok(SongShape { envelope, seconds })
+    }
+
     /// New titles, album name or year for songs you ripped (saved into their FLAC files).
     #[tauri::command]
     pub async fn cd_set_tags(edits: Vec<cdrip::TagEdit>) -> Result<(), String> {
@@ -448,6 +462,7 @@ pub fn run() {
             cd::cd_set_cover,
             cd::cd_set_tags,
             cd::cd_trim,
+            cd::cd_envelope,
             link::link_receive_start,
             link::link_receive_stop,
             link::link_find,
