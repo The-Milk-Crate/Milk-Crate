@@ -1,13 +1,13 @@
 import type { Go } from "../App";
-import { GOVERNING_STATE, LEGAL_ADDRESS, LEGAL_EMAIL, ORG_NAME, TERMS_UPDATED } from "../lib/terms";
+import { ARTIST_SHARE, DISSOLUTION_RECIPIENT, GOVERNING_STATE, LEGAL_ADDRESS, LEGAL_EMAIL, ORG_NAME, TERMS_UPDATED } from "../lib/terms";
 
-export type PolicyDoc = "terms" | "privacy" | "copyright";
-
+export type PolicyDoc = "mission" | "terms" | "privacy" | "copyright";
 
 
 /** Terms, privacy, and how copyright reports and takedowns work, in plain language. */
 export function Policies({ go, doc }: { go: Go; doc: PolicyDoc }) {
   const tabs: { id: PolicyDoc; label: string }[] = [
+    { id: "mission", label: "Our mission" },
     { id: "terms", label: "Terms" },
     { id: "privacy", label: "Privacy" },
     { id: "copyright", label: "Copyright and takedowns" },
@@ -23,10 +23,39 @@ export function Policies({ go, doc }: { go: Go; doc: PolicyDoc }) {
           <button key={t.id} type="button" role="tab" className="chip" aria-selected={doc === t.id} aria-pressed={doc === t.id} onClick={() => go({ name: "policies", doc: t.id })}>{t.label}</button>
         ))}
       </div>
+      {doc === "mission" && <Mission />}
       {doc === "terms" && <Terms />}
       {doc === "privacy" && <Privacy />}
       {doc === "copyright" && <Copyright />}
     </div>
+  );
+}
+
+/** What Milk Crate is for, and the promises it keeps (the binding ones are repeated in the Terms, section 1). */
+export function Mission() {
+  return (
+    <article className="policy">
+      <p className="lede">Milk Crate is a nonprofit music platform that puts artists first: what listeners pay goes to the artists they actually listen to, and music is found through local scenes and real collections, not paid placement.</p>
+      <h2>What we're here to do</h2>
+      <ul>
+        <li><strong>Pay artists fairly.</strong> Your money goes to the artists you play, buy or become a Fan of, not into a shared pool split by the biggest names.</li>
+        <li><strong>Lift up local and up-and-coming artists.</strong> Scenes are built around where you live, so the band from your town sits next to everyone else. No top-100 charts.</li>
+        <li><strong>Sound good.</strong> High-quality streams, and albums you can download to play in the app at full quality.</li>
+        <li><strong>Respect how people own music.</strong> Records, CDs and tapes count: catalog your shelf and rip your own CDs.</li>
+        <li><strong>Leave artists in control.</strong> Artists keep every right to their work, take it down whenever they want, and sell it anywhere else.</li>
+        <li><strong>Keep quality high.</strong> Artists are reviewed before they go public.</li>
+        <li><strong>Grow to all of music,</strong> starting local and independent.</li>
+      </ul>
+      <h2>Our promises</h2>
+      <ul>
+        <li>We never run ads.</li>
+        <li>We never sell or rent your information, or share it for advertising.</li>
+        <li>We never take money to promote an artist, label or song. Discovery on Milk Crate favors local, independent and up-and-coming artists over the biggest names.</li>
+        <li>When you pay, {ARTIST_SHARE} goes to the artists you listen to, and Milk Crate keeps only what it costs to run. We'll publish the numbers every year.</li>
+        <li>You can always download albums to listen offline in the app at full quality.</li>
+        <li>If Milk Crate ever closes, artists get at least 30 days to take copies of their work, and any money left goes to {DISSOLUTION_RECIPIENT}, never to anyone personally.</li>
+      </ul>
+    </article>
   );
 }
 
@@ -35,28 +64,40 @@ export function Terms() {
     <article className="policy">
       <p>These terms are an agreement between you and {ORG_NAME} ("Milk Crate", "we"), the nonprofit that runs the Milk Crate app. By making an account or using the app, you agree to them. They're written to be read; if something's unclear, write to us at {LEGAL_EMAIL}.</p>
 
-      <h2>1. Who can use Milk Crate</h2>
+      <h2>1. Our promises to you</h2>
+      <p>Milk Crate is a nonprofit (see Our mission). As part of this agreement, we promise:</p>
+      <ul>
+        <li>We won't show ads in Milk Crate.</li>
+        <li>We won't sell or rent your personal information, or share it for advertising.</li>
+        <li>We won't accept payment to promote any artist, label or song, or to rank it higher in the app.</li>
+        <li>When Milk Crate charges for anything, at least {ARTIST_SHARE} of what you pay will go to the artists you listen to or buy from, and we'll publish each year how the money was split.</li>
+        <li>You'll be able to download albums for offline listening in the app at full quality, as long as you have an account in good standing and the release is on Milk Crate.</li>
+        <li>If Milk Crate shuts down, we'll give artists at least 30 days' notice, and anything Milk Crate owns after paying its debts goes to {DISSOLUTION_RECIPIENT}, not to any person.</li>
+      </ul>
+      <p>If we ever change one of these promises, we'll tell you at least 30 days before the change takes effect and ask you to agree again; you can delete your account instead.</p>
+
+      <h2>2. Who can use Milk Crate</h2>
       <ul>
         <li>You need to be at least 13 years old. If you're under 18, use Milk Crate only with a parent's or guardian's permission, and they agree to these terms for you.</li>
         <li>If Milk Crate adds anything you pay for, buying it will need you to be 18 or older, or a parent or guardian to buy it for you.</li>
         <li>You can't use Milk Crate if we've removed you before, or if the law where you live doesn't allow it.</li>
       </ul>
 
-      <h2>2. Your account</h2>
+      <h2>3. Your account</h2>
       <ul>
         <li>Give a real email address and keep your password to yourself. You're responsible for what happens on your account, so tell us at {LEGAL_EMAIL} if you think someone else got into it.</li>
         <li>One person per account. Listener and artist accounts are separate, and an account can't switch between them.</li>
         <li>You can delete your account any time from Account. That removes it and what's in it from our server for good.</li>
       </ul>
 
-      <h2>3. Listening</h2>
+      <h2>4. Listening</h2>
       <ul>
-        <li>We let you stream the music on Milk Crate, and download it for offline listening inside the app, for your own personal, non-commercial use.</li>
+        <li>You can stream the music on Milk Crate, and download whole albums or songs to listen offline inside the app, for your own personal, non-commercial use. Artists can't switch downloads off for listeners.</li>
         <li>Downloads play only in Milk Crate and stop working if your account ends. Don't copy them out of the app, share them, sell them, or re-upload them anywhere.</li>
         <li>Don't record, rip or capture music from the app, and don't try to get around anything that protects it.</li>
       </ul>
 
-      <h2>4. Artists and the music you upload</h2>
+      <h2>5. Artists and the music you upload</h2>
       <ul>
         <li><strong>You keep your rights.</strong> Everything you upload (music, artwork, photos, fonts, lyrics, credits) stays yours.</li>
         <li><strong>What you let us do.</strong> By publishing, you give Milk Crate permission, free of charge and not exclusive, to store your uploads, stream them to listeners anywhere, let listeners download them inside the app, and show them in the app and on Milk Crate's share pages (your artist page, Scenes, search, playlists), for as long as they're on Milk Crate. You can sell or share your music anywhere else you like.</li>
@@ -66,14 +107,14 @@ export function Terms() {
         <li>If something you uploaded breaks someone else's rights and they come after us for it, you agree to cover the costs that causes us, as far as the law allows.</li>
       </ul>
 
-      <h2>5. CDs you rip and your own files</h2>
+      <h2>6. CDs you rip and your own files</h2>
       <ul>
         <li>Milk Crate can rip CDs and play audio files from your computer. Only rip CDs you own, and only for your own listening. Whether making a personal copy is allowed depends on where you live; that's your responsibility.</li>
         <li>Ripped music and your own files stay on your computers. They're never uploaded to Milk Crate.</li>
         <li>You can send a ripped CD only to another computer signed in to your own account. Don't use Milk Crate to give ripped music to anyone else, and don't upload it as if it were yours.</li>
       </ul>
 
-      <h2>6. Things you can't do</h2>
+      <h2>7. Things you can't do</h2>
       <ul>
         <li>Post hate, harassment, threats, or anything that encourages violence or self-harm.</li>
         <li>Post anything sexual involving anyone under 18, ever. We remove it and report it to the authorities.</li>
@@ -84,28 +125,28 @@ export function Terms() {
       </ul>
       <p>Report anything that crosses the line with the Report button on any release or artist page.</p>
 
-      <h2>7. Copyright</h2>
+      <h2>8. Copyright</h2>
       <p>If you think something on Milk Crate infringes your copyright, report it from the release or artist page, or send a notice to {LEGAL_EMAIL} or {LEGAL_ADDRESS}. How reports and take-downs work, and how to respond if your music was taken down, is on the Copyright and takedowns page. We remove the accounts of people who infringe again and again.</p>
 
-      <h2>8. If you break these terms</h2>
+      <h2>9. If you break these terms</h2>
       <p>We can remove content, take down releases, hide an artist, or suspend or close an account that breaks these terms or puts listeners, artists or Milk Crate at risk. When we can, we'll tell you why and give you a chance to fix it first. If you think we got it wrong, write to us at {LEGAL_EMAIL}.</p>
 
-      <h2>9. Changes to Milk Crate</h2>
-      <p>Milk Crate is a small nonprofit project. We may add, change or stop features, and we may stop running Milk Crate. If we ever shut it down, we'll give artists at least 30 days' notice to take copies of anything they need.</p>
+      <h2>10. Changes to Milk Crate</h2>
+      <p>Milk Crate is a small nonprofit project. We may add, change or stop features, and we may stop running Milk Crate, but always within the promises in section 1.</p>
 
-      <h2>10. No guarantees</h2>
+      <h2>11. No guarantees</h2>
       <p>Milk Crate is offered as it is and as available. We work to keep it running and your music safe, but we can't promise it will always work, be free of mistakes, or never lose data. Keep your own copies of your music. As far as the law allows, we don't make any other promises about the app.</p>
 
-      <h2>11. Limits on liability</h2>
+      <h2>12. Limits on liability</h2>
       <p>As far as the law allows, Milk Crate and the people who run it aren't liable for indirect or unexpected losses (like lost profits, lost data or lost opportunities) from using Milk Crate, and our total responsibility for anything to do with these terms or the app is limited to $50. Some places don't allow these limits, so they may not all apply to you.</p>
 
-      <h2>12. Disagreements</h2>
+      <h2>13. Disagreements</h2>
       <p>If you have a problem with Milk Crate, write to us at {LEGAL_EMAIL} first; most things can be sorted out that way. These terms are governed by the laws of {GOVERNING_STATE} and of the United States. Any dispute that isn't sorted out goes to the courts in {GOVERNING_STATE}, except that either of us can bring a claim in small claims court where it qualifies.</p>
 
-      <h2>13. Changes to these terms</h2>
+      <h2>14. Changes to these terms</h2>
       <p>When these terms change, the date at the top of this page changes too. If a change matters, the app asks you to agree again before you keep using your account. If you don't agree, you can delete your account.</p>
 
-      <h2>14. The rest</h2>
+      <h2>15. The rest</h2>
       <p>These terms, the Privacy policy and the Copyright and takedowns page are the whole agreement between you and Milk Crate. If part of them can't be enforced, the rest still applies. If we don't enforce something right away, we can still enforce it later. You can't transfer your account or these terms to someone else.</p>
     </article>
   );

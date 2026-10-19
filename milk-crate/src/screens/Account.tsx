@@ -80,6 +80,7 @@ export function Account({ go }: { go: Go }) {
           <SignInDetails />
           <DeleteAccount isArtist={isArtist} />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "mission" })}>Our mission</Button>
             <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "terms" })}>Terms</Button>
             <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "privacy" })}>Privacy</Button>
             <Button size="sm" variant="ghost" onClick={() => go({ name: "policies", doc: "copyright" })}>Copyright and takedowns</Button>

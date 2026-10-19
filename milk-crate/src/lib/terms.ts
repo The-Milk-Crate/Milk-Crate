@@ -7,7 +7,7 @@
  * Fill these in once Milk Crate is a registered organization and has a legal contact. Until then
  * they show in the terms as written, in brackets.
  */
-export const TERMS_VERSION = "2026-10-19";
+export const TERMS_VERSION = "2026-10-19.2";
 export const TERMS_UPDATED = "October 19, 2026";
 
 /** Who people agree with: the organization's legal name. */
@@ -18,3 +18,8 @@ export const GOVERNING_STATE = "[STATE]";
 export const LEGAL_EMAIL = "[LEGAL EMAIL]";
 /** Postal address for formal notices (copyright notices need one). */
 export const LEGAL_ADDRESS = "[MAILING ADDRESS]";
+
+/** The share of what listeners pay that goes to artists (the fair-pay promise). Set before payments launch. */
+export const ARTIST_SHARE = "[X]%";
+/** Where Milk Crate's remaining money goes if it ever closes: another nonprofit that supports musicians. */
+export const DISSOLUTION_RECIPIENT = "[A NONPROFIT THAT SUPPORTS MUSICIANS]";
