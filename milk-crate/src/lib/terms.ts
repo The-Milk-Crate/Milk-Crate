@@ -1,8 +1,10 @@
 /**
  * The terms people agree to (the text is in src/screens/Policies.tsx).
  *
- * TERMS_VERSION: change it when the terms change in a way people must agree to again; everyone
- * signed in is asked once more (src/components/TermsGate.tsx).
+ * TERMS_VERSION: change it ONLY when the terms change in a way people must agree to again;
+ * everyone signed in is then asked once more (src/components/TermsGate.tsx). Fixing a typo or
+ * filling in a bracket doesn't need a new version. Agreeing is saved with the account, so each
+ * account is asked once per version.
  *
  * Fill these in once Milk Crate is a registered organization and has a legal contact. Until then
  * they show in the terms as written, in brackets.
@@ -23,3 +25,12 @@ export const LEGAL_ADDRESS = "[MAILING ADDRESS]";
 export const ARTIST_SHARE = "[X]%";
 /** Where Milk Crate's remaining money goes if it ever closes: another nonprofit that supports musicians. */
 export const DISSOLUTION_RECIPIENT = "[A NONPROFIT THAT SUPPORTS MUSICIANS]";
+
+/** This computer remembers which version each account agreed to, so a stale copy of the session never asks again. */
+const acceptedKey = (userId: string) => `mc.termsAccepted.${userId}`;
+export function acceptedHere(userId: string): boolean {
+  try { return localStorage.getItem(acceptedKey(userId)) === TERMS_VERSION; } catch { return false; }
+}
+export function rememberAccepted(userId: string) {
+  try { localStorage.setItem(acceptedKey(userId), TERMS_VERSION); } catch { /* none */ }
+}

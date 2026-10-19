@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../lib/auth";
-import { TERMS_VERSION } from "../lib/terms";
+import { supabase } from "../lib/supabase";
+import { TERMS_VERSION, acceptedHere, rememberAccepted } from "../lib/terms";
 import { Privacy, Terms } from "../screens/Policies";
 import { Button } from "./ui";
 
-/** The Terms and Privacy Policy in a window, to read before agreeing. */
+/** The Terms and Privacy Policy filling the window, in a comfortable reading column, to read before agreeing. */
 export function PolicyDialog({ onClose }: { onClose: () => void }) {
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -13,16 +15,26 @@ export function PolicyDialog({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
-  return (
+  // Drawn at the top of the page so it fills the window wherever it's opened from (glass cards
+  // would otherwise hold it inside them).
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal panel policies terms-dialog" role="dialog" aria-modal="true" aria-labelledby="terms-dialog-title">
-        <h2 id="terms-dialog-title" className="display-md">Terms</h2>
-        <Terms />
-        <h2 className="display-md">Privacy</h2>
-        <Privacy />
-        <div><Button ref={close} variant="primary" onClick={onClose}>Close</Button></div>
+      <div className="modal panel terms-dialog" role="dialog" aria-modal="true" aria-labelledby="terms-dialog-title">
+        <header className="terms-dialog-head">
+          <h2 id="terms-dialog-title" className="display-md">Terms and Privacy</h2>
+          <Button ref={close} variant="primary" onClick={onClose}>Close</Button>
+        </header>
+        <div className="terms-dialog-body">
+          <div className="policies terms-dialog-read">
+            <h2 className="display-md">Terms</h2>
+            <Terms />
+            <h2 className="display-md">Privacy</h2>
+            <Privacy />
+          </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -35,29 +47,61 @@ export function AgreeToTerms({ checked, onChange }: { checked: boolean; onChange
         <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
         <span>I'm 13 or older (under 18, with a parent's or guardian's permission) and I agree to Milk Crate's Terms and Privacy Policy.</span>
       </label>
-      <button type="button" className="link-btn caption" onClick={() => setReading(true)}>Read them</button>
+      <Button size="sm" onClick={() => setReading(true)}>Read them</Button>
       {reading && <PolicyDialog onClose={() => setReading(false)} />}
     </div>
   );
 }
 
 /**
- * Signed in to an account that hasn't agreed to the current terms (made before agreeing was
- * asked, or the terms changed since): asks before going on. Signing out is the other way out.
+ * Asks once per account: only when the account hasn't agreed to the current terms (made before
+ * agreeing was asked, or TERMS_VERSION changed since). Before asking, it checks the account on the
+ * server (the copy saved on this computer can be out of date) and what this computer remembers
+ * agreeing to, so agreeing once is enough. Signing out is the other way out.
  */
 export function TermsGate() {
   const auth = useAuth();
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  if (!auth.ready || !auth.userId || auth.termsVersion === TERMS_VERSION) return null;
+  // "unknown" while checking with the server; "agreed" or "ask" once known.
+  const [status, setStatus] = useState<"unknown" | "agreed" | "ask">("unknown");
+  const userId = auth.userId;
+  const upToDate = auth.termsVersion === TERMS_VERSION;
+
+  useEffect(() => {
+    if (!auth.ready || !userId) return;
+    if (upToDate) { rememberAccepted(userId); setStatus("agreed"); return; }
+    let live = true;
+    setStatus("unknown");
+    void (async () => {
+      // Agreed on this computer but the account didn't get it (offline, say): send it again, quietly.
+      if (acceptedHere(userId)) {
+        await auth.acceptTerms();
+        if (live) setStatus("agreed");
+        return;
+      }
+      // The account on the server may already have agreed (on another computer, or since this
+      // computer last saved its copy of the session).
+      const { data } = await supabase.auth.getUser();
+      const fresh = data.user?.user_metadata?.terms_version;
+      if (!live) return;
+      if (fresh === TERMS_VERSION) { rememberAccepted(userId); setStatus("agreed"); }
+      else setStatus("ask");
+    })();
+    return () => { live = false; };
+  }, [auth.ready, userId, upToDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!auth.ready || !userId || upToDate || status !== "ask") return null;
   const changed = !!auth.termsVersion;
   const accept = async () => {
     if (!agreed) return setError("Check the box to agree first.");
     setBusy(true);
     const err = await auth.acceptTerms();
     setBusy(false);
-    if (err) setError(err);
+    if (err) return setError(err);
+    rememberAccepted(userId);
+    setStatus("agreed");
   };
   return (
     <div className="modal-backdrop">
