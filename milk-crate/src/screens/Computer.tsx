@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, Shuffle, X } from "lucide-react";
+import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, PencilLine, Shuffle, X } from "lucide-react";
 import type { Go } from "../App";
 import { usePlayer } from "../lib/player";
 import { isDesktop, pickAudioFiles } from "../lib/localFiles";
@@ -8,7 +8,7 @@ import { CdRipper } from "../components/CdRipper";
 import { ComputerLink } from "../components/ComputerLink";
 import { useRip } from "../lib/ripSession";
 import { AddToPlaylist } from "../components/AddToPlaylist";
-import { changeRippedCover } from "../lib/ripped";
+import { changeRippedCover, useEditRipped } from "../lib/ripped";
 import { fileArtist, groupComputer, tagAll, useFileCover, type ComputerAlbum } from "../lib/fileTags";
 import { useAddRipped } from "../lib/ripped";
 import { formatTime } from "../lib/format";
@@ -139,6 +139,66 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   const ripped = p.rippedCds.some((r) => r.key === a.key);
   const [coverMsg, setCoverMsg] = useState("");
   const newCover = async () => { setCoverMsg(""); setCoverMsg((await changeRippedCover(a, p.updateLocalTracks)) ?? ""); };
+  // A CD you ripped: its album title, year and song titles can be changed.
+  const editRipped = useEditRipped();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ album: a.title, year: a.year ? String(a.year) : "", titles: {} as Record<string, string> });
+  const [saving, setSaving] = useState(false);
+  const [editMsg, setEditMsg] = useState("");
+  const startEdit = () => {
+    setDraft({ album: a.title, year: a.year ? String(a.year) : "", titles: Object.fromEntries(a.tracks.map((t) => [t.id, t.title])) });
+    setEditMsg("");
+    setEditing(true);
+  };
+  const save = async () => {
+    setSaving(true);
+    setEditMsg("");
+    try {
+      const key = await editRipped(a, draft);
+      setEditing(false);
+      if (key !== a.key) go({ name: "computer", album: key });
+    } catch (e) {
+      setEditMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (editing) {
+    return (
+      <div className="screen">
+        <form className="album-head" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+          <Sleeve src={cover} seed={`${a.title}|${a.artist}`} alt={`${a.title} cover`} style={{ width: 200, flex: "none" }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: "1 1 320px", minWidth: 0 }}>
+            <span className="catalog eyebrow">Editing · saved into the CD's files on this computer</span>
+            <label className="field">
+              <span className="catalog eyebrow">Album title</span>
+              <input value={draft.album} maxLength={300} onChange={(e) => setDraft((d) => ({ ...d, album: e.target.value }))} autoFocus />
+            </label>
+            <label className="field" style={{ maxWidth: 160 }}>
+              <span className="catalog eyebrow">Year</span>
+              <input value={draft.year} inputMode="numeric" maxLength={4} placeholder="e.g. 1995"
+                onChange={(e) => setDraft((d) => ({ ...d, year: e.target.value.replace(/\D/g, "") }))} />
+            </label>
+            {editMsg && <p className="form-error" role="alert">{editMsg}</p>}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Button variant="primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+              <Button variant="ghost" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
+            </div>
+          </div>
+        </form>
+        <ol className="edit-songs" aria-label="Song titles">
+          {a.tracks.map((t, i) => (
+            <li key={t.id}>
+              <span className="numeral muted" aria-hidden="true">{t.tags?.trackNo ?? i + 1}</span>
+              <input aria-label={`Title of song ${t.tags?.trackNo ?? i + 1}`} value={draft.titles[t.id] ?? t.title} maxLength={300}
+                onChange={(e) => setDraft((d) => ({ ...d, titles: { ...d.titles, [t.id]: e.target.value } }))}
+                onKeyDown={(e) => e.key === "Enter" && void save()} />
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
   return (
     <div className="screen">
       <header className="album-head">
@@ -159,7 +219,10 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
               <Button variant="ghost" onClick={() => setSure(true)}>Remove…</Button>
             )}
             {ripped && (
-              <Button variant="ghost" onClick={() => void newCover()}><ImagePlus size={16} aria-hidden="true" /> Change cover</Button>
+              <>
+                <Button variant="ghost" onClick={startEdit}><PencilLine size={16} aria-hidden="true" /> Edit info</Button>
+                <Button variant="ghost" onClick={() => void newCover()}><ImagePlus size={16} aria-hidden="true" /> Change cover</Button>
+              </>
             )}
           </div>
           {coverMsg && <p className="form-error" role="alert">{coverMsg}</p>}

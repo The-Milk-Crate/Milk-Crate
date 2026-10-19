@@ -119,6 +119,8 @@ interface PlayerActions {
   rippedCds: RippedCd[];
   addRippedCd: (key: string) => void;
   removeRippedCd: (key: string) => void;
+  /** A ripped CD's album got a new name (its key changes with it). */
+  renameRippedCd: (from: string, to: string) => void;
   setVolume: (v: number) => void;
   setMuted: (m: boolean) => void;
   setEqOn: (on: boolean) => void;
@@ -680,6 +682,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     rippedCds: ripped.cds,
     addRippedCd: (key: string) => setRipped((r) => ({ ...r, cds: [{ key, at: Date.now() }, ...r.cds.filter((c) => c.key !== key)] })),
     removeRippedCd: (key: string) => setRipped((r) => ({ ...r, cds: r.cds.filter((c) => c.key !== key) })),
+    renameRippedCd: (from: string, to: string) => setRipped((r) => ({ ...r, cds: r.cds.map((c) => (c.key === from ? { ...c, key: to } : c)) })),
     removeLocalTrack: (trackId: string) => {
       setStored((s) => s.filter((t) => t.id !== trackId));
       setSessionTracks((s) => s.filter((t) => t.id !== trackId));

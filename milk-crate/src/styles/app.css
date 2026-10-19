@@ -1425,3 +1425,13 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 /* Agreeing comes before anything else on screen (the tutorial included). */
 .modal-backdrop:has(> .terms-gate) { z-index: 400; }
 .modal-backdrop:has(> .terms-dialog) { z-index: 410; }
+
+/* Editing a ripped CD's song titles (src/screens/Computer.tsx). */
+.edit-songs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 720px; }
+.edit-songs li { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 10px; }
+.edit-songs .numeral { text-align: right; font-family: var(--font-mono); font-size: 12px; }
+.edit-songs input { width: 100%; box-sizing: border-box; }
+.edit-songs input { height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: var(--ground-sunken); color: var(--ink); font: inherit; }
+.edit-songs input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+:root[data-glass="on"] .edit-songs input { background: rgba(0, 0, 0, .28); }
+:root[data-glass="on"][data-theme="light"] .edit-songs input { background: rgba(255, 255, 255, .55); }

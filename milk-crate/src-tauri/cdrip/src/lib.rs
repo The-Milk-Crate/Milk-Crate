@@ -303,6 +303,55 @@ pub fn set_cover(files: &[PathBuf], data_url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A change to a ripped song's details. `None` leaves that detail as it is; an empty year removes it.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagEdit {
+    pub file: PathBuf,
+    pub title: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<String>,
+}
+
+/// Saves new titles, album names and years into ripped songs' FLAC files (the files keep their
+/// names and places). Only touches .flac files; checks everything before changing anything.
+pub fn set_tags(edits: &[TagEdit]) -> Result<(), String> {
+    for e in edits {
+        if !e.file.extension().is_some_and(|x| x.eq_ignore_ascii_case("flac")) {
+            return Err(format!("Only songs from CDs you ripped can be changed ({}).", e.file.display()));
+        }
+        if let Some(y) = &e.year {
+            let y = y.trim();
+            if !y.is_empty() && !(y.len() == 4 && y.bytes().all(|b| b.is_ascii_digit())) {
+                return Err("The year needs to be four digits, like 1995.".into());
+            }
+        }
+        for v in [&e.title, &e.album].into_iter().flatten() {
+            if v.trim().is_empty() || v.chars().count() > 300 {
+                return Err("Titles can't be empty or longer than 300 characters.".into());
+            }
+        }
+    }
+    for e in edits {
+        let mut tag = metaflac::Tag::read_from_path(&e.file).map_err(|err| format!("Couldn't open {}: {err}", e.file.display()))?;
+        if let Some(t) = &e.title {
+            tag.set_vorbis("TITLE", vec![t.trim()]);
+        }
+        if let Some(a) = &e.album {
+            tag.set_vorbis("ALBUM", vec![a.trim()]);
+        }
+        if let Some(y) = &e.year {
+            if y.trim().is_empty() {
+                tag.remove_vorbis("DATE");
+            } else {
+                tag.set_vorbis("DATE", vec![y.trim()]);
+            }
+        }
+        tag.write_to_path(&e.file).map_err(|err| format!("Couldn't save {}: {err}", e.file.display()))?;
+    }
+    Ok(())
+}
+
 /// Deletes what a rip saved, then the album folders it leaves empty (up to Music › Milk Crate).
 fn remove_rip(saved: &[PathBuf], cover: Option<&Path>, dir: &Path, music: &Path) {
     for f in saved {
@@ -334,6 +383,27 @@ fn remove_rip(saved: &[PathBuf], cover: Option<&Path>, dir: &Path, music: &Path)
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    #[test]
+    fn edits_tags_in_place() {
+        let dir = std::env::temp_dir().join(format!("cdrip-tags-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("01 One.flac");
+        let tags = flac::Tags { title: "One".into(), artist: "Band".into(), album: "Old".into(), album_artist: "Band".into(), track: 1, tracks: 1, disc: 1, discs: 1, year: Some("1999".into()), release_id: None, disc_id: None };
+        flac::write(&f, &vec![0i32; 44100 * 2], &tags, None).unwrap();
+        let bad = set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("99".into()) }]);
+        assert!(bad.is_err());
+        set_tags(&[TagEdit { file: f.clone(), title: Some("Uno".into()), album: Some("New".into()), year: Some("2001".into()) }]).unwrap();
+        let t = metaflac::Tag::read_from_path(&f).unwrap();
+        let get = |k: &str| t.get_vorbis(k).and_then(|mut v| v.next()).map(String::from);
+        assert_eq!(get("TITLE").as_deref(), Some("Uno"));
+        assert_eq!(get("ALBUM").as_deref(), Some("New"));
+        assert_eq!(get("DATE").as_deref(), Some("2001"));
+        assert_eq!(get("ARTIST").as_deref(), Some("Band"));
+        set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("".into()) }]).unwrap();
+        assert!(metaflac::Tag::read_from_path(&f).unwrap().get_vorbis("DATE").is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn rips_a_whole_disc_into_named_tagged_files() {

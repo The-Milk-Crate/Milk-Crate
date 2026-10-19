@@ -4,6 +4,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { usePlayer } from "./player";
+import { useLibrary } from "./library";
+import { songKey } from "./songKeys";
+import type { Track } from "./types";
 import { albumKey, getCover, groupComputer, replaceCover, tagAll, type ComputerAlbum } from "./fileTags";
 import { dataUrlToBlob, imageAsDataUrl } from "./cd";
 import { isDesktop, pickImage, tracksFromPaths } from "./localFiles";
@@ -102,5 +105,53 @@ export function useAddRipped() {
     const key = tagged.map(albumKey).find(Boolean);
     if (key) p.addRippedCd(key);
     return key;
+  };
+}
+
+export interface RippedEdit {
+  /** The album's new title. */
+  album: string;
+  /** Four digits, or "" for none. */
+  year: string;
+  /** New song titles, by song id. */
+  titles: Record<string, string>;
+}
+
+/**
+ * Change a ripped CD's album title, year and song titles. Saved into its FLAC files (so other
+ * players, and your other computers when you send it again, see them too); its playlists and
+ * favorites follow. Returns the album's key afterward (it changes with the title), or throws.
+ */
+export function useEditRipped() {
+  const p = usePlayer();
+  const lib = useLibrary();
+  return async (album: ComputerAlbum, edit: RippedEdit): Promise<string> => {
+    const albumTitle = edit.album.trim();
+    const year = edit.year.trim();
+    if (!albumTitle) throw new Error("Give the album a title.");
+    if (year && !/^\d{4}$/.test(year)) throw new Error("The year needs to be four digits, like 1995.");
+    const next: Track[] = album.tracks.map((t) => ({
+      ...t,
+      title: (edit.titles[t.id] ?? t.title).trim() || t.title,
+      tags: { ...t.tags, album: albumTitle, year: year ? Number(year) : undefined },
+    }));
+    if (isDesktop()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const edits = next.map((t, i) => ({
+        file: t.id.replace(/^local:/, ""),
+        title: t.title !== album.tracks[i].title ? t.title : null,
+        album: albumTitle !== album.title ? albumTitle : null,
+        year: String(album.year ?? "") !== year ? year : null,
+      })).filter((e) => e.title !== null || e.album !== null || e.year !== null);
+      if (edits.length) await invoke("cd_set_tags", { edits }).catch((e) => { throw new Error(String(e)); });
+    }
+    // Playlists and favorites kept with your account describe songs by these details: they follow.
+    const keys: Record<string, string> = {};
+    album.tracks.forEach((t, i) => { keys[songKey(t)] = songKey(next[i]); });
+    p.updateLocalTracks(next);
+    const newKey = albumKey(next[0]) ?? album.key;
+    if (newKey !== album.key) p.renameRippedCd(album.key, newKey);
+    void lib.renameSongKeys(keys);
+    return newKey;
   };
 }

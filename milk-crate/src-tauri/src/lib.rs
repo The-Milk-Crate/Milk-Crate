@@ -153,6 +153,12 @@ mod cd {
         joined(spawn_blocking(move || cdrip::set_cover(&files.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>(), &cover)).await)
     }
 
+    /// New titles, album name or year for songs you ripped (saved into their FLAC files).
+    #[tauri::command]
+    pub async fn cd_set_tags(edits: Vec<cdrip::TagEdit>) -> Result<(), String> {
+        joined(spawn_blocking(move || cdrip::set_tags(&edits)).await)
+    }
+
     #[tauri::command]
     pub async fn cd_eject(id: String) -> Result<(), String> {
         joined(spawn_blocking(move || cdrip::find(&id)?.eject()).await)
@@ -295,6 +301,7 @@ pub fn run() {
             cd::cd_cancel,
             cd::cd_eject,
             cd::cd_set_cover,
+            cd::cd_set_tags,
             link::link_receive_start,
             link::link_receive_stop,
             link::link_find,

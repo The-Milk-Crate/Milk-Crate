@@ -88,6 +88,8 @@ interface Library {
   computerFavorites: string[] | null;
   /** Favorites songs from your computers (by description), or takes them out. */
   setComputerFavorite: (keys: string[], on: boolean) => Promise<void>;
+  /** A song from your computers got new details (e.g. a ripped CD's titles were edited): its playlists and favorites follow (old description → new). */
+  renameSongKeys: (map: Record<string, string>) => Promise<void>;
   /** Adds or removes a song from your favorites. */
   setFavorite: (trackId: string, on: boolean) => Promise<void>;
   /** Rates an album 1–5 stars (0 clears your rating). */
@@ -413,6 +415,22 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     check(error, SETUP_HINT_013);
   }, [gate, computerFavorites]);
 
+  const renameSongKeys = useCallback(async (map: Record<string, string>) => {
+    if (!userId) return;
+    const olds = Object.keys(map).filter((k) => map[k] && map[k] !== k);
+    if (!olds.length) return;
+    const hit = (computerFavorites ?? []).filter((k) => olds.includes(k));
+    if (hit.length) {
+      await setComputerFavorite(hit.map((k) => map[k]), true).catch(() => {});
+      await setComputerFavorite(hit, false).catch(() => {});
+    }
+    for (const p of serverPlaylists) {
+      if (p.songOrder?.some((k) => olds.includes(k))) {
+        await writePlaylist(p.id, { song_order: p.songOrder.map((k) => map[k] ?? k) }).catch(() => {});
+      }
+    }
+  }, [userId, computerFavorites, setComputerFavorite, serverPlaylists, writePlaylist]);
+
   const rateAlbum = useCallback(async (releaseId: string, stars: Rating) => {
     gate("rate albums");
     const before = albumRatings[releaseId];
@@ -438,7 +456,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const value = useMemo<Library>(() => ({
-    signedIn: !!userId, ready, saved, physical, playlists, following, favorites, computerFavorites, setComputerFavorite, albumRatings, displayName,
+    signedIn: !!userId, ready, saved, physical, playlists, following, favorites, computerFavorites, setComputerFavorite, renameSongKeys, albumRatings, displayName,
     isFavorite: (trackId: string) => favoriteSet.has(trackId),
     isSaved: (id) => saved.some((s) => s.releaseId === id),
     isSongInCrate: (trackId, releaseId) => saved.some((s) => s.releaseId === releaseId) || crateSongs.some((x) => x.trackId === trackId),
@@ -447,7 +465,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist,
     follow, unfollow, setFavorite, rateAlbum, setDisplayName,
     needsAccount, dismissNeedsAccount: () => setNeedsAccount(null),
-  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, computerFavorites, setComputerFavorite, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
+  }), [userId, ready, saved, physical, playlists, following, crateSongs, addSongs, removeSongs, favorites, favoriteSet, computerFavorites, setComputerFavorite, renameSongKeys, albumRatings, displayName, save, unsave, addPhysical, removePhysical, createPlaylist, renamePlaylist, deletePlaylist, setPlaylistPicture, addToPlaylist, removeFromPlaylist, follow, unfollow, setFavorite, rateAlbum, setDisplayName, needsAccount]);
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }
