@@ -184,6 +184,8 @@ export function useAddRipped() {
 export interface RippedEdit {
   /** The album's new title. */
   album: string;
+  /** The album's artist. */
+  artist: string;
   /** Four digits, or "" for none. */
   year: string;
   /** New song titles, by song id. */
@@ -200,13 +202,22 @@ export function useEditRipped() {
   const lib = useLibrary();
   return async (album: ComputerAlbum, edit: RippedEdit): Promise<string> => {
     const albumTitle = edit.album.trim();
+    const artist = edit.artist.trim();
     const year = edit.year.trim();
     if (!albumTitle) throw new Error("Give the album a title.");
+    if (!artist) throw new Error("Give the album an artist.");
+    const oldArtist = album.artist;
+    const artistChanged = artist !== oldArtist;
+    // Songs credited to the album's artist follow the new name; a guest's or a compilation's own artist stays.
+    const sameArtist = (t: Track) => !t.tags?.artist || t.tags.artist === oldArtist || t.tags.artist === t.tags.albumArtist;
     if (year && !/^\d{4}$/.test(year)) throw new Error("The year needs to be four digits, like 1995.");
     const next: Track[] = album.tracks.map((t) => ({
       ...t,
       title: (edit.titles[t.id] ?? t.title).trim() || t.title,
-      tags: { ...t.tags, album: albumTitle, year: year ? Number(year) : undefined },
+      tags: {
+        ...t.tags, album: albumTitle, year: year ? Number(year) : undefined,
+        ...(artistChanged ? { albumArtist: artist, artist: sameArtist(t) ? artist : t.tags?.artist } : {}),
+      },
     }));
     if (isDesktop()) {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -215,7 +226,9 @@ export function useEditRipped() {
         title: t.title !== album.tracks[i].title ? t.title : null,
         album: albumTitle !== album.title ? albumTitle : null,
         year: String(album.year ?? "") !== year ? year : null,
-      })).filter((e) => e.title !== null || e.album !== null || e.year !== null);
+        albumArtist: artistChanged ? artist : null,
+        artist: artistChanged && sameArtist(album.tracks[i]) ? artist : null,
+      })).filter((e) => e.title !== null || e.album !== null || e.year !== null || e.albumArtist !== null);
       if (edits.length) await invoke("cd_set_tags", { edits }).catch((e) => { throw new Error(String(e)); });
     }
     // Playlists and favorites kept with your account describe songs by these details: they follow.

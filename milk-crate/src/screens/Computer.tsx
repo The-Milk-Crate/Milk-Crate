@@ -158,11 +158,11 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   // A CD you ripped: its album title, year and song titles can be changed.
   const editRipped = useEditRipped();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ album: a.title, year: a.year ? String(a.year) : "", titles: {} as Record<string, string> });
+  const [draft, setDraft] = useState({ album: a.title, artist: a.artist, year: a.year ? String(a.year) : "", titles: {} as Record<string, string> });
   const [saving, setSaving] = useState(false);
   const [editMsg, setEditMsg] = useState("");
   const startEdit = () => {
-    setDraft({ album: a.title, year: a.year ? String(a.year) : "", titles: Object.fromEntries(a.tracks.map((t) => [t.id, t.title])) });
+    setDraft({ album: a.title, artist: a.artist, year: a.year ? String(a.year) : "", titles: Object.fromEntries(a.tracks.map((t) => [t.id, t.title])) });
     setEditMsg("");
     setEditing(true);
   };
@@ -185,16 +185,22 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
         <form className="album-head" onSubmit={(e) => { e.preventDefault(); void save(); }}>
           <Sleeve src={cover} seed={`${a.title}|${a.artist}`} alt={`${a.title} cover`} style={{ width: 200, flex: "none" }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: "1 1 320px", minWidth: 0 }}>
-            <span className="catalog eyebrow">Editing · saved into the CD's files on this computer</span>
+            <span className="catalog eyebrow">Editing · saved into the album's files on this computer</span>
             <label className="field">
               <span className="catalog eyebrow">Album title</span>
               <input value={draft.album} maxLength={300} onChange={(e) => setDraft((d) => ({ ...d, album: e.target.value }))} autoFocus />
             </label>
-            <label className="field" style={{ maxWidth: 160 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <label className="field" style={{ flex: "1 1 240px" }}>
+              <span className="catalog eyebrow">Artist</span>
+              <input value={draft.artist} maxLength={300} onChange={(e) => setDraft((d) => ({ ...d, artist: e.target.value }))} />
+            </label>
+            <label className="field" style={{ width: 140 }}>
               <span className="catalog eyebrow">Year</span>
               <input value={draft.year} inputMode="numeric" maxLength={4} placeholder="e.g. 1995"
                 onChange={(e) => setDraft((d) => ({ ...d, year: e.target.value.replace(/\D/g, "") }))} />
             </label>
+            </div>
             {editMsg && <p className="form-error" role="alert">{editMsg}</p>}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <Button variant="primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>

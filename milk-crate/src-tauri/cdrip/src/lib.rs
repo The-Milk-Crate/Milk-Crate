@@ -315,6 +315,11 @@ pub struct TagEdit {
     pub title: Option<String>,
     pub album: Option<String>,
     pub year: Option<String>,
+    /// The album's artist (ALBUMARTIST), and this song's own artist (ARTIST).
+    #[serde(default)]
+    pub album_artist: Option<String>,
+    #[serde(default)]
+    pub artist: Option<String>,
 }
 
 /// Saves new titles, album names and years into ripped songs' FLAC files (the files keep their
@@ -335,6 +340,11 @@ pub fn set_tags(edits: &[TagEdit]) -> Result<(), String> {
                 return Err("Titles can't be empty or longer than 300 characters.".into());
             }
         }
+        for v in [&e.album_artist, &e.artist].into_iter().flatten() {
+            if v.trim().is_empty() || v.chars().count() > 300 {
+                return Err("The artist can't be empty or longer than 300 characters.".into());
+            }
+        }
     }
     for e in edits {
         let mut tag = metaflac::Tag::read_from_path(&e.file).map_err(|err| format!("Couldn't open {}: {err}", e.file.display()))?;
@@ -343,6 +353,12 @@ pub fn set_tags(edits: &[TagEdit]) -> Result<(), String> {
         }
         if let Some(a) = &e.album {
             tag.set_vorbis("ALBUM", vec![a.trim()]);
+        }
+        if let Some(a) = &e.album_artist {
+            tag.set_vorbis("ALBUMARTIST", vec![a.trim()]);
+        }
+        if let Some(a) = &e.artist {
+            tag.set_vorbis("ARTIST", vec![a.trim()]);
         }
         if let Some(y) = &e.year {
             if y.trim().is_empty() {
@@ -395,16 +411,17 @@ mod tests {
         let f = dir.join("01 One.flac");
         let tags = flac::Tags { title: "One".into(), artist: "Band".into(), album: "Old".into(), album_artist: "Band".into(), track: 1, tracks: 1, disc: 1, discs: 1, year: Some("1999".into()), release_id: None, disc_id: None, ..Default::default() };
         flac::write(&f, &vec![0i32; 44100 * 2], &tags, None).unwrap();
-        let bad = set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("99".into()) }]);
+        let bad = set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("99".into()), album_artist: None, artist: None }]);
         assert!(bad.is_err());
-        set_tags(&[TagEdit { file: f.clone(), title: Some("Uno".into()), album: Some("New".into()), year: Some("2001".into()) }]).unwrap();
+        set_tags(&[TagEdit { file: f.clone(), title: Some("Uno".into()), album: Some("New".into()), year: Some("2001".into()), album_artist: Some("The Band".into()), artist: Some("The Band".into()) }]).unwrap();
         let t = metaflac::Tag::read_from_path(&f).unwrap();
         let get = |k: &str| t.get_vorbis(k).and_then(|mut v| v.next()).map(String::from);
         assert_eq!(get("TITLE").as_deref(), Some("Uno"));
         assert_eq!(get("ALBUM").as_deref(), Some("New"));
         assert_eq!(get("DATE").as_deref(), Some("2001"));
-        assert_eq!(get("ARTIST").as_deref(), Some("Band"));
-        set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("".into()) }]).unwrap();
+        assert_eq!(get("ARTIST").as_deref(), Some("The Band"));
+        assert_eq!(get("ALBUMARTIST").as_deref(), Some("The Band"));
+        set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("".into()), album_artist: None, artist: None }]).unwrap();
         assert!(metaflac::Tag::read_from_path(&f).unwrap().get_vorbis("DATE").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }

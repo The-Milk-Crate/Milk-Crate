@@ -1576,3 +1576,11 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .vinyl-side-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .vinyl-side-pick .eyebrow { margin-right: 4px; }
 .vinyl-songs li { grid-template-columns: 28px 32px minmax(0, 1fr) 110px 84px 48px; }
+/* Choosing the record's cover before recording (VinylRipper.tsx). */
+.vinyl-cover-pick { display: flex; flex-direction: column; gap: 6px; flex: none; width: 104px; }
+.vinyl-cover-btn { position: relative; padding: 0; border: 0; background: none; border-radius: var(--radius-md); cursor: pointer; }
+.vinyl-cover-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vinyl-cover-hint { position: absolute; inset: 0; display: grid; place-items: center; border-radius: var(--radius-md); background: rgba(0, 0, 0, .45); color: #fff; opacity: 0; transition: opacity .12s ease-out; }
+.vinyl-cover-btn:hover .vinyl-cover-hint, .vinyl-cover-btn:focus-visible .vinyl-cover-hint { opacity: 1; }
+.vinyl-cover.is-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px dashed color-mix(in srgb, var(--ink-muted) 45%, transparent); box-shadow: none; }
+.vinyl-cover-btn:hover .vinyl-cover.is-empty { color: var(--ink); border-color: var(--line-strong); }

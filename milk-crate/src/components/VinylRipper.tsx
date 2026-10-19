@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Disc3, Pause, Play, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Disc3, ImagePlus, Pause, Play, Plus, Search, X } from "lucide-react";
+import { pickImage } from "../lib/localFiles";
+import { imageAsDataUrl } from "../lib/cd";
 import type { Go } from "../App";
 import { Button } from "./ui";
 import { Select } from "./Select";
@@ -71,6 +73,16 @@ export function VinylRipper({ go, onClose }: { go: Go; onClose: () => void }) {
 
 function Pick() {
   const v = useVinyl();
+  const [coverMsg, setCoverMsg] = useState("");
+  // A picture of your own for the cover (MusicBrainz's may be missing, or another pressing's).
+  const pickCover = async () => {
+    setCoverMsg("");
+    const src = await pickImage();
+    if (!src) return;
+    const url = await imageAsDataUrl(src).catch(() => null);
+    if (url) setVinyl({ cover: url });
+    else setCoverMsg("The cover needs to be a JPEG or PNG.");
+  };
   const [q, setQ] = useState(v.query);
   const ready = v.sides.length > 0 && v.sides[v.side]?.tracks.length > 0;
   return (
@@ -101,7 +113,16 @@ function Pick() {
       {v.sides.length > 0 && (
         <div className="vinyl-col vinyl-chosen">
           <div className="vinyl-album-fields">
-            {v.cover ? <img src={v.cover} alt="" className="vinyl-cover" /> : <span className="vinyl-cover is-empty" aria-hidden="true"><Disc3 size={28} /></span>}
+            <div className="vinyl-cover-pick">
+              <button type="button" className="vinyl-cover-btn" onClick={() => void pickCover()} aria-label={v.cover ? "Change the cover" : "Choose a cover"} title={v.cover ? "Change the cover" : "Choose a cover"}>
+                {v.cover ? (
+                  <><img src={v.cover} alt="" className="vinyl-cover" /><span className="vinyl-cover-hint" aria-hidden="true"><ImagePlus size={20} /></span></>
+                ) : (
+                  <span className="vinyl-cover is-empty" aria-hidden="true"><ImagePlus size={24} /><span className="caption">Add a cover</span></span>
+                )}
+              </button>
+              {coverMsg && <span className="form-error caption" role="alert">{coverMsg}</span>}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
               <label className="field"><span className="caption">Album</span><input value={v.album} onChange={(e) => setVinyl({ album: e.target.value })} /></label>
               <div style={{ display: "flex", gap: 8 }}>
