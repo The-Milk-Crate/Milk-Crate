@@ -1475,3 +1475,72 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .mc-select-menu li > svg { flex: none; }
 @keyframes mc-select-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .mc-select-menu { animation: none; } .mc-select-btn > svg { transition: none; } }
+/* An album you ripped from both a CD and a record: which copy plays (src/screens/Computer.tsx). */
+.copy-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.copy-switch .eyebrow { margin-right: 4px; }
+
+/* ---------- Recording a record (src/components/VinylRipper.tsx) ---------- */
+.vinyl-ripper { display: flex; flex-direction: column; gap: 18px; margin-top: var(--space-8); }
+.vinyl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.vinyl-pick { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.vinyl-col { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.vinyl-col > .link-btn { align-self: flex-start; }
+.vinyl-search { display: flex; gap: 10px; align-items: flex-end; }
+.vinyl-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; }
+.vinyl-results button { width: 100%; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 10px 12px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.vinyl-results button:hover { background: var(--glass-shine, rgba(255, 255, 255, .05)); }
+.vinyl-results button[aria-pressed="true"] { background: var(--accent-soft); }
+.vinyl-results button[aria-pressed="true"] strong { color: var(--accent); }
+.vinyl-chosen { padding: 18px; border-radius: var(--panel-radius, 16px); background: rgba(0, 0, 0, .22); box-shadow: inset 0 0 0 1px var(--panel-edge, var(--line)); }
+.vinyl-album-fields { display: flex; gap: 16px; align-items: flex-start; }
+.vinyl-cover { width: 104px; height: 104px; flex: none; object-fit: cover; border-radius: var(--radius-md); box-shadow: 0 8px 20px rgba(0, 0, 0, .35); }
+.vinyl-cover.is-empty { display: grid; place-items: center; background: var(--ground-sunken); color: var(--ink-muted); }
+.vinyl-sides { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+.vinyl-side { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.vinyl-side ol { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 3px; color: var(--ink-muted); }
+.vinyl-side.is-next .eyebrow { color: var(--accent); }
+.vinyl-side.is-next ol { color: var(--ink); }
+.vinyl-side textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: var(--ground-sunken); color: var(--ink); font: inherit; resize: vertical; user-select: text; }
+.vinyl-start { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+.vinyl-recording, .vinyl-check { display: flex; flex-direction: column; gap: 14px; }
+.vinyl-rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.vinyl-live { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); }
+.vinyl-live > span { width: 8px; height: 8px; border-radius: 50%; background: #ff6b5e; box-shadow: 0 0 0 4px rgba(255, 107, 94, .18); animation: vinyl-blink 1.4s ease-in-out infinite; }
+@keyframes vinyl-blink { 50% { opacity: .35; } }
+.vinyl-clock { font-size: 36px; line-height: 1; }
+.vinyl-clock .muted { font-size: 14px; }
+.vinyl-wave { position: relative; height: 170px; padding: 14px 14px 26px; border-radius: var(--panel-radius, 16px); background: rgba(0, 0, 0, .3); box-shadow: inset 0 0 0 1px var(--panel-edge, var(--line)); }
+.vinyl-wave.is-editable { cursor: crosshair; }
+.vinyl-bars { height: 100%; display: flex; align-items: center; gap: 2px; }
+.vinyl-bars span { flex: 1; min-width: 1px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 80%, transparent); }
+.vinyl-bars span.is-ahead { background: rgba(255, 250, 240, .08); }
+.vinyl-wave-inner { position: relative; height: 100%; }
+.vinyl-mark, .vinyl-cut, .vinyl-now { position: absolute; top: -6px; bottom: -6px; width: 0; }
+.vinyl-cut, .vinyl-now { margin-left: -1px; }
+.vinyl-mark { border-left: 1px dashed rgba(255, 250, 240, .35); }
+.vinyl-mark span { position: absolute; top: calc(100% + 6px); left: 4px; white-space: nowrap; font: 500 11px/1 var(--font-mono); color: var(--ink-muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.vinyl-now { width: 2px; background: #ff6b5e; box-shadow: 0 0 10px rgba(255, 107, 94, .6); }
+.vinyl-cut { width: 2px; background: var(--ink); }
+.vinyl-cut::before { content: ""; position: absolute; top: -6px; left: -6px; width: 14px; height: 14px; border-radius: 3px; background: inherit; }
+.vinyl-cut.is-unsure { background: var(--sticker, #ffd43b); }
+.vinyl-cut.is-selected { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.vinyl-meter { display: flex; gap: 3px; height: 10px; }
+.vinyl-meter span { flex: 1; border-radius: 2px; background: rgba(255, 250, 240, .1); }
+.vinyl-meter .is-on { background: var(--accent); }
+.vinyl-meter .is-hot { background: var(--sticker, #ffd43b); }
+.vinyl-meter .is-red { background: #ff6b5e; }
+.vinyl-rec-foot, .vinyl-check-foot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.vinyl-songs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.vinyl-songs li { display: grid; grid-template-columns: 28px 32px minmax(0, 1fr) 64px 110px 84px 48px; align-items: center; gap: 10px; padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer; }
+.vinyl-songs li.is-selected { background: var(--accent-soft); }
+.vinyl-songs input { height: 34px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid transparent; background: transparent; color: var(--ink); font: 650 14px var(--font-sans); user-select: text; }
+.vinyl-songs input:hover, .vinyl-songs input:focus { border-color: var(--line-strong); background: var(--ground-sunken); }
+.vinyl-play { width: 30px; height: 30px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+.vinyl-flag { font: 500 11px/1 var(--font-mono); padding: 5px 8px; border-radius: 4px; background: var(--sticker, #ffd43b); color: #13110f; }
+.vinyl-nudge { display: inline-flex; gap: 4px; }
+.vinyl-nudge button { width: 38px; height: 28px; border-radius: 4px; border: 1px solid var(--line-strong); background: transparent; color: var(--ink); font: 500 11px var(--font-mono); cursor: pointer; }
+.vinyl-next, .vinyl-done { display: flex; flex-direction: column; gap: 14px; }
+@media (prefers-reduced-motion: reduce) { .vinyl-live > span { animation: none; } }
+.vinyl-ripper .link-btn { background: none; border: 0; box-shadow: none; padding: 0; color: var(--ink-muted); text-decoration: underline; cursor: pointer; }
+.vinyl-ripper .link-btn:hover { color: var(--ink); }

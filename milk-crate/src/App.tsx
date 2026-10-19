@@ -42,6 +42,7 @@ import { SearchPalette } from "./components/SearchPalette";
 import { FeedbackDialog } from "./components/FeedbackDialog";
 import { HoldOn } from "./components/HoldOn";
 import { RipNotice } from "./components/RipNotice";
+import { VinylNotice } from "./components/VinylRipper";
 import { WindowChrome, platform } from "./components/WindowChrome";
 const isMac = platform() === "mac";
 import { leaveGuard } from "./lib/leaveGuard";
@@ -343,6 +344,7 @@ function Shell() {
       {search !== null && <SearchPalette go={go} initial={search} onClose={() => setSearch(null)} />}
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
       <RipNotice go={go} />
+      <VinylNotice go={go} />
       {holding && (
         <HoldOn onBack={() => setHolding(null)}
           onProceed={() => { leaveGuard()?.onProceed(); const leave = holding; setHolding(null); leave(); }} />

@@ -1,0 +1,11 @@
+[package]
+name = "vinyl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Recording from a turntable (USB, or line in through an audio interface).
+cpal = "0.16"
+serde = { version = "1", features = ["derive"] }
+# The FLAC writer and tags the CD ripper uses.
+cdrip = { path = "../cdrip" }

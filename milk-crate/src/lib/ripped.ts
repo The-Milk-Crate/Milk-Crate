@@ -7,26 +7,98 @@ import { usePlayer } from "./player";
 import { useLibrary } from "./library";
 import { songKey } from "./songKeys";
 import type { Track } from "./types";
-import { albumKey, getCover, groupComputer, replaceCover, tagAll, type ComputerAlbum } from "./fileTags";
+import { albumKey, getCover, groupComputer, isVinyl, replaceCover, tagAll, type ComputerAlbum } from "./fileTags";
+import { useSyncExternalStore } from "react";
+import { load, save } from "./storage";
 import { dataUrlToBlob, imageAsDataUrl } from "./cd";
 import { isDesktop, pickImage, tracksFromPaths } from "./localFiles";
+
+export type RipFormat = "CD" | "Vinyl";
 
 export interface RippedAlbum extends ComputerAlbum {
   /** When it was ripped (ms). */
   rippedAt: number;
+  /** Ripped from a CD or a record. */
+  format: RipFormat;
+  /** The same album whatever it was ripped from (see copyKeyOf). */
+  copyKey: string;
+  /** Every copy you ripped of this album (this one included): a CD and a record of it, say. */
+  copies: RippedAlbum[];
 }
 
-/** Your ripped CDs that are still in Your Computer, newest first. */
+const normName = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+/** One album however it was ripped: the same artist and title, or the same MusicBrainz album (see linkCopies). */
+export function copyKeyOf(a: ComputerAlbum): string {
+  return `${normName(a.artist)}|${normName(a.title)}`;
+}
+const groupOf = (a: ComputerAlbum) => a.tracks.find((t) => t.tags?.releaseGroup)?.tags?.releaseGroup;
+
+/** Copies with different titles ("Ten" and "Ten (Remastered)") that MusicBrainz says are one album share a key. */
+function linkCopies(list: RippedAlbum[]) {
+  const byGroup = new Map<string, string>();
+  for (const a of list) {
+    const g = groupOf(a);
+    if (!g) continue;
+    const known = byGroup.get(g);
+    if (known) {
+      const old = a.copyKey;
+      for (const x of list) if (x.copyKey === old) x.copyKey = known;
+    } else byGroup.set(g, a.copyKey);
+  }
+}
+
+/** Your ripped CDs and records that are still in Your Computer, newest first: each copy separately (Your Shelf). */
 export function useRippedAlbums(): RippedAlbum[] {
   const p = usePlayer();
   return useMemo(() => {
     if (!p.rippedCds.length) return [];
     const byKey = new Map(groupComputer(p.localTracks).albums.map((a) => [a.key, a]));
-    return p.rippedCds.flatMap((r) => {
+    const list: RippedAlbum[] = p.rippedCds.flatMap((r) => {
       const a = byKey.get(r.key);
-      return a ? [{ ...a, rippedAt: r.at }] : [];
+      return a ? [{ ...a, rippedAt: r.at, format: r.format ?? "CD", copyKey: copyKeyOf(a), copies: [] as RippedAlbum[] }] : [];
     });
+    linkCopies(list);
+    const groups = new Map<string, RippedAlbum[]>();
+    for (const a of list) groups.set(a.copyKey, [...(groups.get(a.copyKey) ?? []), a]);
+    for (const a of list) a.copies = groups.get(a.copyKey)!;
+    return list;
   }, [p.rippedCds, p.localTracks]);
+}
+
+/* Which copy to play when you have an album on both CD and vinyl: the one you last picked, vinyl until you pick. */
+const PREF_KEY = "mc.copyPref";
+let prefs = load<Record<string, RipFormat>>(PREF_KEY, {});
+const prefListeners = new Set<() => void>();
+export function setCopyPref(copyKey: string, format: RipFormat) {
+  prefs = { ...prefs, [copyKey]: format };
+  save(PREF_KEY, prefs);
+  prefListeners.forEach((l) => l());
+}
+export function useCopyPrefs(): Record<string, RipFormat> {
+  return useSyncExternalStore((l) => { prefListeners.add(l); return () => prefListeners.delete(l); }, () => prefs);
+}
+/** The copy to play out of an album's copies. */
+export function preferredCopy(copies: RippedAlbum[], pref?: RipFormat): RippedAlbum {
+  return copies.find((c) => c.format === pref) ?? copies.find((c) => c.format === "Vinyl") ?? copies[0];
+}
+
+/**
+ * Your ripped albums for Your Crate, Home and search: each album once, as the copy you play
+ * (when you have it on both CD and vinyl). Your Shelf keeps both (useRippedAlbums).
+ */
+export function useRippedForCrate(): RippedAlbum[] {
+  const all = useRippedAlbums();
+  const pref = useCopyPrefs();
+  return useMemo(() => {
+    const seen = new Set<string>();
+    const out: RippedAlbum[] = [];
+    for (const a of all) {
+      if (seen.has(a.copyKey)) continue;
+      seen.add(a.copyKey);
+      out.push(preferredCopy(a.copies, pref[a.copyKey]));
+    }
+    return out;
+  }, [all, pref]);
 }
 
 /** Covers for several Your Computer albums at once (key → image URL), filled in as they load. */
@@ -95,7 +167,7 @@ export function useRippedTrackIds(): Set<string> {
  */
 export function useAddRipped() {
   const p = usePlayer();
-  return async (paths: string[]): Promise<string | undefined> => {
+  return async (paths: string[], format?: RipFormat): Promise<string | undefined> => {
     const tracks = await tracksFromPaths(paths);
     // Ripping the same CD again: refresh what's there instead of adding duplicates.
     const known = new Set(tracks.map((t) => t.id));
@@ -103,7 +175,8 @@ export function useAddRipped() {
     const tagged = await tagAll(tracks, () => {});
     p.addLocalTracks(tagged);
     const key = tagged.map(albumKey).find(Boolean);
-    if (key) p.addRippedCd(key);
+    // Sent from your other computer: the files say whether they came off a record.
+    if (key) p.addRippedCd(key, format ?? (tagged.some((t) => isVinyl(t.tags?.media)) ? "Vinyl" : "CD"));
     return key;
   };
 }
@@ -154,4 +227,10 @@ export function useEditRipped() {
     void lib.renameSongKeys(keys);
     return newKey;
   };
+}
+
+/** The sticker for a ripped album: "CD", "VINYL", or "CD · VINYL" when you have both. */
+export function copyLabel(a: RippedAlbum): string {
+  const has = new Set(a.copies.map((c) => c.format));
+  return [has.has("CD") && "CD", has.has("Vinyl") && "VINYL"].filter(Boolean).join(" · ") || "CD";
 }

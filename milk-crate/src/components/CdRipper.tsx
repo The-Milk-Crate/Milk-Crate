@@ -150,6 +150,7 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
           albumArtist: artist,
           year: draft.year.trim() || null,
           releaseId: chosen?.releaseId ?? null,
+          releaseGroupId: chosen?.releaseGroupId ?? null,
           disc: draft.disc,
           discs: draft.discs,
           tracks: disc.tracks

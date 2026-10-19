@@ -16,6 +16,8 @@ export interface Disc {
 
 export interface CdMatch {
   releaseId: string;
+  /** The album across all its pressings (so a CD and a record of it are one album). */
+  releaseGroupId?: string | null;
   title: string;
   artist: string;
   year?: string | null;
@@ -32,6 +34,7 @@ export interface RipPlan {
   albumArtist: string;
   year?: string | null;
   releaseId?: string | null;
+  releaseGroupId?: string | null;
   disc: number;
   discs: number;
   tracks: { number: number; title: string; artist: string }[];

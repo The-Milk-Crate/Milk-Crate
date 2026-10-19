@@ -118,6 +118,10 @@ export interface FileTags {
   trackNo?: number;
   discNo?: number;
   year?: number;
+  /** What it was ripped from: "CD", "Vinyl" (the file's MEDIA tag). */
+  media?: string;
+  /** MusicBrainz's id for the album across all its pressings: a CD and a record of it share it. */
+  releaseGroup?: string;
   /** Key of the album cover saved on this computer (see lib/fileTags.ts), when the file has one. */
   cover?: string;
 }

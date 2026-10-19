@@ -51,6 +51,8 @@ export async function readFileTags(src: string): Promise<ReadTags> {
         trackNo: c.track?.no ?? undefined,
         discNo: c.disk?.no ?? undefined,
         year: c.year ?? undefined,
+        media: clean(c.media),
+        releaseGroup: clean(c.musicbrainz_releasegroupid),
       },
       cover: pic ? new Blob([pic.data as BlobPart], { type: pic.format || "image/jpeg" }) : undefined,
     };
@@ -91,8 +93,12 @@ export function albumKey(t: Pick<Track, "id" | "tags">): string | undefined {
   const path = t.id.replace(/^local:/, "");
   const folder = /[\\/]/.test(path) ? path.replace(/[\\/][^\\/]*$/, "") : "";
   const who = tags.albumArtist ? norm(tags.albumArtist) : folder ? `dir:${folder.toLowerCase()}` : norm(tags.artist);
-  return `${who}|${norm(tags.album)}`;
+  // A record and a CD of the same album are two copies (each its own album here; see ripped.ts).
+  return `${who}|${norm(tags.album)}${isVinyl(tags.media) ? "|vinyl" : ""}`;
 }
+
+/** Ripped from a record (the MEDIA tag says vinyl). */
+export const isVinyl = (media?: string) => !!media && /vinyl|\blp\b|"/i.test(media);
 
 /** Who made it, as the file says. */
 export const fileArtist = (t: Track) => t.tags?.albumArtist || t.tags?.artist || "";

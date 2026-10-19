@@ -3,7 +3,7 @@ import { ChevronLeft, Search } from "lucide-react";
 import { usePlayer } from "../lib/player";
 import { useCatalog } from "../lib/catalog";
 import { useLibrary, type Playlist } from "../lib/library";
-import { useRippedAlbums } from "../lib/ripped";
+import { useRippedForCrate } from "../lib/ripped";
 import { sleeveSeed } from "../lib/sleeve";
 import { fileArtist } from "../lib/fileTags";
 import type { Track } from "../lib/types";
@@ -20,7 +20,7 @@ type View = { kind: "album"; key: string } | { kind: "playlist"; id: string } | 
 /** Your crate's albums (and ripped CDs), most recently played first, ready to show and play. */
 function useLibAlbums(): LibAlbum[] {
   const c = useCatalog();
-  const items = useAlbumItems(useCrate(), useRippedAlbums());
+  const items = useAlbumItems(useCrate(), useRippedForCrate());
   return useMemo(() => items.map((x): LibAlbum => {
     if (x.cd) {
       const a = x.cd;

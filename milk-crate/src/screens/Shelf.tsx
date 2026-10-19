@@ -1,6 +1,6 @@
 import { accentForHue, huesFromImage, oklchToHex } from "../lib/accent";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, Disc3, Plus, Shuffle, Trash2, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Disc, Disc3, Plus, Shuffle, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { Go, Route, ShelfFormat } from "../App";
 import { CdRipper } from "../components/CdRipper";
 import { canRip } from "../lib/cd";
@@ -13,6 +13,8 @@ import { usePersistentState } from "../lib/storage";
 import { SHELF_SECTIONS, flipSound, ownedSections, setShelfSounds, shelfSoundsOn, sortShelf, spineColor, useFlipper, type ShelfSort } from "../lib/shelf";
 import type { PhysicalFormat, Release, Track } from "../lib/types";
 import { Button, PlayButton, Sleeve } from "../components/ui";
+import { VinylRipper } from "../components/VinylRipper";
+import { canRecordVinyl, setVinyl, useVinyl } from "../lib/vinyl";
 import { useAddRipped, useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
 
 /** One thing on your shelf, with what's needed to draw and play it. */
@@ -48,13 +50,16 @@ function useShelfItems(format?: PhysicalFormat): ShelfItem[] {
       tracks: (release?.trackIds ?? []).map((id) => c.trackById[id]).filter(Boolean),
     };
   }), [lib.physical, format, c.releaseById, c.artistById, c.trackById]);
-  const cds = useMemo(() => (format && format !== "CD" ? [] : ripped.map((a): ShelfItem => {
+  // CDs and records you ripped: each on its own shelf (a CD under CDs, a record under Vinyl).
+  const cds = useMemo(() => ripped.flatMap((a): ShelfItem[] => {
+    const shelf: PhysicalFormat = a.format === "Vinyl" ? "LP" : "CD";
+    if (format && format !== shelf) return [];
     const seed = sleeveSeed(a.title, a.artist);
-    return {
-      item: { id: `ripped:${a.key}`, format: "CD", artistName: a.artist, title: a.title, note: "", addedAt: new Date(a.rippedAt).toISOString() },
+    return [{
+      item: { id: `ripped:${a.key}`, format: shelf, artistName: a.artist, title: a.title, note: "", addedAt: new Date(a.rippedAt).toISOString() },
       title: a.title, artist: a.artist, year: a.year, art: a.cover ? covers[a.cover] : undefined, seed, color: spineColor(seed), tracks: a.tracks, ripped: a,
-    };
-  })), [ripped, covers, format]);
+    }];
+  }), [ripped, covers, format]);
   return useMemo(() => [...owned, ...cds], [owned, cds]);
 }
 
@@ -70,6 +75,8 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
   const current = sections.find((s) => s.id === format) ?? sections[0];
   const [adding, setAdding] = useState(false);
   const [ripOpen, setRipOpen] = useRip("open");
+  const vinyl = useVinyl();
+  const hasVinyl = sections.some((s) => s.id === "vinyl");
   const addRipped = useAddRipped();
   const [sounds, setSounds] = useState(shelfSoundsOn);
   const counts = sections.map((s) => {
@@ -91,6 +98,11 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
               {sounds ? <Volume2 size={18} aria-hidden="true" /> : <VolumeX size={18} aria-hidden="true" />}
             </button>
           )}
+          {canRecordVinyl() && (!current || current.id === "vinyl" || !hasVinyl) && (
+            <Button onClick={() => { setVinyl({ open: true }); setTimeout(() => document.querySelector(".vinyl-ripper")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }} disabled={vinyl.open}>
+              <Disc size={16} aria-hidden="true" /> Record vinyl
+            </Button>
+          )}
           {canRip() && (!current || current.id === "cds") && (
             <Button onClick={() => { setRipOpen(true); setTimeout(() => document.querySelector(".cd-ripper")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }} disabled={ripOpen}><Disc3 size={16} aria-hidden="true" /> Rip a CD</Button>
           )}
@@ -110,6 +122,8 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
 
       {/* Beneath the CDs: the same ripper as in Your Computer; a ripped CD lands on this shelf. */}
       {ripOpen && (!current || current.id === "cds") && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
+      {/* Beneath the records: recording one from the turntable; it lands on this shelf. */}
+      {vinyl.open && (!current || current.id === "vinyl" || !hasVinyl) && <VinylRipper go={go} onClose={() => setVinyl({ open: false })} />}
 
     </div>
   );

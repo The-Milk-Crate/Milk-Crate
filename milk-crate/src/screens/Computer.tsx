@@ -9,7 +9,7 @@ import { CdRipper } from "../components/CdRipper";
 import { ComputerLink } from "../components/ComputerLink";
 import { useRip } from "../lib/ripSession";
 import { AddToPlaylist } from "../components/AddToPlaylist";
-import { changeRippedCover, useEditRipped } from "../lib/ripped";
+import { changeRippedCover, setCopyPref, useEditRipped, useRippedAlbums } from "../lib/ripped";
 import { fileArtist, groupComputer, tagAll, useFileCover, type ComputerAlbum } from "../lib/fileTags";
 import { useAddRipped } from "../lib/ripped";
 import { formatTime } from "../lib/format";
@@ -150,6 +150,9 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   const total = a.tracks.reduce((s, t) => s + (t.duration || 0), 0);
   // A CD you ripped can get a different cover.
   const ripped = p.rippedCds.some((r) => r.key === a.key);
+  // The same album ripped from both a CD and a record: pick which copy plays.
+  const me = useRippedAlbums().find((r) => r.key === a.key);
+  const copies = me && me.copies.length > 1 ? [...me.copies].sort((x, y) => (x.format === "Vinyl" ? 0 : 1) - (y.format === "Vinyl" ? 0 : 1)) : [];
   const [coverMsg, setCoverMsg] = useState("");
   const newCover = async () => { setCoverMsg(""); setCoverMsg((await changeRippedCover(a, p.updateLocalTracks)) ?? ""); };
   // A CD you ripped: its album title, year and song titles can be changed.
@@ -222,8 +225,19 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
       <header className="album-head">
         <Sleeve src={cover} seed={`${a.title}|${a.artist}`} alt={`${a.title} cover`} style={{ width: 200, flex: "none" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: "1 1 320px", minWidth: 0 }}>
-          <span className="catalog eyebrow">On your computer · only you can see it</span>
+          <span className="catalog eyebrow">{me ? `Ripped from ${me.format === "Vinyl" ? "vinyl" : "CD"}` : "On your computer"} · only you can see it</span>
           <h1 className="display-lg">{a.title}</h1>
+          {copies.length > 1 && me && (
+            <div className="copy-switch" role="group" aria-label="Play from">
+              <span className="catalog eyebrow">Play from</span>
+              {copies.map((c) => (
+                <button key={c.key} type="button" className="chip" aria-pressed={c.key === a.key}
+                  onClick={() => { setCopyPref(c.copyKey, c.format); if (c.key !== a.key) go({ name: "computer", album: c.key }); }}>
+                  {c.format === "Vinyl" ? "Vinyl" : "CD"}
+                </button>
+              ))}
+            </div>
+          )}
           <p className="muted">{[a.artist, a.year, `${a.tracks.length} songs`, total ? formatTime(total) : null].filter(Boolean).join(" · ")}</p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <PlayButton size="lg" playing={a.tracks.some((t) => t.id === p.current?.id) && p.playing} onClick={() => p.playQueue(a.tracks)} />

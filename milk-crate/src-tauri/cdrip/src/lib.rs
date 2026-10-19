@@ -119,6 +119,8 @@ pub struct Plan {
     pub album_artist: String,
     pub year: Option<String>,
     pub release_id: Option<String>,
+    #[serde(default)]
+    pub release_group_id: Option<String>,
     pub disc: u32,
     pub discs: u32,
     pub tracks: Vec<PlanTrack>,
@@ -152,7 +154,7 @@ pub fn data_url(mime: &str, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
-fn decode_cover(data_url: &str) -> Option<(String, Vec<u8>)> {
+pub fn decode_cover(data_url: &str) -> Option<(String, Vec<u8>)> {
     let b64 = data_url.split_once("base64,")?.1;
     let bytes = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
     let mime = musicbrainz::image_mime(&bytes)?;
@@ -244,6 +246,8 @@ pub fn rip(disc: &Disc, plan: &Plan, music: &Path, on_progress: &dyn Fn(Progress
                 year: plan.year.clone(),
                 release_id: plan.release_id.clone(),
                 disc_id: Some(disc_id.clone()),
+                media: Some("CD".into()),
+                release_group_id: plan.release_group_id.clone(),
             };
             // Waits only if the previous song is still being saved. Fails if saving went wrong.
             if tx.send((dir.join(flac::track_file(t.number as u32, &t.title)), samples, tags)).is_err() {
@@ -389,7 +393,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cdrip-tags-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("01 One.flac");
-        let tags = flac::Tags { title: "One".into(), artist: "Band".into(), album: "Old".into(), album_artist: "Band".into(), track: 1, tracks: 1, disc: 1, discs: 1, year: Some("1999".into()), release_id: None, disc_id: None };
+        let tags = flac::Tags { title: "One".into(), artist: "Band".into(), album: "Old".into(), album_artist: "Band".into(), track: 1, tracks: 1, disc: 1, discs: 1, year: Some("1999".into()), release_id: None, disc_id: None, ..Default::default() };
         flac::write(&f, &vec![0i32; 44100 * 2], &tags, None).unwrap();
         let bad = set_tags(&[TagEdit { file: f.clone(), title: None, album: None, year: Some("99".into()) }]);
         assert!(bad.is_err());
@@ -449,6 +453,7 @@ mod tests {
             album_artist: "Pamelo".into(),
             year: Some("2024".into()),
             release_id: None,
+            release_group_id: None,
             disc: 1,
             discs: 1,
             tracks: vec![
@@ -504,7 +509,7 @@ mod tests {
         let disc = mac_discs(&root.join("vols")).pop().unwrap();
         let music = root.join("Music");
         let jpeg = base64::engine::general_purpose::STANDARD.encode([0xFF, 0xD8, 0xFF, 0xE0, 9]);
-        let plan = Plan { album: "Cavities".into(), album_artist: "Pamelo".into(), year: None, release_id: None, disc: 1, discs: 1,
+        let plan = Plan { album: "Cavities".into(), album_artist: "Pamelo".into(), year: None, release_id: None, release_group_id: None, disc: 1, discs: 1,
             tracks: vec![PlanTrack { number: 1, title: "A".into(), artist: "".into() }, PlanTrack { number: 2, title: "B".into(), artist: "".into() }],
             cover: Some(format!("data:image/jpeg;base64,{jpeg}")) };
         // "Proceed" while song 2 is being read: song 1 may already be saved.
@@ -561,7 +566,7 @@ mod tests {
         std::fs::write(vol.join("3 Audio Track.aiff"), aiff(1000)).unwrap();
         let disc = mac_discs(&root.join("vols")).pop().unwrap();
         let t = |n: u8, title: &str| PlanTrack { number: n, title: title.into(), artist: "".into() };
-        let plan = Plan { album: "A".into(), album_artist: "B".into(), year: None, release_id: None, disc: 1, discs: 1, tracks: vec![t(1, "One"), t(2, "Two"), t(3, "Three")], cover: None };
+        let plan = Plan { album: "A".into(), album_artist: "B".into(), year: None, release_id: None, release_group_id: None, disc: 1, discs: 1, tracks: vec![t(1, "One"), t(2, "Two"), t(3, "Three")], cover: None };
         let seen = Mutex::new(Vec::new());
         let r = rip(&disc, &plan, &root.join("Music"), &|p| seen.lock().unwrap().push(p.overall), &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
         assert_eq!(r.files.len(), 2);
@@ -609,7 +614,7 @@ mod tests {
         f.extend([0u8; 32]);
         std::fs::write(vol.join("1 Audio Track.aiff"), f).unwrap();
         let disc = mac_discs(&root).pop().unwrap();
-        let plan = Plan { album: "A".into(), album_artist: "B".into(), year: None, release_id: None, disc: 1, discs: 1, tracks: vec![PlanTrack { number: 1, title: "x".into(), artist: "".into() }], cover: None };
+        let plan = Plan { album: "A".into(), album_artist: "B".into(), year: None, release_id: None, release_group_id: None, disc: 1, discs: 1, tracks: vec![PlanTrack { number: 1, title: "x".into(), artist: "".into() }], cover: None };
         let err = rip(&disc, &plan, &root.join("Music"), &|_| {}, &AtomicBool::new(true), &AtomicBool::new(false)).unwrap_err();
         assert_eq!(err, "Stopped");
         std::fs::remove_dir_all(&root).unwrap();

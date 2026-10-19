@@ -165,6 +165,123 @@ mod cd {
     }
 }
 
+/// Recording records from a turntable (Your Shelf › Vinyl). The work happens in the vinyl crate;
+/// the recording reports with "vinyl-level" events. Recordings wait in the app's data folder
+/// (recordings/) until they're saved as songs or thrown away.
+mod vinyl_cmd {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+    use tauri::{async_runtime::spawn_blocking, Emitter, Manager};
+
+    static RECORDER: Mutex<Option<vinyl::Recorder>> = Mutex::new(None);
+
+    fn recordings(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+        let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("recordings");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Ok(dir)
+    }
+
+    /// Only recordings Milk Crate made (a path from the app can't point anywhere else).
+    fn own_recording(app: &tauri::AppHandle, path: &str) -> Result<PathBuf, String> {
+        let dir = recordings(app)?.canonicalize().map_err(|e| e.to_string())?;
+        let p = Path::new(path).canonicalize().map_err(|_| "That recording is gone.".to_string())?;
+        if p.parent() == Some(dir.as_path()) && p.extension().is_some_and(|e| e == "pcm") {
+            Ok(p)
+        } else {
+            Err("That isn't one of Milk Crate's recordings.".into())
+        }
+    }
+
+    #[tauri::command]
+    pub async fn vinyl_inputs() -> Vec<vinyl::Input> {
+        spawn_blocking(vinyl::inputs).await.unwrap_or_default()
+    }
+
+    #[derive(serde::Serialize)]
+    pub struct Started {
+        rate: u32,
+    }
+
+    #[tauri::command]
+    pub async fn vinyl_start(app: tauri::AppHandle, device: Option<String>) -> Result<Started, String> {
+        if RECORDER.lock().unwrap().is_some() {
+            return Err("Already recording.".into());
+        }
+        let dir = recordings(&app)?;
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let path = dir.join(format!("side-{stamp}.pcm"));
+        let emit = app.clone();
+        let rec = spawn_blocking(move || vinyl::Recorder::start(device.as_deref(), path, move |l| { let _ = emit.emit("vinyl-level", l); }))
+            .await
+            .map_err(|e| e.to_string())??;
+        let rate = rec.rate();
+        *RECORDER.lock().unwrap() = Some(rec);
+        Ok(Started { rate })
+    }
+
+    #[tauri::command]
+    pub fn vinyl_pause(paused: bool) {
+        if let Some(r) = RECORDER.lock().unwrap().as_ref() {
+            r.set_paused(paused);
+        }
+    }
+
+    #[tauri::command]
+    pub async fn vinyl_stop() -> Result<vinyl::Recording, String> {
+        let rec = RECORDER.lock().unwrap().take().ok_or("Not recording.")?;
+        spawn_blocking(move || rec.stop()).await.map_err(|e| e.to_string())?
+    }
+
+    /// Throws a recording away (or the one going on, when `path` is empty).
+    #[tauri::command]
+    pub async fn vinyl_discard(app: tauri::AppHandle, path: String) -> Result<(), String> {
+        if path.is_empty() {
+            let going = RECORDER.lock().unwrap().take();
+            if let Some(rec) = going {
+                if let Ok(done) = spawn_blocking(move || rec.stop()).await.map_err(|e| e.to_string())? {
+                    let _ = std::fs::remove_file(done.path);
+                }
+            }
+            return Ok(());
+        }
+        let p = own_recording(&app, &path)?;
+        std::fs::remove_file(p).map_err(|e| e.to_string())
+    }
+
+    /// A few seconds of a recording as WAV bytes, to listen to where a song starts.
+    #[tauri::command]
+    pub async fn vinyl_snippet(app: tauri::AppHandle, path: String, rate: u32, start: f64, seconds: f64) -> Result<tauri::ipc::Response, String> {
+        let p = own_recording(&app, &path)?;
+        let wav = spawn_blocking(move || vinyl::snippet_wav(&p, rate, start, seconds)).await.map_err(|e| e.to_string())??;
+        Ok(tauri::ipc::Response::new(wav))
+    }
+
+    /// Saves a side's songs into Music › Milk Crate › Artist › Album (Vinyl). Returns the files.
+    #[tauri::command]
+    pub async fn vinyl_save(app: tauri::AppHandle, path: String, rate: u32, plan: vinyl::SavePlan, cover: Option<String>) -> Result<Vec<String>, String> {
+        let p = own_recording(&app, &path)?;
+        let music = app.path().audio_dir().map_err(|e| format!("Couldn't find your Music folder: {e}"))?;
+        spawn_blocking(move || {
+            let pic = cover.as_deref().and_then(cdrip::decode_cover);
+            let dir = vinyl::album_folder(&music, &plan.album_artist, &plan.album);
+            let files = vinyl::save(&p, rate, &plan, &dir, pic.as_ref().map(|(m, b)| (m.as_str(), b.as_slice())))?;
+            Ok(files.into_iter().map(|f| f.to_string_lossy().into_owned()).collect())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    #[tauri::command]
+    pub async fn vinyl_search(query: String) -> Result<Vec<cdrip::musicbrainz::Pressing>, String> {
+        spawn_blocking(move || cdrip::musicbrainz::search_pressings(&query)).await.map_err(|e| e.to_string())?
+    }
+
+    #[tauri::command]
+    pub async fn vinyl_record_info(release_id: String) -> Result<Option<cdrip::musicbrainz::RecordInfo>, String> {
+        spawn_blocking(move || cdrip::musicbrainz::record_info(&release_id)).await.map_err(|e| e.to_string())?
+    }
+}
+
 /// Milk Crate to Milk Crate on the same network (Your Computer › Send or receive CDs).
 /// The work happens in the cdlink crate. The receiver reports with "link-receive" events,
 /// the sender with "link-send-progress".
@@ -311,7 +428,16 @@ pub fn run() {
             media_base,
             secure::secure_get,
             secure::secure_set,
-            secure::secure_remove
+            secure::secure_remove,
+            vinyl_cmd::vinyl_inputs,
+            vinyl_cmd::vinyl_start,
+            vinyl_cmd::vinyl_pause,
+            vinyl_cmd::vinyl_stop,
+            vinyl_cmd::vinyl_discard,
+            vinyl_cmd::vinyl_snippet,
+            vinyl_cmd::vinyl_save,
+            vinyl_cmd::vinyl_search,
+            vinyl_cmd::vinyl_record_info
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

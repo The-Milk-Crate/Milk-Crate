@@ -45,8 +45,8 @@ export function Sidebar({ route, go, collapsed, onToggle }: { route: Route; go: 
   const ripped = useRippedAlbums();
   // Your Shelf's folder: only the kinds of media you have.
   const shelfSections = useMemo(
-    () => ownedSections([...lib.physical.map((x) => x.format), ...(ripped.length ? (["CD"] as PhysicalFormat[]) : [])]),
-    [lib.physical, ripped.length],
+    () => ownedSections([...lib.physical.map((x) => x.format), ...ripped.map((a): PhysicalFormat => (a.format === "Vinyl" ? "LP" : "CD"))]),
+    [lib.physical, ripped],
   );
   const shelfFolder: NavItem[] = shelfSections.map((s) => ({
     name: "shelf", key: s.id, label: s.id === "vinyl" ? "Vinyl" : s.id === "45s" ? "45s" : s.label, Icon: SHELF_ICONS[s.id], to: { name: "shelf", format: s.id },

@@ -10,7 +10,7 @@ import { formatTime } from "../lib/format";
 import { sleeveSeed } from "../lib/sleeve";
 import { KIND_LABEL, buildCrate, byRecentlyPlayed, type CrateEntry } from "../lib/crate";
 import { fileArtist, useFileCover } from "../lib/fileTags";
-import { useFileCovers, useRippedAlbums, type RippedAlbum } from "../lib/ripped";
+import { copyLabel, useFileCovers, useRippedForCrate, type RippedAlbum } from "../lib/ripped";
 import type { Track } from "../lib/types";
 import { Button, PlayButton, ReleaseCard, Sleeve, Sticker, TrackRow, useAllDownloaded, DownloadedMark } from "../components/ui";
 import { AddToPlaylist } from "../components/AddToPlaylist";
@@ -90,7 +90,7 @@ function CrateHome({ go }: { go: Go }) {
   const favorites = useFavoriteTracks();
   const recent = useRecentSongs(RECENT_MAX);
   // CDs you ripped count as albums too (they play from this computer).
-  const ripped = useRippedAlbums();
+  const ripped = useRippedForCrate();
   const albums = useAlbumItems(crate, ripped);
   const songs = useCrateSongs();
   const everything = useMemo(() => {
@@ -144,7 +144,7 @@ export function useAlbumItems(crate: CrateEntry[], ripped: RippedAlbum[]): Album
   return useMemo(() => {
     const played = new Map<string, number>();
     for (const h of p.history) if (!played.has(h.trackId)) played.set(h.trackId, h.at);
-    const cdAt = (a: RippedAlbum) => Math.max(0, ...a.tracks.map((t) => played.get(t.id) ?? 0));
+    const cdAt = (a: RippedAlbum) => Math.max(0, ...a.copies.flatMap((c) => c.tracks).map((t) => played.get(t.id) ?? 0));
     const items: AlbumItem[] = [
       ...crate.map((e) => ({ crate: e, at: e.playedAt })),
       ...ripped.map((a) => ({ cd: a, at: cdAt(a) })),
@@ -160,7 +160,7 @@ function useCrateSongs(): Track[] {
   const lib = useLibrary();
   const p = usePlayer();
   const crate = useCrate();
-  const ripped = useRippedAlbums();
+  const ripped = useRippedForCrate();
   return useMemo(() => {
     const seen = new Set<string>();
     const out: Track[] = [];
@@ -250,7 +250,7 @@ function EntryTile({ entry: e, go }: { entry: CrateEntry; go: Go }) {
 function RippedTile({ album: a, go }: { album: RippedAlbum; go: Go }) {
   const p = usePlayer();
   const cover = useFileCover(a.cover);
-  return <Tile art={cover} seed={sleeveSeed(a.title, a.artist)} title={a.title} sub={a.artist} sticker="CD"
+  return <Tile art={cover} seed={sleeveSeed(a.title, a.artist)} title={a.title} sub={a.artist} sticker={copyLabel(a)}
     onOpen={() => go({ name: "computer", album: a.key })} onPlay={() => p.playQueue(a.tracks)} />;
 }
 
@@ -295,7 +295,7 @@ function Entries({ go }: { go: Go }) {
   const [sort, setSort] = usePersistentState<EntrySort>("mc.crateSort.albums.v2", "artist");
   const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
   const artistOf = (e: CrateEntry) => c.artistById[e.release.artistId]?.name ?? "";
-  const ripped = useRippedAlbums();
+  const ripped = useRippedForCrate();
   const covers = useFileCovers(ripped.map((a) => a.cover));
   // Albums in your crate and CDs you ripped, sorted together.
   type Item = { crate: CrateEntry; cd?: undefined } | { cd: RippedAlbum; crate?: undefined };
@@ -333,7 +333,7 @@ function Entries({ go }: { go: Go }) {
             const a = x.cd;
             return (
               <ReleaseCard key={`cd:${a.key}`} title={a.title} artist={a.artist} year={a.year} art={a.cover ? covers[a.cover] : undefined}
-                seed={sleeveSeed(a.title, a.artist)} sticker="CD" stickerTone="sticker"
+                seed={sleeveSeed(a.title, a.artist)} sticker={copyLabel(a)} stickerTone="sticker"
                 onOpen={() => go({ name: "computer", album: a.key })} onPlay={() => p.playQueue(a.tracks)} />
             );
           }

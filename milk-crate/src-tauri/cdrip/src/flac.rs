@@ -19,13 +19,23 @@ pub struct Tags {
     pub year: Option<String>,
     pub release_id: Option<String>,
     pub disc_id: Option<String>,
+    /// What it was ripped from: "CD", "Vinyl" (the MEDIA tag).
+    pub media: Option<String>,
+    /// MusicBrainz's id for the album across all its pressings (CD, vinyl, reissues): how a CD
+    /// and a record of the same album are recognized as one album.
+    pub release_group_id: Option<String>,
 }
 
 /// Encodes 16-bit stereo 44.1 kHz samples (interleaved L, R) to `path`, with tags and cover.
 /// Writes to a temporary name first, so a half-written file never shows up as a song.
 pub fn write(path: &Path, samples: &[i32], tags: &Tags, cover: Option<(&str, &[u8])>) -> Result<(), String> {
+    write_at(path, samples, 44_100, tags, cover)
+}
+
+/// Like `write`, at another sample rate (a turntable recorded at 48 kHz, say).
+pub fn write_at(path: &Path, samples: &[i32], rate: usize, tags: &Tags, cover: Option<(&str, &[u8])>) -> Result<(), String> {
     let config = flacenc::config::Encoder::default().into_verified().map_err(|e| format!("{e:?}"))?;
-    let source = flacenc::source::MemSource::from_samples(samples, 2, 16, 44_100);
+    let source = flacenc::source::MemSource::from_samples(samples, 2, 16, rate);
     let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size).map_err(|e| format!("Couldn't encode FLAC: {e:?}"))?;
     let mut sink = flacenc::bitsink::ByteSink::new();
     stream.write(&mut sink).map_err(|e| format!("Couldn't encode FLAC: {e:?}"))?;
@@ -54,6 +64,8 @@ pub fn write(path: &Path, samples: &[i32], tags: &Tags, cover: Option<(&str, &[u
         set("DATE", tags.year.as_deref().unwrap_or(""));
         set("MUSICBRAINZ_ALBUMID", tags.release_id.as_deref().unwrap_or(""));
         set("MUSICBRAINZ_DISCID", tags.disc_id.as_deref().unwrap_or(""));
+        set("MUSICBRAINZ_RELEASEGROUPID", tags.release_group_id.as_deref().unwrap_or(""));
+        set("MEDIA", tags.media.as_deref().unwrap_or(""));
         set("ENCODER", "Milk Crate");
         if let Some((mime, data)) = cover {
             tag.add_picture(mime, PictureType::CoverFront, data.to_vec());
@@ -184,7 +196,7 @@ mod tests {
                 [v, -v]
             })
             .collect();
-        let tags = Tags { title: "Test".into(), artist: "Pamelo".into(), album: "Cavities".into(), album_artist: "Pamelo".into(), track: 1, tracks: 9, disc: 1, discs: 1, year: Some("2024".into()), release_id: Some("rel".into()), disc_id: Some("id".into()) };
+        let tags = Tags { title: "Test".into(), artist: "Pamelo".into(), album: "Cavities".into(), album_artist: "Pamelo".into(), track: 1, tracks: 9, disc: 1, discs: 1, year: Some("2024".into()), release_id: Some("rel".into()), disc_id: Some("id".into()), ..Default::default() };
         let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
         write(&path, &samples, &tags, Some(("image/jpeg", &jpeg))).unwrap();
         assert!(!path.with_extension("flac.part").exists());

@@ -11,7 +11,7 @@ import { artistSounds, similarArtists } from "../lib/similar";
 import type { Release } from "../lib/types";
 import { Button, ReleaseCard } from "../components/ui";
 import { ArtistCard } from "../components/ArtistCard";
-import { useFileCovers, useRippedAlbums } from "../lib/ripped";
+import { copyLabel, useFileCovers, useRippedForCrate } from "../lib/ripped";
 import { sleeveSeed } from "../lib/sleeve";
 
 const DAY = 86_400_000;
@@ -23,7 +23,7 @@ export function Home({ go }: { go: Go }) {
   const lib = useLibrary();
   const { scene } = useLocation();
   const placed = useArtistPlaces();
-  const ripped = useRippedAlbums();
+  const ripped = useRippedForCrate();
   const cdCovers = useFileCovers(ripped.map((a) => a.cover));
 
   const play = (r: Release) => p.playQueue(r.trackIds.map((id) => c.trackById[id]).filter(Boolean));
@@ -36,7 +36,7 @@ export function Home({ go }: { go: Go }) {
   };
 
   // In your rotation: albums you've played most in the last 30 days, CDs you ripped included.
-  const cdByTrack = new Map(ripped.flatMap((a) => a.tracks.map((t) => [t.id, a] as const)));
+  const cdByTrack = new Map(ripped.flatMap((a) => a.copies.flatMap((copy) => copy.tracks.map((t) => [t.id, a] as const))));
   const counts = new Map<string, number>();
   for (const h of p.history) {
     if (Date.now() - h.at >= 30 * DAY) continue;
@@ -50,7 +50,7 @@ export function Home({ go }: { go: Go }) {
     if (!cd) return card(c.releaseById[id]);
     return (
       <ReleaseCard key={id} title={cd.title} artist={cd.artist} year={cd.year} art={cd.cover ? cdCovers[cd.cover] : undefined}
-        seed={sleeveSeed(cd.title, cd.artist)} sticker="CD" stickerTone="sticker"
+        seed={sleeveSeed(cd.title, cd.artist)} sticker={copyLabel(cd)} stickerTone="sticker"
         onOpen={() => go({ name: "computer", album: cd.key })} onPlay={() => p.playQueue(cd.tracks)} />
     );
   };

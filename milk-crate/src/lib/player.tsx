@@ -41,7 +41,8 @@ const HISTORY_LIMIT = 500;
 /** The queue (song ids and where you were), so it's still there after a restart. */
 const QUEUE_KEY = "mc.queue";
 /** A CD ripped on this computer: its album in Your Computer, and when it was ripped. */
-export interface RippedCd { key: string; at: number }
+/** A CD or record you ripped (by its Your Computer album key). `format` is "CD" when missing. */
+export interface RippedCd { key: string; at: number; format?: "CD" | "Vinyl" }
 const rippedKey = (userId?: string) => (userId ? `mc.rippedCds.${userId}` : "mc.rippedCds");
 
 const FLAC_FIX_KEY = "mc.flacHeaderFix1";
@@ -117,7 +118,7 @@ interface PlayerActions {
   removeLocalTrack: (trackId: string) => void;
   /** CDs ripped on this computer (by Your Computer album key), newest first. Kept on this computer only. */
   rippedCds: RippedCd[];
-  addRippedCd: (key: string) => void;
+  addRippedCd: (key: string, format?: "CD" | "Vinyl") => void;
   removeRippedCd: (key: string) => void;
   /** A ripped CD's album got a new name (its key changes with it). */
   renameRippedCd: (from: string, to: string) => void;
@@ -680,7 +681,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setQueue(swap);
     },
     rippedCds: ripped.cds,
-    addRippedCd: (key: string) => setRipped((r) => ({ ...r, cds: [{ key, at: Date.now() }, ...r.cds.filter((c) => c.key !== key)] })),
+    addRippedCd: (key: string, format: "CD" | "Vinyl" = "CD") => setRipped((r) => ({ ...r, cds: [{ key, at: Date.now(), format }, ...r.cds.filter((c) => c.key !== key)] })),
     removeRippedCd: (key: string) => setRipped((r) => ({ ...r, cds: r.cds.filter((c) => c.key !== key) })),
     renameRippedCd: (from: string, to: string) => setRipped((r) => ({ ...r, cds: r.cds.map((c) => (c.key === from ? { ...c, key: to } : c)) })),
     removeLocalTrack: (trackId: string) => {
