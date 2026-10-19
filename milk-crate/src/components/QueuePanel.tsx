@@ -93,7 +93,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           {!p.radio && p.repeat === "all" && p.queue.length > 1 && <p className="caption muted">Then it starts again from the top.</p>}
         </>
       ) : (
-        <p className="muted">Nothing playing. Pick a record.</p>
+        <p className="muted">Nothing playing yet. Pick an album, a playlist or a song.</p>
       )}
     </aside>
   );

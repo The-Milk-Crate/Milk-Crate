@@ -1544,3 +1544,7 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 @media (prefers-reduced-motion: reduce) { .vinyl-live > span { animation: none; } }
 .vinyl-ripper .link-btn { background: none; border: 0; box-shadow: none; padding: 0; color: var(--ink-muted); text-decoration: underline; cursor: pointer; }
 .vinyl-ripper .link-btn:hover { color: var(--ink); }
+/* The player with nothing in it: an empty sleeve where the cover goes (src/components/PlayerBar.tsx). */
+.mc-player-empty-art { width: 86px; height: 86px; box-sizing: border-box; display: grid; place-items: center; border-radius: calc(var(--panel-radius, 18px) - 5px);
+  color: var(--ink-muted); background: rgba(255, 250, 240, .04); border: 1px dashed color-mix(in srgb, var(--ink-muted) 45%, transparent); }
+[data-theme="light"] .mc-player-empty-art { background: rgba(40, 32, 24, .04); }

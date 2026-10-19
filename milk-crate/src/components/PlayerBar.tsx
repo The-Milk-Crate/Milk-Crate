@@ -3,7 +3,7 @@ import { usePlayer } from "../lib/player";
 import { EqPopover } from "./EqPopover";
 import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
-import { ListMusic, Maximize2, Repeat, Repeat1, Shuffle } from "lucide-react";
+import { Disc3, ListMusic, Maximize2, Repeat, Repeat1, Shuffle } from "lucide-react";
 import { VOLUME_FOLD_PX, VolumeIcon, VolumePopover, useNarrow } from "./VolumePopover";
 import type { Go } from "../App";
 import { SeekBar } from "./SeekBar";
@@ -45,7 +45,16 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
             </div>
           </>
         ) : (
-          <span className="muted">Nothing playing. Pick a record.</span>
+          // Nothing yet: the same shape as a song playing, an empty sleeve and two lines.
+          <>
+            <div className="mc-player-cover">
+              <span className="mc-player-empty-art" aria-hidden="true"><Disc3 size={30} strokeWidth={1.5} /></span>
+            </div>
+            <div className="mc-player-text">
+              <div className="mc-track-title">Nothing playing</div>
+              <div className="mc-track-artist">Pick an album, a playlist or a song</div>
+            </div>
+          </>
         )}
       </div>
 
