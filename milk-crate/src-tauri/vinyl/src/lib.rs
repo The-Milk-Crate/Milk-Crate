@@ -62,6 +62,9 @@ pub struct Level {
     pub paused: bool,
     /// Some samples hit the top: too loud.
     pub clipped: bool,
+    /// Nothing but exact zeros so far: the system isn't letting Milk Crate hear the input
+    /// (on a Mac, Microphone access is off), or the input sends nothing at all.
+    pub dead: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -82,6 +85,8 @@ struct Shared {
     peaks: Mutex<(f32, f32, bool)>,
     env: Mutex<(Vec<f32>, f64, u32)>, // (points, sum of squares in this window, frames in it)
     error: Mutex<Option<String>>,
+    /// Any sample that wasn't exactly zero.
+    heard: AtomicBool,
 }
 
 pub struct Recorder {
@@ -127,6 +132,7 @@ impl Recorder {
             peaks: Mutex::new((0.0, 0.0, false)),
             env: Mutex::new((Vec::new(), 0.0, 0)),
             error: Mutex::new(None),
+            heard: AtomicBool::new(false),
         });
         let device_name = device.map(str::to_string);
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -231,7 +237,8 @@ impl Recorder {
                     }
                 }
                 let quiet_for = quiet_since.map(|s| (seconds - s).max(0.0)).unwrap_or(0.0);
-                on_level(Level { seconds, left, right, env, quiet_for, paused, clipped });
+                let dead = seconds > 2.0 && !sh.heard.load(Ordering::Relaxed);
+                on_level(Level { seconds, left, right, env, quiet_for, paused, clipped, dead });
             }
         });
         Ok(Recorder { stop: stop_tx, done: done_rx, shared, path, rate, reporter: Some(reporter), reporting })
@@ -279,6 +286,9 @@ fn take(sh: &Shared, frames: impl Iterator<Item = (i16, i16)>, window: u32) {
         pl = pl.max(fl.abs());
         pr = pr.max(fr.abs());
         clip |= l == i16::MAX || l == i16::MIN || r == i16::MAX || r == i16::MIN;
+        if l != 0 || r != 0 {
+            sh.heard.store(true, Ordering::Relaxed);
+        }
         let m = (fl + fr) / 2.0;
         env.1 += (m * m) as f64;
         env.2 += 1;

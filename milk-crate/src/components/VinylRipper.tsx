@@ -260,6 +260,7 @@ function Recording({ side }: { side?: Side }) {
         <span className="catalog eyebrow vinyl-live"><span aria-hidden="true" />{v.paused ? "Paused" : "Recording"} · Side {side?.label} of {v.sides.length}</span>
         <span className="vinyl-clock numeral">{clock(v.seconds)}{expected ? <span className="muted"> of about {clock(expected)}</span> : null}</span>
       </div>
+      {v.dead && <NoSound device={v.device} />}
       {now > 0 && side && <p className="caption muted">Now: {side.tracks[now - 1]?.title}, song {now} of {side.tracks.length}</p>}
       <Wave env={v.env} of={of} marks={marks} now={v.seconds} />
       <div className="vinyl-rec-foot">
@@ -273,6 +274,26 @@ function Recording({ side }: { side?: Side }) {
         <Button onClick={() => void pauseSide(!v.paused)}>{v.paused ? <><Play size={16} aria-hidden="true" /> Resume</> : <><Pause size={16} aria-hidden="true" /> Pause</>}</Button>
         <Button variant="primary" onClick={() => void stopSide()}>Stop and check songs</Button>
       </div>
+    </div>
+  );
+}
+
+/** Nothing at all is coming in (not even the hiss of a quiet record). */
+function NoSound({ device }: { device: string }) {
+  const mac = /Mac/i.test(navigator.userAgent);
+  return (
+    <div className="vinyl-nosound" role="alert">
+      <strong>Milk Crate isn't hearing anything from {device || "this input"}.</strong>
+      <ul>
+        {mac ? (
+          <li>Allow it: System Settings › Privacy &amp; Security › Microphone, turn on <b>Milk Crate</b>, then quit and reopen Milk Crate. (A turntable counts as a microphone to macOS.)</li>
+        ) : (
+          <li>Allow it: Settings › Privacy &amp; security › Microphone, turn on <b>Microphone access</b> and <b>Let desktop apps access your microphone</b>.</li>
+        )}
+        <li>Check the turntable: switched on, USB plugged straight into the computer, and its <b>Line/Phono</b> switch set the way its manual says for USB.</li>
+        <li>Check {mac ? "System Settings › Sound › Input" : "Settings › System › Sound › Input"}: does {device || "it"} show a level moving while a record plays?</li>
+      </ul>
+      <Button size="sm" onClick={() => void cancelSide()}>Stop and try again</Button>
     </div>
   );
 }

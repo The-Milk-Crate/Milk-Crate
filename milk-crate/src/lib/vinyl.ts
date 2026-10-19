@@ -13,7 +13,7 @@ export interface SideTrack { position?: string; title: string; artist: string; s
 export interface Side { label: string; disc: number; tracks: SideTrack[] }
 export interface RecordInfo { releaseId: string; releaseGroupId?: string | null; title: string; artist: string; year?: string | null; discs: number; sides: Side[] }
 export interface Input { name: string; default: boolean; likely: boolean }
-interface Level { seconds: number; left: number; right: number; env: number[]; quietFor: number; paused: boolean; clipped: boolean }
+interface Level { seconds: number; left: number; right: number; env: number[]; quietFor: number; paused: boolean; clipped: boolean; dead?: boolean }
 interface Recording { path: string; rate: number; seconds: number; envelope: number[] }
 
 export type Step = "pick" | "record" | "check" | "done";
@@ -47,6 +47,8 @@ export interface VinylState {
   right: number;
   quietFor: number;
   clipped: boolean;
+  /** Nothing at all is coming in (not even noise): access is off, or the wrong input. */
+  dead: boolean;
   /** A side recorded and stopped, waiting to be checked and saved. */
   take: Recording | null;
   start: number;
@@ -64,7 +66,7 @@ export interface VinylState {
 const blank: VinylState = {
   open: false, shown: false, step: "pick", query: "", results: [], searching: false, album: "", artist: "", year: "", cover: null,
   sides: [], discs: 1, side: 0, inputs: [], device: "", recording: false, paused: false, seconds: 0, env: [], left: 0, right: 0,
-  quietFor: 0, clipped: false, take: null, start: 0, end: 0, cuts: [], unsure: [], saving: false, saved: [], error: "", notice: null,
+  quietFor: 0, clipped: false, dead: false, take: null, start: 0, end: 0, cuts: [], unsure: [], saving: false, saved: [], error: "", notice: null,
 };
 let state: VinylState = blank;
 const listeners = new Set<() => void>();
@@ -139,9 +141,9 @@ function listenLevels() {
     await listen<Level>("vinyl-level", (e) => {
       const l = e.payload;
       if (!state.recording) return;
-      setVinyl((s) => ({ seconds: l.seconds, left: l.left, right: l.right, quietFor: l.quietFor, clipped: s.clipped || l.clipped, env: l.env.length ? [...s.env, ...l.env] : s.env }));
+      setVinyl((s) => ({ seconds: l.seconds, left: l.left, right: l.right, quietFor: l.quietFor, clipped: s.clipped || l.clipped, dead: !!l.dead, env: l.env.length ? [...s.env, ...l.env] : s.env }));
       // The side has ended: a while of quiet after some music.
-      if (!l.paused && l.seconds > 60 && l.quietFor >= 8) void stopSide(true);
+      if (!l.paused && !l.dead && l.seconds > 60 && l.quietFor >= 8) void stopSide(true);
     });
   })();
   return listening;
@@ -149,7 +151,7 @@ function listenLevels() {
 
 export async function startSide() {
   await listenLevels();
-  setVinyl({ error: "", env: [], seconds: 0, quietFor: 0, clipped: false, left: 0, right: 0, take: null, paused: false });
+  setVinyl({ error: "", env: [], seconds: 0, quietFor: 0, clipped: false, dead: false, left: 0, right: 0, take: null, paused: false });
   try {
     await call<{ rate: number }>("vinyl_start", { device: state.device || null });
     setVinyl({ recording: true, step: "record" });
