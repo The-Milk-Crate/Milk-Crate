@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from "react";
 import type { Track } from "./types";
 
-const norm = (s?: string) => (s ?? "").toLowerCase().normalize("NFC").replace(/\s+/g, " ").replace(/\|/g, "/").trim();
+const norm = (s?: string) => (s ?? "").toLowerCase().normalize("NFC").replace(/\s+/g, " ").replace(/\|/g, "/").replace(/["\\]/g, "").trim();
 const fileName = (id: string) => (id.replace(/^local:/, "").split(/[\\/]/).pop() ?? "").replace(/\.[^.]+$/, "");
 
 export const isSongKey = (id: string) => id.startsWith("song:");
