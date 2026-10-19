@@ -1,8 +1,8 @@
 import type { Go } from "../App";
+import { GOVERNING_STATE, LEGAL_ADDRESS, LEGAL_EMAIL, ORG_NAME, TERMS_UPDATED } from "../lib/terms";
 
 export type PolicyDoc = "terms" | "privacy" | "copyright";
 
-const UPDATED = "October 18, 2026";
 
 
 /** Terms, privacy, and how copyright reports and takedowns work, in plain language. */
@@ -15,7 +15,7 @@ export function Policies({ go, doc }: { go: Go; doc: PolicyDoc }) {
   return (
     <div className="screen policies" style={{ maxWidth: 760 }}>
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span className="catalog eyebrow">Milk Crate · Updated {UPDATED}</span>
+        <span className="catalog eyebrow">Milk Crate · Updated {TERMS_UPDATED}</span>
         <h1 className="display-lg">{tabs.find((t) => t.id === doc)?.label}</h1>
       </header>
       <div role="tablist" aria-label="Policies" className="segmented">
@@ -33,22 +33,80 @@ export function Policies({ go, doc }: { go: Go; doc: PolicyDoc }) {
 export function Terms() {
   return (
     <article className="policy">
-      <p>Milk Crate is a nonprofit music app for listening to independent artists and the scenes around you. By using it you agree to these terms.</p>
-      <h2>Accounts</h2>
-      <p>You need to be at least 13 to make an account. Listener and artist accounts are separate. Keep your password to yourself; you're responsible for what happens on your account. You can delete your account any time from Account.</p>
-      <h2>Artists and your music</h2>
-      <p>Only put music, art, photos and fonts on Milk Crate that you made or have the right to share. You keep all rights to your work. By publishing, you let Milk Crate store it, stream it to listeners, and show it in the app (including on your artist page, in Scenes and in search) until you remove it. Removing a release takes it off the server.</p>
-      <p>New artists are reviewed before their music goes public. Reviewers can decline an application, take a release down, or hide an artist who breaks these terms.</p>
-      <h2>Listening</h2>
-      <p>Music on Milk Crate is for personal listening. Downloads play only inside the app and are for your own offline listening. Don't copy, resell or re-upload other artists' work.</p>
-      <h2>CDs you rip and your own files</h2>
-      <p>Only rip CDs you own, and only for your own listening. Ripped music and files you add from your computer stay on your computers and are never uploaded to Milk Crate. You can send a ripped CD only to another computer signed in to your own account; don't use Milk Crate to share ripped music with anyone else.</p>
-      <h2>Be decent</h2>
-      <p>No hate, harassment, threats, spam, impersonation, or anything sexual involving minors. No trying to break, overload or get around the app or its server. Report anything that crosses the line from the release or artist page.</p>
-      <h2>No guarantees</h2>
-      <p>Milk Crate is run by a small nonprofit team and offered as it is. We work to keep it running and your music safe, but can't promise it will always be available or free of mistakes. Keep your own copies of your music.</p>
-      <h2>Changes</h2>
-      <p>If these terms change, the app will show the new date at the top of this page. When a change matters, the app asks you to agree again before you keep using your account.</p>
+      <p>These terms are an agreement between you and {ORG_NAME} ("Milk Crate", "we"), the nonprofit that runs the Milk Crate app. By making an account or using the app, you agree to them. They're written to be read; if something's unclear, write to us at {LEGAL_EMAIL}.</p>
+
+      <h2>1. Who can use Milk Crate</h2>
+      <ul>
+        <li>You need to be at least 13 years old. If you're under 18, use Milk Crate only with a parent's or guardian's permission, and they agree to these terms for you.</li>
+        <li>If Milk Crate adds anything you pay for, buying it will need you to be 18 or older, or a parent or guardian to buy it for you.</li>
+        <li>You can't use Milk Crate if we've removed you before, or if the law where you live doesn't allow it.</li>
+      </ul>
+
+      <h2>2. Your account</h2>
+      <ul>
+        <li>Give a real email address and keep your password to yourself. You're responsible for what happens on your account, so tell us at {LEGAL_EMAIL} if you think someone else got into it.</li>
+        <li>One person per account. Listener and artist accounts are separate, and an account can't switch between them.</li>
+        <li>You can delete your account any time from Account. That removes it and what's in it from our server for good.</li>
+      </ul>
+
+      <h2>3. Listening</h2>
+      <ul>
+        <li>We let you stream the music on Milk Crate, and download it for offline listening inside the app, for your own personal, non-commercial use.</li>
+        <li>Downloads play only in Milk Crate and stop working if your account ends. Don't copy them out of the app, share them, sell them, or re-upload them anywhere.</li>
+        <li>Don't record, rip or capture music from the app, and don't try to get around anything that protects it.</li>
+      </ul>
+
+      <h2>4. Artists and the music you upload</h2>
+      <ul>
+        <li><strong>You keep your rights.</strong> Everything you upload (music, artwork, photos, fonts, lyrics, credits) stays yours.</li>
+        <li><strong>What you let us do.</strong> By publishing, you give Milk Crate permission, free of charge and not exclusive, to store your uploads, stream them to listeners anywhere, let listeners download them inside the app, and show them in the app and on Milk Crate's share pages (your artist page, Scenes, search, playlists), for as long as they're on Milk Crate. You can sell or share your music anywhere else you like.</li>
+        <li><strong>When you take something down</strong>, it's removed from our server and stops streaming. Listeners' in-app downloads of it stop playing. Backups that hold it are overwritten in the normal course, within 30 days.</li>
+        <li><strong>You promise</strong> you made what you upload, or have every permission needed to put it on Milk Crate, including the song itself (lyrics and composition), the recording, any samples, the artwork and photos, and the fonts. If anyone else has rights in it (band members, a label, a publisher, a distributor), you have their permission.</li>
+        <li><strong>Review.</strong> New artists are reviewed before their music goes public. We can decline an application or take down a release without having to give a reason, though we'll try to tell you why.</li>
+        <li>If something you uploaded breaks someone else's rights and they come after us for it, you agree to cover the costs that causes us, as far as the law allows.</li>
+      </ul>
+
+      <h2>5. CDs you rip and your own files</h2>
+      <ul>
+        <li>Milk Crate can rip CDs and play audio files from your computer. Only rip CDs you own, and only for your own listening. Whether making a personal copy is allowed depends on where you live; that's your responsibility.</li>
+        <li>Ripped music and your own files stay on your computers. They're never uploaded to Milk Crate.</li>
+        <li>You can send a ripped CD only to another computer signed in to your own account. Don't use Milk Crate to give ripped music to anyone else, and don't upload it as if it were yours.</li>
+      </ul>
+
+      <h2>6. Things you can't do</h2>
+      <ul>
+        <li>Post hate, harassment, threats, or anything that encourages violence or self-harm.</li>
+        <li>Post anything sexual involving anyone under 18, ever. We remove it and report it to the authorities.</li>
+        <li>Pretend to be another artist or person, or make fake artist pages.</li>
+        <li>Spam, or fake plays, streams, ratings or followers (for example with bots or repeat accounts).</li>
+        <li>Upload malware, or try to break into, overload, scrape or get around the app, its server or anyone's account.</li>
+        <li>Use Milk Crate for anything illegal.</li>
+      </ul>
+      <p>Report anything that crosses the line with the Report button on any release or artist page.</p>
+
+      <h2>7. Copyright</h2>
+      <p>If you think something on Milk Crate infringes your copyright, report it from the release or artist page, or send a notice to {LEGAL_EMAIL} or {LEGAL_ADDRESS}. How reports and take-downs work, and how to respond if your music was taken down, is on the Copyright and takedowns page. We remove the accounts of people who infringe again and again.</p>
+
+      <h2>8. If you break these terms</h2>
+      <p>We can remove content, take down releases, hide an artist, or suspend or close an account that breaks these terms or puts listeners, artists or Milk Crate at risk. When we can, we'll tell you why and give you a chance to fix it first. If you think we got it wrong, write to us at {LEGAL_EMAIL}.</p>
+
+      <h2>9. Changes to Milk Crate</h2>
+      <p>Milk Crate is a small nonprofit project. We may add, change or stop features, and we may stop running Milk Crate. If we ever shut it down, we'll give artists at least 30 days' notice to take copies of anything they need.</p>
+
+      <h2>10. No guarantees</h2>
+      <p>Milk Crate is offered as it is and as available. We work to keep it running and your music safe, but we can't promise it will always work, be free of mistakes, or never lose data. Keep your own copies of your music. As far as the law allows, we don't make any other promises about the app.</p>
+
+      <h2>11. Limits on liability</h2>
+      <p>As far as the law allows, Milk Crate and the people who run it aren't liable for indirect or unexpected losses (like lost profits, lost data or lost opportunities) from using Milk Crate, and our total responsibility for anything to do with these terms or the app is limited to $50. Some places don't allow these limits, so they may not all apply to you.</p>
+
+      <h2>12. Disagreements</h2>
+      <p>If you have a problem with Milk Crate, write to us at {LEGAL_EMAIL} first; most things can be sorted out that way. These terms are governed by the laws of {GOVERNING_STATE} and of the United States. Any dispute that isn't sorted out goes to the courts in {GOVERNING_STATE}, except that either of us can bring a claim in small claims court where it qualifies.</p>
+
+      <h2>13. Changes to these terms</h2>
+      <p>When these terms change, the date at the top of this page changes too. If a change matters, the app asks you to agree again before you keep using your account. If you don't agree, you can delete your account.</p>
+
+      <h2>14. The rest</h2>
+      <p>These terms, the Privacy policy and the Copyright and takedowns page are the whole agreement between you and Milk Crate. If part of them can't be enforced, the rest still applies. If we don't enforce something right away, we can still enforce it later. You can't transfer your account or these terms to someone else.</p>
     </article>
   );
 }
@@ -88,6 +146,10 @@ export function Privacy() {
         <li>Signing out ends that computer's session on the server too. Not using the app for 30 days signs it out. Changing your password signs out every other computer.</li>
         <li>Lost a computer? Account → Sign out everywhere ends every session at once.</li>
       </ul>
+      <h2>Children</h2>
+      <p>Milk Crate isn't for children under 13, and we don't knowingly keep information about them. If you believe a child under 13 has made an account, write to {LEGAL_EMAIL} and we'll delete it.</p>
+      <h2>Questions</h2>
+      <p>Write to {LEGAL_EMAIL} about anything in this policy, or to ask what we keep about you.</p>
       <h2>Your choices</h2>
       <p>Change your email, password, display name or city in Account. Delete your account there too: it removes your account and everything in it from the server for good, including your uploaded music if you're an artist.</p>
     </article>
@@ -105,8 +167,20 @@ function Copyright() {
         <li>Leave an email so a reviewer can reach you.</li>
       </ol>
       <p>A reviewer checks every report. Music that isn't the uploader's comes down, files and all. Artists who upload other people's work more than once are removed.</p>
+      <h2>Formal copyright notices (DMCA)</h2>
+      <p>You can also send a formal notice under the US Digital Millennium Copyright Act to Milk Crate's copyright agent at {LEGAL_EMAIL} or {LEGAL_ADDRESS}. It needs to include:</p>
+      <ol>
+        <li>Your name, address, phone number and email.</li>
+        <li>The work you say is being infringed.</li>
+        <li>Where it is on Milk Crate (the artist and release, or a share link).</li>
+        <li>A statement that you believe in good faith the use isn't allowed by you, your agent, or the law.</li>
+        <li>A statement that the information in your notice is accurate and, under penalty of perjury, that you own the rights or are allowed to act for whoever does.</li>
+        <li>Your physical or electronic signature (typing your full name works).</li>
+      </ol>
+      <p>Sending a notice you know is false can make you liable for the damage it causes.</p>
       <h2>If your music was taken down</h2>
       <p>If you believe it was a mistake (it's your music, or you have permission), reply to the reviewer's email with the details. If it checks out, you can publish it again.</p>
+      <p>You can also send a formal counter-notice to the same address. Include your name, address, phone number and signature; which releases were taken down; a statement, under penalty of perjury, that you believe in good faith they were removed by mistake; and that you agree to the jurisdiction of the federal court for your address (or, outside the US, any court where Milk Crate can be found) and will accept legal papers from the person who reported it. Unless they tell us within 10 to 14 business days that they've gone to court, we can put the music back.</p>
       <h2>Other reports</h2>
       <p>The same Report button covers music that isn't the artist's own, hateful or harmful content, spam and fake artists.</p>
     </article>

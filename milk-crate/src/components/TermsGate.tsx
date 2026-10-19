@@ -33,7 +33,7 @@ export function AgreeToTerms({ checked, onChange }: { checked: boolean; onChange
     <div className="terms-agree">
       <label>
         <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-        <span>I'm 13 or older and I agree to Milk Crate's Terms and Privacy Policy.</span>
+        <span>I'm 13 or older (under 18, with a parent's or guardian's permission) and I agree to Milk Crate's Terms and Privacy Policy.</span>
       </label>
       <button type="button" className="link-btn caption" onClick={() => setReading(true)}>Read them</button>
       {reading && <PolicyDialog onClose={() => setReading(false)} />}
