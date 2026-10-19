@@ -136,7 +136,7 @@ export function AuthForm(props: {
         </>
       ) : (
         <>
-          <div role="group" aria-label="Account" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div role="group" aria-label="Account" className="auth-modes" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="chip" aria-pressed={mode === "signin"} onClick={() => { setMode("signin"); setMessage(null); }}>Sign in</button>
             <button type="button" className="chip" aria-pressed={mode === "signup"} onClick={() => { setMode("signup"); setMessage(null); }}>{props.signUpLabel}</button>
           </div>

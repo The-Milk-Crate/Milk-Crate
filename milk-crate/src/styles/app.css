@@ -266,15 +266,37 @@ button { font: inherit; }
 .splash { height: 100%; display: grid; place-items: center; }
 .splash .mc-logo { transform: scale(1.4); }
 
-/* Welcome (first run) */
-.welcome { height: 100%; overflow-y: auto; display: grid; place-items: center; padding: var(--space-8) var(--space-6);
-  background: radial-gradient(1200px 600px at 10% 0%, var(--dairy-soft), transparent 60%), var(--ground); }
-.welcome-inner { width: min(1040px, 100%); display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-12, 48px); align-items: center; }
-.welcome-pitch { display: flex; flex-direction: column; gap: var(--space-6); }
-.welcome-pitch .mc-logo { height: 32px; align-self: flex-start; }
-.welcome-mark { width: 56px; height: 56px; color: var(--accent); }
-.welcome-form { display: flex; flex-direction: column; gap: var(--space-4); }
-.welcome-artist { padding-top: var(--space-2); border-top: 1px solid var(--line); }
+/* Welcome (first run): the logo big in the middle, the wordmark under it, the form in a glass card,
+   all over colors that swirl and melt into each other (src/screens/Welcome.tsx). */
+.welcome { position: relative; height: 100%; overflow-y: auto; display: grid; place-items: center; padding: var(--space-8) var(--space-6); box-sizing: border-box; background: var(--ground); }
+.welcome-swirl { position: fixed; --veil: rgba(12, 10, 9, .3); }
+[data-theme="light"] .welcome-swirl { --veil: rgba(250, 247, 241, .3); }
+.welcome-stack { position: relative; z-index: 1; width: min(440px, 100%); display: flex; flex-direction: column; align-items: center; gap: 28px; }
+.welcome-hero { position: relative; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+.welcome-glow { position: absolute; top: -80px; left: 50%; width: 280px; height: 280px; margin-left: -140px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 38%, transparent), transparent 65%); filter: blur(8px); }
+.welcome-mark { position: relative; width: 120px; height: 120px; color: var(--accent); filter: drop-shadow(0 14px 30px rgba(0, 0, 0, .45)); }
+.welcome-word { position: relative; margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 52px; line-height: 1; letter-spacing: .06em; text-shadow: 0 4px 24px rgba(0, 0, 0, .35); }
+.welcome-tagline { position: relative; margin: 0; font-family: var(--font-mono); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-muted); }
+.welcome-card { width: 100%; box-sizing: border-box; padding: 26px 28px 28px; border-radius: 24px; display: flex; flex-direction: column; gap: 16px; color: var(--ink);
+  background: color-mix(in srgb, var(--ground-raised) 66%, transparent); border: 1px solid rgba(255, 250, 240, .11);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5); backdrop-filter: blur(30px) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, .1), 0 30px 80px rgba(0, 0, 0, .4); }
+[data-theme="light"] .welcome-card { border-color: rgba(40, 32, 24, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 24px 60px rgba(40, 32, 24, .2); }
+/* The form inside sits right on the card's glass. */
+:root .welcome-card .panel, :root[data-glass="on"] .welcome-card .panel { padding: 0; border: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; gap: 16px; }
+.welcome-card-title { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 700; }
+.welcome-city { display: flex; flex-direction: column; gap: 14px; }
+.welcome-card .mc-btn-primary { height: 46px; justify-content: center; font-size: 15px; }
+/* Sign in / Create account: one glass switch instead of two chips. */
+.welcome-card .auth-modes { gap: 4px !important; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, .25); flex-wrap: nowrap !important; }
+[data-theme="light"] .welcome-card .auth-modes { background: rgba(40, 32, 24, .08); }
+.welcome-card .auth-modes .chip { flex: 1; height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-muted); }
+.welcome-card .auth-modes .chip[aria-pressed="true"] { background: rgba(255, 250, 240, .12); color: var(--ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08); }
+[data-theme="light"] .welcome-card .auth-modes .chip[aria-pressed="true"] { background: rgba(255, 255, 255, .75); }
+.welcome-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+.welcome-links .mc-btn { color: var(--ink); }
+.welcome-dot { color: var(--ink-muted); }
 
 /* Review artists */
 .review-card { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: var(--space-6); }
@@ -447,8 +469,8 @@ button { font: inherit; }
 :root[data-glass="on"][data-see-through="true"] #root { background: transparent; }
 :root[data-glass="on"][data-see-through="true"] .shell-main-wrap { background: rgba(19, 17, 15, var(--a-mainSeeThrough, .5)); }
 :root[data-glass="on"][data-see-through="true"][data-theme="light"] .shell-main-wrap { background: rgba(244, 239, 231, var(--a-mainSeeThrough, .34)); }
-:root[data-glass="on"][data-see-through="true"] .welcome { background: radial-gradient(1200px 600px at 10% 0%, var(--dairy-soft), transparent 60%), rgba(19, 17, 15, .55); }
-:root[data-glass="on"][data-see-through="true"][data-theme="light"] .welcome { background: radial-gradient(1200px 600px at 10% 0%, var(--dairy-soft), transparent 60%), rgba(250, 246, 239, .6); }
+:root[data-glass="on"][data-see-through="true"] .welcome { background: rgba(19, 17, 15, .55); }
+:root[data-glass="on"][data-see-through="true"][data-theme="light"] .welcome { background: rgba(250, 246, 239, .6); }
 
 /* ================= Immersive mode ================= */
 .immersive { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden; background: var(--ground);
