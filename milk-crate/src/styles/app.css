@@ -1584,3 +1584,5 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .vinyl-cover-btn:hover .vinyl-cover-hint, .vinyl-cover-btn:focus-visible .vinyl-cover-hint { opacity: 1; }
 .vinyl-cover.is-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px dashed color-mix(in srgb, var(--ink-muted) 45%, transparent); box-shadow: none; }
 .vinyl-cover-btn:hover .vinyl-cover.is-empty { color: var(--ink); border-color: var(--line-strong); }
+/* What each album you can send came from (src/components/ComputerLink.tsx). */
+.link-format { display: inline-block; min-width: 44px; margin-right: 4px; padding: 2px 6px; border-radius: 4px; text-align: center; font: 500 10px/14px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); box-shadow: inset 0 0 0 1px var(--line-strong); vertical-align: 1px; }

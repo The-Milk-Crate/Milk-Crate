@@ -6,7 +6,7 @@ import { cancelSend, findComputers, onReceive, sendSongs, sizeLabel, songsThere,
 import { Button } from "./ui";
 
 /**
- * Your Computer › Send to another computer: CDs you ripped here go straight to your other computer
+ * Your Computer › Send to another computer: CDs and records you ripped here go straight to your other computer
  * on the same network (Wi-Fi or a cable), or this one receives them. Both computers are signed in to
  * the same account; the receiving one shows a code to type on the sending one.
  */
@@ -20,7 +20,7 @@ export function ComputerLink({ onClose }: { onClose: () => void }) {
         <button type="button" className="mc-icon-btn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
       {!userId ? (
-        <p className="muted">Sign in on both computers with the same Milk Crate account. CDs only go between your own computers.</p>
+        <p className="muted">Sign in on both computers with the same Milk Crate account. CDs and records only go between your own computers.</p>
       ) : (
         <>
           <div role="tablist" aria-label="Send or receive" className="segmented">
@@ -152,7 +152,7 @@ function Send({ account }: { account: string }) {
       const r = await sendSongs(peer.addr, digits, account, songs, setProgress);
       setMsg({ ok: true, text: r.sent
         ? `Sent ${albums.length} ${albums.length === 1 ? "album" : "albums"} (${r.sent} files) to ${peer.name}.${r.skipped ? ` ${r.skipped} files were already there, so they weren't sent again.` : ""}`
-        : `${peer.name} already has ${albums.length === 1 ? "that CD" : "all of those"}. Nothing needed sending.` });
+        : `${peer.name} already has ${albums.length === 1 ? `that ${albums[0].format === "Vinyl" ? "record" : "CD"}` : "all of those"}. Nothing needed sending.` });
       setThere((t) => new Set([...(t ?? []), ...songs]));
     } catch (e) {
       const t = String(e);
@@ -162,7 +162,7 @@ function Send({ account }: { account: string }) {
     }
   };
 
-  if (!ripped.length) return <p className="muted">No ripped CDs on this computer yet. Rip one and it can go to your other computers.</p>;
+  if (!ripped.length) return <p className="muted">No CDs or records ripped on this computer yet. Rip one and it can go to your other computers.</p>;
   return (
     <div className="link-send">
       <div className="link-step">
@@ -197,12 +197,12 @@ function Send({ account }: { account: string }) {
       </div>
 
       <div className="link-step">
-        <span className="catalog eyebrow">3 · CDs to send · {albums.length} of {ripped.length}</span>
+        <span className="catalog eyebrow">3 · What to send · {albums.length} of {ripped.length}</span>
         <div className="link-albums">
           {ripped.map((a) => (
             <label key={a.key} className="link-album">
               <input type="checkbox" checked={picked.has(a.key)} onChange={() => toggle(a.key)} disabled={sending} />
-              <span><strong>{a.title}</strong> <span className="caption muted">{a.artist} · {a.tracks.length} songs</span>
+              <span><span className="link-format">{a.format === "Vinyl" ? "Vinyl" : "CD"}</span> <strong>{a.title}</strong> <span className="caption muted">{a.artist} · {a.tracks.length} songs</span>
                 {onThere(a) && <span className="link-there caption"> · Already on {peer?.name}</span>}</span>
             </label>
           ))}
@@ -221,10 +221,19 @@ function Send({ account }: { account: string }) {
           <Button onClick={() => void cancelSend()}>Stop</Button>
         ) : (
           <Button variant="primary" onClick={() => void send()} disabled={!peer || digits.length !== 6 || !albums.length}>
-            <ArrowLeftRight size={16} aria-hidden="true" /> Send {albums.length} {albums.length === 1 ? "CD" : "CDs"}
+            <ArrowLeftRight size={16} aria-hidden="true" /> Send {sendLabel(albums)}
           </Button>
         )}
       </div>
     </div>
   );
+}
+
+/** "1 CD", "2 records", "3 albums" (CDs and records together). */
+function sendLabel(albums: { format: "CD" | "Vinyl" }[]): string {
+  const n = albums.length;
+  const vinyl = albums.filter((a) => a.format === "Vinyl").length;
+  if (vinyl === 0) return `${n} ${n === 1 ? "CD" : "CDs"}`;
+  if (vinyl === n) return `${n} ${n === 1 ? "record" : "records"}`;
+  return `${n} albums`;
 }
