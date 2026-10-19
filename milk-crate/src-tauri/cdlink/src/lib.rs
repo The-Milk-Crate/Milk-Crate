@@ -232,8 +232,10 @@ pub struct Receiver {
 
 impl Receiver {
     /// Starts listening: answers "who's there" broadcasts and takes one transfer at a time into `root`
-    /// (Music › Milk Crate). `account` is this computer's account_tag.
-    pub fn start(name: String, account: String, root: PathBuf, on_event: impl Fn(ReceiveEvent) + Send + Sync + 'static) -> std::io::Result<Receiver> {
+    /// (Music › Milk Crate). `account` is this computer's account_tag (said out loud to senders, so
+    /// they can tell which computers are yours); `key` is the account's secret link key, which never
+    /// goes over the network: only a sender signed in to the same account (and with the code) gets in.
+    pub fn start(name: String, account: String, key: String, root: PathBuf, on_event: impl Fn(ReceiveEvent) + Send + Sync + 'static) -> std::io::Result<Receiver> {
         let listener = TcpListener::bind(("0.0.0.0", TRANSFER_PORT)).or_else(|_| TcpListener::bind(("0.0.0.0", 0)))?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
@@ -264,7 +266,7 @@ impl Receiver {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         let _ = stream.set_nonblocking(false);
-                        match receive_one(stream, &code2, &account, &root, &stop2, &*on_event) {
+                        match receive_one(stream, &code2, &key, &root, &stop2, &*on_event) {
                             Ok(()) => {}
                             Err(Refused::WrongCode) => {
                                 wrong += 1;
@@ -306,10 +308,10 @@ fn reply(ch: &mut Channel, r: &Reply) {
     let _ = ch.send(&serde_json::to_vec(r).unwrap_or_default());
 }
 
-fn receive_one(stream: TcpStream, code: &str, account: &str, root: &Path, stop: &AtomicBool, on_event: &dyn Fn(ReceiveEvent)) -> Result<(), Refused> {
+fn receive_one(stream: TcpStream, code: &str, key: &str, root: &Path, stop: &AtomicBool, on_event: &dyn Fn(ReceiveEvent)) -> Result<(), Refused> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
     // The encrypted connection: only a sender with this code (and this account) gets one.
-    let mut ch = match Channel::accept(stream, code, account) {
+    let mut ch = match Channel::accept(stream, code, key) {
         Ok(c) => c,
         Err(Failure::NoMatch) => return Err(Refused::WrongCode),
         Err(_) => return Err(Refused::Quiet),
@@ -451,11 +453,11 @@ fn read_reply(ch: &mut Channel) -> Result<Reply, String> {
 }
 
 /// Connects (encrypted), makes the offer and reads the answer.
-fn connect(addr: &str, code: &str, account: &str, offer: &Offer) -> Result<(Channel, Reply), String> {
+fn connect(addr: &str, code: &str, key: &str, offer: &Offer) -> Result<(Channel, Reply), String> {
     let addr: SocketAddr = addr.parse().map_err(|_| "That computer's address doesn't look right.".to_string())?;
     let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(|_| "Couldn't reach that computer. Is it still waiting to receive?".to_string())?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
-    let mut ch = Channel::open(stream, code, account).map_err(failure_text)?;
+    let mut ch = Channel::open(stream, code, key).map_err(failure_text)?;
     ch.send(&serde_json::to_vec(offer).map_err(|e| e.to_string())?)?;
     let r = read_reply(&mut ch)?;
     if !r.ok {
@@ -465,19 +467,20 @@ fn connect(addr: &str, code: &str, account: &str, offer: &Offer) -> Result<(Chan
 }
 
 /// Which of these files the other computer already has (sent before). Needs its code, like sending.
-pub fn check(addr: &str, code: &str, account: &str, from: &str, paths: &[PathBuf]) -> Result<Vec<bool>, String> {
+/// `key`: the account's secret link key (see Receiver::start).
+pub fn check(addr: &str, code: &str, key: &str, from: &str, paths: &[PathBuf]) -> Result<Vec<bool>, String> {
     let files = entries(paths)?;
     let offer = Offer { from: from.into(), files: files.iter().map(|(_, f)| f.clone()).collect(), check: true };
-    let (_, r) = connect(addr, code, account, &offer)?;
+    let (_, r) = connect(addr, code, key, &offer)?;
     Ok((0..files.len()).map(|i| r.have.contains(&i)).collect())
 }
 
 /// Sends these files to a computer that's receiving (`code`: the 6 digits it shows), encrypted.
 /// Files it already has aren't sent again.
-pub fn send(addr: &str, code: &str, account: &str, from: &str, paths: &[PathBuf], on_progress: &dyn Fn(SendProgress), cancel: &AtomicBool) -> Result<Sent, String> {
+pub fn send(addr: &str, code: &str, key: &str, from: &str, paths: &[PathBuf], on_progress: &dyn Fn(SendProgress), cancel: &AtomicBool) -> Result<Sent, String> {
     let files = entries(paths)?;
     let offer = Offer { from: from.into(), files: files.iter().map(|(_, f)| f.clone()).collect(), check: false };
-    let (mut ch, r) = connect(addr, code, account, &offer)?;
+    let (mut ch, r) = connect(addr, code, key, &offer)?;
     let skip: std::collections::HashSet<usize> = r.have.into_iter().collect();
     let total: u64 = files.iter().enumerate().filter(|(i, _)| !skip.contains(i)).map(|(_, (_, f))| f.size).sum();
     let mut done = 0u64;
@@ -559,24 +562,28 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::<ReceiveEvent>::new()));
         let ev = events.clone();
         let acct = account_tag("me");
-        let rx = Receiver::start("Test PC".into(), acct.clone(), dest.clone(), move |e| ev.lock().unwrap().push(e)).unwrap();
+        let key = "secret-key-me".to_string();
+        let rx = Receiver::start("Test PC".into(), acct.clone(), key.clone(), dest.clone(), move |e| ev.lock().unwrap().push(e)).unwrap();
         let addr = format!("127.0.0.1:{}", rx.port);
         let files = with_covers(&[song.clone()]);
         let never = AtomicBool::new(false);
 
         let wrong = if rx.code == "000000" { "111111" } else { "000000" };
-        let err = send(&addr, wrong, &acct, "Laptop", &files, &|_| {}, &never).unwrap_err();
+        let err = send(&addr, wrong, &key, "Laptop", &files, &|_| {}, &never).unwrap_err();
         assert!(err.contains("code doesn't match"), "{err}");
-        let err = send(&addr, &rx.code, &account_tag("someone else"), "Laptop", &files, &|_| {}, &never).unwrap_err();
+        // Knowing the account's public tag isn't enough: it takes the secret key.
+        let err = send(&addr, &rx.code, &acct, "Laptop", &files, &|_| {}, &never).unwrap_err();
+        assert!(err.contains("different account"), "{err}");
+        let err = send(&addr, &rx.code, "someone else's key", "Laptop", &files, &|_| {}, &never).unwrap_err();
         assert!(err.contains("different account"), "{err}");
 
-        assert_eq!(check(&addr, &rx.code, &acct, "Laptop", &files).unwrap(), vec![false, false]);
-        let sent = send(&addr, &rx.code, &acct, "Laptop", &files, &|_| {}, &never).unwrap();
+        assert_eq!(check(&addr, &rx.code, &key, "Laptop", &files).unwrap(), vec![false, false]);
+        let sent = send(&addr, &rx.code, &key, "Laptop", &files, &|_| {}, &never).unwrap();
         assert_eq!(sent, Sent { sent: 2, skipped: 0 });
         std::thread::sleep(Duration::from_millis(200));
         // Sent before: nothing goes again.
-        assert_eq!(check(&addr, &rx.code, &acct, "Laptop", &files).unwrap(), vec![true, true]);
-        assert_eq!(send(&addr, &rx.code, &acct, "Laptop", &files, &|_| {}, &never).unwrap(), Sent { sent: 0, skipped: 2 });
+        assert_eq!(check(&addr, &rx.code, &key, "Laptop", &files).unwrap(), vec![true, true]);
+        assert_eq!(send(&addr, &rx.code, &key, "Laptop", &files, &|_| {}, &never).unwrap(), Sent { sent: 0, skipped: 2 });
         std::thread::sleep(Duration::from_millis(300));
         assert_eq!(std::fs::read(dest.join("Band/Record/01 One.flac")).unwrap(), big);
         assert_eq!(std::fs::read(dest.join("Band/Record/cover.jpg")).unwrap(), b"jpeg");
@@ -617,11 +624,11 @@ mod tests {
         let locked = Arc::new(AtomicBool::new(false));
         let l = locked.clone();
         let acct = account_tag("me");
-        let rx = Receiver::start("T".into(), acct.clone(), dir.join("out"), move |e| if matches!(e, ReceiveEvent::Locked) { l.store(true, Ordering::Relaxed) }).unwrap();
+        let rx = Receiver::start("T".into(), acct.clone(), "k".into(), dir.join("out"), move |e| if matches!(e, ReceiveEvent::Locked) { l.store(true, Ordering::Relaxed) }).unwrap();
         let addr = format!("127.0.0.1:{}", rx.port);
         let wrong = if rx.code == "111111" { "222222" } else { "111111" };
         for _ in 0..5 {
-            let _ = send(&addr, wrong, &acct, "x", &[f.clone()], &|_| {}, &AtomicBool::new(false));
+            let _ = send(&addr, wrong, "k", "x", &[f.clone()], &|_| {}, &AtomicBool::new(false));
         }
         std::thread::sleep(Duration::from_millis(500));
         assert!(locked.load(Ordering::Relaxed));
@@ -632,7 +639,7 @@ mod tests {
     fn finds_a_receiver() {
         let dir = std::env::temp_dir().join(format!("cdlink-find-{}", std::process::id()));
         let acct = account_tag("me");
-        let rx = Receiver::start("Finder Test".into(), acct.clone(), dir, |_| {}).unwrap();
+        let rx = Receiver::start("Finder Test".into(), acct.clone(), "k".into(), dir, |_| {}).unwrap();
         let peers = discover(&acct, Duration::from_millis(1200));
         drop(rx);
         assert!(peers.iter().any(|p| p.name == "Finder Test" && p.same_account), "{peers:?}");

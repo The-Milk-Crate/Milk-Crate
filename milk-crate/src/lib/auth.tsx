@@ -7,6 +7,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { TERMS_VERSION } from "./terms";
 import { clearSignInFailures, noteSignInFailure, signInWait } from "./security";
 
 export type AccountKind = "listener" | "artist";
@@ -46,6 +47,10 @@ interface Auth {
    * the code sent to the current address is still missing.
    */
   confirmEmailChange: (newEmail: string, newCode: string, currentCode?: string) => Promise<{ error: string | null; done: boolean; needsCurrent?: boolean }>;
+  /** The terms version this account last agreed to (undefined: never, e.g. made before agreeing was asked). */
+  termsVersion?: string;
+  /** Agrees to the current terms. */
+  acceptTerms: () => Promise<string | null>;
   /** Deletes this account, its uploaded files and everything in it, for good. Needs the current password. */
   deleteAccount: (current: string) => Promise<string | null>;
 }
@@ -80,18 +85,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    supabase.auth.getSession().then(async ({ data }) => {
+      // Not used for a long while: signed out (the session ends on the server too).
+      if (data.session && idleTooLong()) {
+        await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+        setSession(null);
+      } else setSession(data.session);
       setReady(true);
     });
     const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
     return () => data.subscription.unsubscribe();
   }, []);
 
+  // Remember when the app was last used (at most once an hour), for the idle sign-out above.
+  useEffect(() => {
+    if (!userId) return;
+    let last = 0;
+    const touch = () => {
+      if (Date.now() - last < 3_600_000) return;
+      last = Date.now();
+      try { localStorage.setItem(LAST_ACTIVE, String(last)); } catch { /* none */ }
+    };
+    touch();
+    window.addEventListener("focus", touch);
+    window.addEventListener("pointerdown", touch);
+    window.addEventListener("keydown", touch);
+    return () => {
+      window.removeEventListener("focus", touch);
+      window.removeEventListener("pointerdown", touch);
+      window.removeEventListener("keydown", touch);
+    };
+  }, [userId]);
+
   const value: Auth = {
     session,
     userId,
     email: session?.user.email,
+    termsVersion: typeof session?.user.user_metadata?.terms_version === "string" ? session.user.user_metadata.terms_version : undefined,
+    acceptTerms: async () => {
+      const { data, error } = await supabase.auth.updateUser({ data: { terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() } });
+      if (!error && data.user) setSession((s) => (s ? { ...s, user: data.user } : s));
+      return error ? friendly(error.message) : null;
+    },
     kind,
     isAdmin,
     ready: ready && (!userId || !!kind),
@@ -105,7 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signUp: async (email, password, kind, displayName) => {
       const name = displayName?.trim();
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: name ? { kind, display_name: name } : { kind } } });
+      const agreed = { terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() };
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: name ? { kind, display_name: name, ...agreed } : { kind, ...agreed } } });
       if (error) return { error: friendly(error.message), needsConfirmation: false };
       // An email that already has an account gets the same answer as a new one (Supabase sends
       // nothing in that case), so nobody can use sign-up to find out who has an account.
@@ -120,9 +156,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return error ? friendly(error.message) : null;
     },
     signOut: async () => {
-      await supabase.auth.signOut();
+      // Ends this computer's session on the server too (its refresh token stops working), and
+      // removes the saved session from this computer. Other computers stay signed in.
+      await endLocalExtras();
+      const { error } = await supabase.auth.signOut({ scope: "local" });
+      if (error) await supabase.auth.signOut({ scope: "local" }).catch(() => {});
     },
     signOutEverywhere: async () => {
+      await endLocalExtras();
       const { error } = await supabase.auth.signOut({ scope: "global" });
       if (error) await supabase.auth.signOut({ scope: "local" });
       return error ? friendly(error.message) : null;
@@ -136,13 +177,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.verifyOtp({ email, token: code.replace(/\s/g, ""), type: "recovery" });
       if (error) return friendly(error.message);
       const { error: e2 } = await supabase.auth.updateUser({ password });
-      return e2 ? friendly(e2.message) : null;
+      if (e2) return friendly(e2.message);
+      // Whoever knew the old password: signed out on every other computer.
+      await supabase.auth.signOut({ scope: "others" }).catch(() => {});
+      return null;
     },
     changePassword: async (password, current) => {
       const wrong = await checkCurrent(session?.user.email, current);
       if (wrong) return wrong;
       const { error } = await supabase.auth.updateUser({ password });
-      return error ? friendly(error.message) : null;
+      if (error) return friendly(error.message);
+      // A new password signs out every other computer (in case someone else had the old one).
+      await supabase.auth.signOut({ scope: "others" }).catch(() => {});
+      return null;
     },
     changeEmail: async (email, current) => {
       const wrong = await checkCurrent(session?.user.email, current);
@@ -214,6 +261,25 @@ async function checkCurrent(email: string | undefined, password: string): Promis
     return "Your current password isn't right.";
   }
   return friendly(error.message);
+}
+
+/** Not used for this long, the app signs out (and the session ends on the server). */
+const IDLE_DAYS = 30;
+const LAST_ACTIVE = "mc.lastActive";
+function idleTooLong() {
+  let at = 0;
+  try { at = Number(localStorage.getItem(LAST_ACTIVE)) || 0; } catch { /* none */ }
+  return at > 0 && Date.now() - at > IDLE_DAYS * 86_400_000;
+}
+
+/** Things tied to the signed-in account on this computer that end with it. */
+async function endLocalExtras() {
+  // Stop waiting for CDs from your other computers.
+  if ("__TAURI_INTERNALS__" in window) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("link_receive_stop").catch(() => {});
+  }
+  try { localStorage.removeItem(LAST_ACTIVE); } catch { /* none */ }
 }
 
 const waitText = (s: number) => (s < 60 ? `${s} seconds` : `${Math.ceil(s / 60)} minutes`);

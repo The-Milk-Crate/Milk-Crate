@@ -53,13 +53,14 @@ export function PlaylistCover({ playlist: pl, style }: { playlist: Playlist; sty
   return <Sleeve src={arts[0]} seed={`playlist ${pl.name}`} alt={`${pl.name} cover`} style={style} />;
 }
 
-/** A private link to a playlist picture kept with your account (good for an hour, renewed as needed). */
+/** A private link to a playlist picture kept with your account (good for 15 minutes, renewed as needed; forgotten on sign-out). */
 const signed = new Map<string, Promise<string | null>>();
+supabase.auth.onAuthStateChange((event) => { if (event === "SIGNED_OUT") signed.clear(); });
 function pictureUrl(coverPath: string): Promise<string | null> {
   if (!signed.has(coverPath)) {
-    signed.set(coverPath, supabase.storage.from(PLAYLIST_PICTURES).createSignedUrl(coverPath.split("?")[0], 3600)
+    signed.set(coverPath, supabase.storage.from(PLAYLIST_PICTURES).createSignedUrl(coverPath.split("?")[0], 900)
       .then(({ data }) => data?.signedUrl ?? null).catch(() => null));
-    setTimeout(() => signed.delete(coverPath), 50 * 60_000);
+    setTimeout(() => signed.delete(coverPath), 12 * 60_000);
   }
   return signed.get(coverPath)!;
 }

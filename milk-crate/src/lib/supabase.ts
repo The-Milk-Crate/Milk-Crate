@@ -8,8 +8,55 @@ import type { Artist, Release, Track } from "./types";
 import { safeColor, sanitizePage } from "./artistPage";
 import { isSoundProfile } from "./sound";
 
+/**
+ * Where the sign-in session is kept. In the desktop app: encrypted, with the key in Windows
+ * Credential Manager / the macOS Keychain (src-tauri/src/secure.rs), never in plain app storage.
+ * If the system password store can't be used, the session lasts until the app closes.
+ * In a plain browser (development only): the browser's storage, as Supabase does by default.
+ */
+const desktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const memory = new Map<string, string>();
+const secureName = (key: string) => key.replace(/[^A-Za-z0-9._-]/g, "_");
+const sessionStorageAdapter = {
+  async getItem(key: string): Promise<string | null> {
+    if (memory.has(key)) return memory.get(key)!;
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      const saved = await invoke<string | null>("secure_get", { name: secureName(key) });
+      if (saved != null) return saved;
+    } catch { /* the system password store isn't available */ }
+    // A session saved before it was kept encrypted: move it, and leave no plain copy behind.
+    let old: string | null = null;
+    try { old = localStorage.getItem(key); } catch { /* none */ }
+    if (old != null) {
+      await this.setItem(key, old);
+      return old;
+    }
+    return null;
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    try { localStorage.removeItem(key); } catch { /* none */ }
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      await invoke("secure_set", { name: secureName(key), value });
+      memory.delete(key);
+    } catch {
+      memory.set(key, value);
+    }
+  },
+  async removeItem(key: string): Promise<void> {
+    memory.delete(key);
+    try { localStorage.removeItem(key); } catch { /* none */ }
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("secure_remove", { name: secureName(key) }).catch(() => {});
+  },
+};
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  auth: {
+    persistSession: true, autoRefreshToken: true, detectSessionInUrl: false,
+    ...(desktop ? { storage: sessionStorageAdapter } : {}),
+  },
 });
 
 export interface ArtistRow {

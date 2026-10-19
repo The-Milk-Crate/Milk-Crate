@@ -69,6 +69,8 @@ fn set_title_bar_colors(window: tauri::WebviewWindow, caption: u32, text: u32, b
 
 /// CD ripping (Your Computer › Rip a CD). The work happens in the cdrip crate; these run it off the
 /// main thread and report progress to the app with "cd-rip-progress" events.
+mod secure;
+
 mod cd {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
@@ -176,13 +178,17 @@ mod link {
         name: String,
     }
 
-    /// Starts waiting for your other computer (signed in to `account`). Returns the code to type there.
+    /// Starts waiting for your other computer (signed in to `account`; `key` is that account's secret
+    /// link key from the server, so only your own computers can send). Returns the code to type there.
     #[tauri::command]
-    pub fn link_receive_start(app: tauri::AppHandle, account: String) -> Result<Receiving, String> {
+    pub fn link_receive_start(app: tauri::AppHandle, account: String, key: String) -> Result<Receiving, String> {
+        if key.len() < 32 {
+            return Err("Sign in again, then try.".into());
+        }
         let music = app.path().audio_dir().map_err(|e| format!("Couldn't find your Music folder: {e}"))?;
         let name = cdlink::computer_name();
         let emit = app.clone();
-        let rx = cdlink::Receiver::start(name.clone(), cdlink::account_tag(&account), music.join("Milk Crate"), move |e| {
+        let rx = cdlink::Receiver::start(name.clone(), cdlink::account_tag(&account), key, music.join("Milk Crate"), move |e| {
             let _ = emit.emit("link-receive", e);
         })
         .map_err(|e| format!("Couldn't start listening: {e}"))?;
@@ -204,11 +210,11 @@ mod link {
 
     /// Sends songs (and their albums' covers) to a computer that's receiving. Returns how many files went.
     #[tauri::command]
-    pub async fn link_send(app: tauri::AppHandle, addr: String, code: String, account: String, songs: Vec<String>) -> Result<cdlink::Sent, String> {
+    pub async fn link_send(app: tauri::AppHandle, addr: String, code: String, key: String, songs: Vec<String>) -> Result<cdlink::Sent, String> {
         CANCEL.store(false, Ordering::Relaxed);
         spawn_blocking(move || {
             let files = cdlink::with_covers(&songs.into_iter().map(PathBuf::from).collect::<Vec<_>>());
-            cdlink::send(&addr, &code, &cdlink::account_tag(&account), &cdlink::computer_name(), &files, &|p| {
+            cdlink::send(&addr, &code, &key, &cdlink::computer_name(), &files, &|p| {
                 let _ = app.emit("link-send-progress", p);
             }, &CANCEL)
         })
@@ -219,10 +225,10 @@ mod link {
     /// Which of these songs (and covers) the other computer already has, so they aren't sent twice.
     /// Returns the songs it has.
     #[tauri::command]
-    pub async fn link_check(addr: String, code: String, account: String, songs: Vec<String>) -> Result<Vec<String>, String> {
+    pub async fn link_check(addr: String, code: String, key: String, songs: Vec<String>) -> Result<Vec<String>, String> {
         spawn_blocking(move || {
             let paths: Vec<PathBuf> = songs.iter().map(PathBuf::from).collect();
-            let has = cdlink::check(&addr, &code, &cdlink::account_tag(&account), &cdlink::computer_name(), &paths)?;
+            let has = cdlink::check(&addr, &code, &key, &cdlink::computer_name(), &paths)?;
             Ok(songs.into_iter().zip(has).filter(|(_, h)| *h).map(|(s, _)| s).collect())
         })
         .await
@@ -243,6 +249,16 @@ fn media_base() -> Result<String, String> {
     BASE.get_or_init(|| cdlink::media::start().map_err(|e| e.to_string())).clone()
 }
 
+/// Milk Crate's own pages: the built app, or the dev server while developing.
+fn app_page(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" => true,
+        "http" | "https" => matches!(url.host_str(), Some("tauri.localhost")) || (cfg!(debug_assertions) && matches!(url.host_str(), Some("localhost") | Some("127.0.0.1"))),
+        "about" => url.as_str() == "about:blank",
+        _ => false,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -260,6 +276,13 @@ pub fn run() {
         }));
     }
     builder
+        // The window only ever shows Milk Crate itself: a link or redirect to anywhere else is
+        // refused, so a page can never be swapped for another site (or a sign-in leaked in its address).
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("stay-in-app")
+                .on_navigation(|_, url| app_page(url))
+                .build(),
+        )
         .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![
             set_title_bar_colors,
@@ -278,7 +301,10 @@ pub fn run() {
             link::link_send,
             link::link_send_cancel,
             link::link_check,
-            media_base
+            media_base,
+            secure::secure_get,
+            secure::secure_set,
+            secure::secure_remove
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

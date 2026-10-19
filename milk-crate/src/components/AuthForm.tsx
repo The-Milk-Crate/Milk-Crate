@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useAuth, type AccountKind } from "../lib/auth";
 import { Button } from "./ui";
+import { AgreeToTerms } from "./TermsGate";
 import { checkNewPassword, hasEmail, MIN_PASSWORD } from "../lib/security";
 
 type Mode = "signin" | "signup" | "confirm" | "reset" | "resetCode";
@@ -26,6 +27,7 @@ export function AuthForm(props: {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
 
   const toConfirm = (text: string) => {
@@ -70,6 +72,7 @@ export function AuthForm(props: {
     if (mode === "signup") {
       if (props.askName && !name.trim()) return setMessage({ kind: "error", text: "Choose a display name. It's what other people on Milk Crate see." });
       if (props.askName && hasEmail(name)) return setMessage({ kind: "error", text: "Leave your email out of your display name. Everyone can see it." });
+      if (!agreed) return setMessage({ kind: "error", text: "Agree to the Terms and Privacy Policy to make an account." });
       const problem = props.beforeSignUp?.();
       if (problem) return setMessage({ kind: "error", text: problem });
     }
@@ -158,6 +161,7 @@ export function AuthForm(props: {
             {mode === "signup" && <span className="caption muted">{`At least ${MIN_PASSWORD} characters. Avoid passwords you use on other sites.`}</span>}
           </label>
           {mode === "signup" && props.signUpExtra}
+          {mode === "signup" && <AgreeToTerms checked={agreed} onChange={setAgreed} />}
         </>
       )}
       {message && <p role={message.kind === "error" ? "alert" : "status"} className={message.kind === "error" ? "form-error" : "form-info"}>{message.text}</p>}

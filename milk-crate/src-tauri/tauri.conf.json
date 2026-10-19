@@ -21,12 +21,48 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https://dpnkngadsewzrkedlwmi.supabase.co; media-src 'self' asset: http://asset.localhost http://127.0.0.1:* blob: https://dpnkngadsewzrkedlwmi.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self' data: asset: http://asset.localhost blob: https://dpnkngadsewzrkedlwmi.supabase.co; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost http://127.0.0.1:* blob: https://dpnkngadsewzrkedlwmi.supabase.co wss://dpnkngadsewzrkedlwmi.supabase.co https://api.pwnedpasswords.com",
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https://dpnkngadsewzrkedlwmi.supabase.co; media-src 'self' asset: http://asset.localhost http://127.0.0.1:* blob: https://dpnkngadsewzrkedlwmi.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self' data: asset: http://asset.localhost blob: https://dpnkngadsewzrkedlwmi.supabase.co; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost http://127.0.0.1:* blob: https://dpnkngadsewzrkedlwmi.supabase.co wss://dpnkngadsewzrkedlwmi.supabase.co https://api.pwnedpasswords.com; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'",
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": {
+          "allow": [
+            "**/*.mp3",
+            "**/*.MP3",
+            "**/*.flac",
+            "**/*.FLAC",
+            "**/*.wav",
+            "**/*.WAV",
+            "**/*.m4a",
+            "**/*.M4A",
+            "**/*.aac",
+            "**/*.AAC",
+            "**/*.ogg",
+            "**/*.OGG",
+            "**/*.opus",
+            "**/*.OPUS",
+            "**/*.jpg",
+            "**/*.JPG",
+            "**/*.jpeg",
+            "**/*.JPEG",
+            "**/*.png",
+            "**/*.PNG",
+            "**/*.webp",
+            "**/*.WEBP",
+            "**/*.gif",
+            "**/*.GIF",
+            "**/*.svg",
+            "**/*.SVG",
+            "**/*.ttf",
+            "**/*.TTF",
+            "**/*.otf",
+            "**/*.OTF",
+            "**/*.woff",
+            "**/*.WOFF",
+            "**/*.woff2",
+            "**/*.WOFF2"
+          ],
+          "requireLiteralLeadingDot": true
+        }
       }
     },
     "macOSPrivateApi": true

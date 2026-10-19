@@ -14,7 +14,8 @@ import { Artists } from "./screens/Artists";
 import { AlbumPage } from "./screens/AlbumPage";
 import { useAlbumAccent } from "./lib/useAlbumAccent";
 import { CatalogProvider } from "./lib/catalog";
-import { AuthProvider } from "./lib/auth";
+import { AuthProvider, useAuth } from "./lib/auth";
+import { blockedBecause, routeAccess } from "./lib/routeAccess";
 import { Upload } from "./screens/Upload";
 import { Account } from "./screens/Account";
 import { Review } from "./screens/Review";
@@ -31,7 +32,8 @@ import { SettingsProvider, useSettings } from "./lib/settings";
 import { installScrollbars } from "./lib/scrollbars";
 import { UpdatePrompt } from "./components/UpdatePrompt";
 import { NeedsAccount } from "./components/NeedsAccount";
-import { Logo } from "./components/ui";
+import { Button, Logo } from "./components/ui";
+import { TermsGate } from "./components/TermsGate";
 import { Backdrop } from "./components/Backdrop";
 import { Immersive } from "./components/Immersive";
 import { FrostGrain } from "./components/FrostGrain";
@@ -74,7 +76,30 @@ export type Route =
 export type Go = (r: Route) => void;
 interface Visit { route: Route; scroll: number }
 
+/** Shows a page only to who it's for (see lib/routeAccess.ts); the server checks again either way. */
 function Screen({ route, go }: { route: Route; go: Go }) {
+  const auth = useAuth();
+  const blocked = blockedBecause(routeAccess(route), { ready: auth.ready, signedIn: !!auth.userId, artist: auth.kind === "artist", admin: auth.isAdmin });
+  if (blocked === "loading") return <div className="screen" aria-busy="true" />;
+  if (blocked) return <NotForYou go={go} why={blocked} />;
+  return <AllowedScreen route={route} go={go} />;
+}
+
+function NotForYou({ go, why }: { go: Go; why: "sign-in" | "artist" | "admin" }) {
+  const text = why === "sign-in" ? "Sign in to see this page." : why === "artist" ? "This page is for artist accounts." : "Only Milk Crate reviewers can see this page.";
+  return (
+    <div className="screen" style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "flex-start" }}>
+      <p className="muted">{text}</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        {why === "sign-in" && <Button onClick={() => go({ name: "account" })}>Sign in</Button>}
+        {why === "artist" && <Button onClick={() => go({ name: "upload" })}>Go to For Artists</Button>}
+        <Button variant="ghost" onClick={() => go({ name: "home" })}>Go home</Button>
+      </div>
+    </div>
+  );
+}
+
+function AllowedScreen({ route, go }: { route: Route; go: Go }) {
   switch (route.name) {
     case "home":
       return <Home go={go} />;
@@ -128,6 +153,7 @@ export default function App() {
     <PlayerProvider>
       <Shell />
       <UpdatePrompt />
+      <TermsGate />
       <WindowChrome />
     </PlayerProvider>
     </DownloadsProvider>
