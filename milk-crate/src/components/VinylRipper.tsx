@@ -8,8 +8,8 @@ import { Select } from "./Select";
 import { useAddRipped } from "../lib/ripped";
 import { albumKey } from "../lib/fileTags";
 import {
-  cancelSide, chooseRecord, chooseSide, enterByHand, loadInputs, pauseSide, playFrom, resetVinyl, saveSide, searchRecords,
-  setVinyl, startSide, stopPreview, stopSide, useVinyl, type Side,
+  cancelSide, chooseRecord, chooseSide, enterByHand, loadInputs, pauseSide, playFrom, replaceSong, resetVinyl, saveSide, searchRecords,
+  setVinyl, songEnds, startSide, stopPreview, stopSide, useVinyl, type Side,
 } from "../lib/vinyl";
 import { ENV_RATE, clock } from "../lib/vinylSplit";
 
@@ -17,7 +17,7 @@ import { ENV_RATE, clock } from "../lib/vinylSplit";
  * Recording a record from the turntable (Your Shelf › Vinyl): pick it, record each side as it
  * plays, check where the songs start, save. Keeps recording while you're elsewhere in the app.
  */
-export function VinylRipper({ go, onClose }: { go: Go; onClose: () => void }) {
+export function VinylRipper({ go, onClose, onReplaced }: { go: Go; onClose: () => void; onReplaced?: (trackId: string, seconds: number) => void }) {
   const v = useVinyl();
   const addRipped = useAddRipped();
   useEffect(() => {
@@ -30,6 +30,11 @@ export function VinylRipper({ go, onClose }: { go: Go; onClose: () => void }) {
 
   const save = async () => {
     try {
+      if (v.redo) {
+        const id = v.redo.trackId;
+        onReplaced?.(id, await replaceSong());
+        return;
+      }
       const files = await saveSide();
       await addRipped(files, "Vinyl");
     } catch { /* shown */ }
@@ -43,8 +48,8 @@ export function VinylRipper({ go, onClose }: { go: Go; onClose: () => void }) {
     <section className="panel vinyl-ripper" aria-label="Record a record">
       <header className="vinyl-head">
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span className="catalog eyebrow">Vinyl · record a record</span>
-          <h2 className="display-md">{v.step === "pick" ? "Which record is on?" : v.album || "Your record"}</h2>
+          <span className="catalog eyebrow">{v.redo ? `Vinyl · ${v.album} · record one song again` : "Vinyl · record a record"}</span>
+          <h2 className="display-md">{v.redo ? v.redo.title : v.step === "pick" ? "Which record is on?" : v.album || "Your record"}</h2>
         </div>
         {!v.recording && !v.take && (
           <button type="button" className="mc-icon-btn" aria-label="Close the recorder" onClick={() => { stopPreview(); onClose(); }}><X size={18} aria-hidden="true" /></button>
@@ -54,7 +59,7 @@ export function VinylRipper({ go, onClose }: { go: Go; onClose: () => void }) {
       {v.error && <p className="form-error" role="alert">{v.error}</p>}
 
       {v.step === "pick" && <Pick />}
-      {v.step === "record" && (v.recording ? <Recording side={side} /> : <NextSide saved={v.saved.length} />)}
+      {v.step === "record" && (v.recording ? <Recording side={side} /> : v.redo ? <RedoStart /> : <NextSide saved={v.saved.length} />)}
       {v.step === "check" && <Check side={side} onSave={() => void save()} />}
       {v.step === "done" && (
         <div className="vinyl-done">
@@ -224,9 +229,11 @@ function SidesEditor() {
 /* ---------- 2. Recording ---------- */
 
 /** The side as bars: loudness from the envelope, `of` seconds wide. With `marks`, each song's start is a marker you drag. */
-function Wave({ env, of, marks, selected, onMove, onSelect, now }: {
+function Wave({ env, of, marks, selected, onMove, onSelect, now, endAt, onMoveEnd, gaps }: {
   env: number[]; of: number; marks?: number[]; selected?: number;
   onMove?: (i: number, at: number) => void; onSelect?: (i: number) => void; now?: number;
+  /** Where the last song ends (a marker of its own), and the stretches left out between songs. */
+  endAt?: number; onMoveEnd?: (at: number) => void; gaps?: [number, number][];
 }) {
   const BARS = 220;
   const box = useRef<HTMLDivElement>(null);
@@ -253,6 +260,21 @@ function Wave({ env, of, marks, selected, onMove, onSelect, now }: {
         <div className="vinyl-bars" aria-hidden="true">
           {bars.map((h, i) => <span key={i} className={h === null ? "is-ahead" : undefined} style={{ height: `${h ?? 6}%` }} />)}
         </div>
+        {gaps?.filter(([a, b]) => b - a > 0.05).map(([a, b], i) => (
+          <span key={`g${i}`} className="vinyl-gap" style={{ left: pct(a), width: `${Math.max(0, ((b - a) / of) * 100)}%` }} aria-hidden="true" />
+        ))}
+        {endAt !== undefined && (
+          <button type="button" className="vinyl-marker is-end" style={{ left: pct(endAt) }}
+            aria-label={`The last song ends at ${clock(endAt)}. Drag, or use the arrow keys.`}
+            onPointerDown={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); }}
+            onPointerMove={(e) => { if ((e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) onMoveEnd?.(timeAt(e.clientX)); }}
+            onKeyDown={(e) => {
+              const d = ({ ArrowLeft: -1, ArrowRight: 1 } as Record<string, number>)[e.key];
+              if (d) { e.preventDefault(); onMoveEnd?.(endAt + d * (e.shiftKey ? 5 : 0.5)); }
+            }}>
+            <span className="vinyl-marker-tag">End</span>
+          </button>
+        )}
         {marks?.map((at, i) => (
           <button key={i} type="button" className={`vinyl-marker${i === selected ? " is-selected" : ""}`} style={{ left: pct(at) }}
             aria-label={`Song ${i + 1} starts at ${clock(at)}. Drag, or use the arrow keys.`}
@@ -289,7 +311,7 @@ function Recording({ side }: { side?: Side }) {
   return (
     <div className="vinyl-recording">
       <div className="vinyl-rec-head">
-        <span className="catalog eyebrow vinyl-live"><span aria-hidden="true" />{v.paused ? "Paused" : "Recording"} · Side {side?.label}</span>
+        <span className="catalog eyebrow vinyl-live"><span aria-hidden="true" />{v.paused ? "Paused" : "Recording"} · {v.redo ? v.redo.title : `Side ${side?.label}`}</span>
         <span className="vinyl-clock numeral">{clock(v.seconds)}</span>
       </div>
       {v.dead && <NoSound device={v.device} />}
@@ -302,6 +324,7 @@ function Recording({ side }: { side?: Side }) {
             {v.clipped ? "Too loud in places: turn the turntable's gain down a little."
               : ending ? `Quiet for ${Math.floor(v.quietFor)}s. Stops after a minute of quiet (the end of the side).`
               : level < 0.05 && v.seconds > 5 ? "Very quiet. Is the needle down?"
+              : v.redo ? "Press Stop once the song is over (you'll set exactly where it starts and ends next)."
               : "Stops on its own after a minute of quiet at the end of the side."}
           </span>
         </div>
@@ -366,14 +389,36 @@ function NextSide({ saved }: { saved: number }) {
   );
 }
 
+/** Recording one song again: drop the needle just before it. */
+function RedoStart() {
+  const v = useVinyl();
+  return (
+    <div className="vinyl-next">
+      <p>Put the record on, press Record, then drop the needle a little before <strong>{v.redo?.title}</strong>. Only this song's file changes; the rest of the album stays as it is.</p>
+      {v.inputs.length > 1 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="catalog eyebrow">Listening to</span>
+          <Select value={v.device} onChange={(device) => setVinyl({ device })} options={v.inputs.map((i) => ({ value: i.name, label: i.name }))} label="Turntable input" />
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <Button variant="primary" onClick={() => void startSide()}>Record</Button>
+        <span className="caption muted">Then press Stop when the song is over.</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- 3. Where each song starts ---------- */
 
 function Check({ side, onSave }: { side?: Side; onSave: () => void }) {
   const v = useVinyl();
   const [sel, setSel] = useState(0);
   if (!v.take || !side) return null;
+  const take = v.take;
   const starts = [v.start, ...v.cuts];
-  const bounds = [...starts, v.end];
+  const ends = songEnds(v);
+  const last = starts.length - 1;
   // Song i's start stays between the songs around it (at least a second each).
   const move = (i: number, to: number) => setVinyl((s) => {
     const all = [s.start, ...s.cuts];
@@ -382,32 +427,55 @@ function Check({ side, onSave }: { side?: Side; onSave: () => void }) {
     all[i] = Math.max(lo, Math.min(hi, to));
     return { start: all[0], cuts: all.slice(1) };
   });
+  // Song i's end: from a second after it starts up to where the next song starts (the last one: the end of the recording).
+  const moveEnd = (i: number, to: number) => setVinyl((s) => {
+    const all = [s.start, ...s.cuts];
+    if (i === all.length - 1) return { end: Math.max(all[i] + 1, Math.min(take.seconds, to)) };
+    const next = all[i + 1];
+    const at = Math.max(all[i] + 1, Math.min(next, to));
+    return { ends: all.map((_, k) => (k === i ? (at >= next - 0.05 ? null : at) : s.ends[k] ?? null)) };
+  });
+  const gaps = starts.slice(0, -1).map((_, i) => [ends[i], starts[i + 1]] as [number, number]);
   const others = v.sides.filter((_, i) => i !== v.side && !v.doneSides.includes(i));
+  const redo = !!v.redo;
   return (
     <div className="vinyl-check">
-      <p className="caption muted">Side {side.label}, {clock(v.take.seconds)} recorded. Drag each numbered marker to where its song starts (or pick a song and click the wave), and play a few seconds to check.</p>
-      <Wave env={v.take.envelope} of={v.take.seconds} marks={starts} selected={sel} onSelect={setSel} onMove={move} />
-      <ol className="vinyl-songs">
+      <p className="caption muted">
+        {redo ? <>{clock(take.seconds)} recorded. Drag the markers to where the song starts and ends, and play a few seconds to check.</>
+          : <>Side {side.label}, {clock(take.seconds)} recorded. Drag each numbered marker to where its song starts (or pick a song and click the wave), and the End marker to where the side's last song ends. Play a few seconds to check.</>}
+      </p>
+      <Wave env={take.envelope} of={take.seconds} marks={starts} selected={sel} onSelect={setSel} onMove={move}
+        endAt={v.end} onMoveEnd={(at) => moveEnd(last, at)} gaps={gaps} />
+      <ol className="vinyl-songs has-ends">
         {side.tracks.map((t, i) => (
           <li key={i} className={i === sel ? "is-selected" : undefined} onClick={() => setSel(i)}>
             <span className="numeral muted">{String(i + 1).padStart(2, "0")}</span>
-            <button type="button" className="vinyl-play" aria-label={`Play the start of ${t.title || `song ${i + 1}`}`} onClick={(e) => { e.stopPropagation(); void playFrom(bounds[i]); }}><Play size={12} aria-hidden="true" /></button>
+            <button type="button" className="vinyl-play" aria-label={`Play the start of ${t.title || `song ${i + 1}`}`} onClick={(e) => { e.stopPropagation(); void playFrom(starts[i]); }}><Play size={12} aria-hidden="true" /></button>
             <input aria-label={`Title of song ${i + 1}`} value={t.title}
               onChange={(e) => setVinyl((s) => ({ sides: s.sides.map((x, j) => j === s.side ? { ...x, tracks: x.tracks.map((y, k) => k === i ? { ...y, title: e.target.value } : y) } : x) }))} />
-            <span className="numeral muted vinyl-start-at">starts {clock(bounds[i])}</span>
+            <span className="numeral muted vinyl-start-at">starts {clock(starts[i])}</span>
             <span className="vinyl-nudge">
-              <button type="button" aria-label="Start a second earlier" onClick={(e) => { e.stopPropagation(); setSel(i); move(i, bounds[i] - 1); }}>−1s</button>
-              <button type="button" aria-label="Start a second later" onClick={(e) => { e.stopPropagation(); setSel(i); move(i, bounds[i] + 1); }}>+1s</button>
+              <button type="button" aria-label="Start a second earlier" onClick={(e) => { e.stopPropagation(); setSel(i); move(i, starts[i] - 1); }}>−1s</button>
+              <button type="button" aria-label="Start a second later" onClick={(e) => { e.stopPropagation(); setSel(i); move(i, starts[i] + 1); }}>+1s</button>
             </span>
-            <span className="numeral">{clock(bounds[i + 1] - bounds[i])}</span>
+            <span className="numeral muted vinyl-start-at">ends {clock(ends[i])}</span>
+            <span className="vinyl-nudge">
+              <button type="button" aria-label="End a second earlier" onClick={(e) => { e.stopPropagation(); setSel(i); moveEnd(i, ends[i] - 1); }}>−1s</button>
+              <button type="button" aria-label="End a second later" onClick={(e) => { e.stopPropagation(); setSel(i); moveEnd(i, ends[i] + 1); }}>+1s</button>
+            </span>
+            <button type="button" className="vinyl-play is-end" aria-label={`Play the end of ${t.title || `song ${i + 1}`}`} title="Play the ending"
+              onClick={(e) => { e.stopPropagation(); void playFrom(Math.max(starts[i], ends[i] - 6), Math.min(6, ends[i] - starts[i])); }}><Play size={12} aria-hidden="true" /></button>
+            <span className="numeral">{clock(ends[i] - starts[i])}</span>
           </li>
         ))}
       </ol>
       <div className="vinyl-check-foot">
-        <span className="caption muted" style={{ flex: 1 }}>Saved as FLAC with the cover, in its own folder next to any CD of the same album.</span>
+        <span className="caption muted" style={{ flex: 1 }}>
+          {redo ? "Replaces this song's file. The album's other songs stay as they are." : "Saved as FLAC with the cover, in its own folder next to any CD of the same album."}
+        </span>
         <Button variant="ghost" onClick={() => { stopPreview(); void cancelSide(); }} disabled={v.saving}>Record it again</Button>
         <Button variant="primary" onClick={() => { stopPreview(); onSave(); }} disabled={v.saving}>
-          {v.saving ? "Saving…" : others.length ? "Save, then the next side" : "Save"}
+          {v.saving ? "Saving…" : redo ? "Replace the song" : others.length ? "Save, then the next side" : "Save"}
         </Button>
       </div>
     </div>
@@ -421,9 +489,9 @@ export function VinylNotice({ go }: { go: Go }) {
   return (
     <div className="rip-notice" role="status">
       <Disc3 className={v.recording ? "spin-slow" : undefined} size={20} strokeWidth={1.75} aria-hidden="true" />
-      <button type="button" className="rip-notice-text" onClick={() => { setVinyl({ notice: null }); go({ name: "shelf", format: "vinyl" }); }}>
-        <strong>{v.recording ? `Recording ${v.album || "your record"}` : v.notice}</strong>
-        <span className="caption muted">{v.recording ? `Side ${v.sides[v.side]?.label ?? ""} · ${clock(v.seconds)}` : "Open the recorder"}</span>
+      <button type="button" className="rip-notice-text" onClick={() => { setVinyl({ notice: null }); go(v.redo ? { name: "computer", album: v.redo.albumKey } : { name: "shelf", format: "vinyl" }); }}>
+        <strong>{v.recording ? `Recording ${v.redo ? `${v.redo.title} again` : v.album || "your record"}` : v.notice}</strong>
+        <span className="caption muted">{v.recording ? `${v.redo ? v.redo.title : `Side ${v.sides[v.side]?.label ?? ""}`} · ${clock(v.seconds)}` : "Open the recorder"}</span>
       </button>
       {!v.recording && <button type="button" className="mc-icon-btn" aria-label="Close" onClick={() => setVinyl({ notice: null })}><X size={16} aria-hidden="true" /></button>}
     </div>

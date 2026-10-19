@@ -415,6 +415,17 @@ pub fn save(recording: &Path, rate: u32, plan: &SavePlan, dir: &Path, cover: Opt
     Ok(saved)
 }
 
+/// Records one song again: `start`–`end` (seconds) of a recording replaces the song in `target`,
+/// which keeps its name, tags and cover. Returns the song's new length (seconds).
+pub fn replace_song(recording: &Path, rate: u32, start: f64, end: f64, target: &Path) -> Result<f64, String> {
+    if end - start < 1.0 {
+        return Err("Pick where the song starts and ends (at least a second).".into());
+    }
+    let samples = read_span(recording, rate, start, end - start)?;
+    cdrip::flac::replace_audio(target, &samples, rate as usize)?;
+    Ok((samples.len() / 2) as f64 / rate as f64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

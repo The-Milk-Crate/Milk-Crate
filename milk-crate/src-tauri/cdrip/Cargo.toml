@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 base64 = "0.23.1"
 flacenc = "0.5.1"
+# Reading FLAC back (trimming a song you ripped or recorded).
+claxon = "0.4"
 metaflac = "0.2.8"
 plist = "1.10.1"
 serde = { version = "1.0.229", features = ["derive"] }

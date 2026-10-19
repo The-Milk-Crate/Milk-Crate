@@ -79,6 +79,72 @@ pub fn write_at(path: &Path, samples: &[i32], rate: usize, tags: &Tags, cover: O
     std::fs::rename(&part, path).map_err(|e| format!("Couldn't save {}: {e}", path.display()))
 }
 
+/* ---------- Changing a song's audio after it's saved ---------- */
+
+/// A song's samples (interleaved, 16-bit stereo) and its sample rate.
+pub fn read_samples(path: &Path) -> Result<(Vec<i32>, usize), String> {
+    let mut r = claxon::FlacReader::open(path).map_err(|e| format!("Couldn't open {}: {e}", path.display()))?;
+    let info = r.streaminfo();
+    if info.bits_per_sample != 16 || !(1..=2).contains(&info.channels) {
+        return Err("Only songs ripped or recorded by Milk Crate can be trimmed.".into());
+    }
+    let mono = info.channels == 1;
+    let mut out = Vec::with_capacity(info.samples.unwrap_or(0) as usize * 2);
+    for s in r.samples() {
+        let s = s.map_err(|e| format!("Couldn't read {}: {e}", path.display()))?;
+        out.push(s);
+        if mono {
+            out.push(s);
+        }
+    }
+    Ok((out, info.sample_rate as usize))
+}
+
+/// Puts new audio (16-bit stereo at `rate`) in place of `target`'s, keeping every tag and picture it has.
+pub fn replace_audio(target: &Path, samples: &[i32], rate: usize) -> Result<(), String> {
+    if samples.len() < rate * 2 {
+        return Err("That's less than a second of sound.".into());
+    }
+    let old = metaflac::Tag::read_from_path(target).map_err(|e| format!("Couldn't open {}: {e}", target.display()))?;
+    let tmp = target.with_extension("new.flac");
+    write_at(&tmp, samples, rate, &Tags::default(), None)?;
+    let done = (|| {
+        let mut tag = metaflac::Tag::read_from_path(&tmp).map_err(|e| e.to_string())?;
+        tag.remove_blocks(metaflac::BlockType::VorbisComment);
+        tag.remove_blocks(metaflac::BlockType::Picture);
+        if let Some(vc) = old.vorbis_comments() {
+            for (k, v) in &vc.comments {
+                tag.set_vorbis(k.clone(), v.clone());
+            }
+        }
+        for p in old.pictures() {
+            tag.add_picture(p.mime_type.clone(), p.picture_type, p.data.clone());
+        }
+        tag.write_to_path(&tmp).map_err(|e| e.to_string())
+    })();
+    if let Err(e) = done {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("Couldn't save {}: {e}", target.display()));
+    }
+    std::fs::rename(&tmp, target).map_err(|e| format!("Couldn't save {}: {e}", target.display()))
+}
+
+/// Cuts `cut_start` seconds off the start of a song and `cut_end` off its end. Returns its new length (seconds).
+pub fn trim(path: &Path, cut_start: f64, cut_end: f64) -> Result<f64, String> {
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("flac")) {
+        return Err("Only songs ripped or recorded by Milk Crate can be trimmed.".into());
+    }
+    let (samples, rate) = read_samples(path)?;
+    let frames = samples.len() / 2;
+    let from = ((cut_start.max(0.0) * rate as f64) as usize).min(frames);
+    let to = frames.saturating_sub((cut_end.max(0.0) * rate as f64) as usize).max(from);
+    if to - from < rate {
+        return Err("That would leave less than a second of the song.".into());
+    }
+    replace_audio(path, &samples[from * 2..to * 2], rate)?;
+    Ok((to - from) as f64 / rate as f64)
+}
+
 /// The encoder counts a song's short last block in STREAMINFO's "minimum block size". When that
 /// block is under 16 samples the header looks invalid to some decoders (Windows' WebView2 among
 /// them: the song sat at 0:00 in Milk Crate while other players were fine). The spec leaves the
@@ -182,6 +248,27 @@ mod tests {
         assert_eq!(track_file(12, ""), "12 Track 12.flac");
         let d = album_dir(Path::new("/m"), "Pamelo", "Cavities", 2, 2);
         assert_eq!(d, Path::new("/m/Milk Crate/Pamelo/Cavities/Disc 2"));
+    }
+
+    #[test]
+    fn trims_and_keeps_tags() {
+        let dir = std::env::temp_dir().join(format!("cdrip-trim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("01 Song.flac");
+        let samples: Vec<i32> = (0..44_100 * 2 * 5).map(|i| ((i as f32 * 0.01).sin() * 5000.0) as i32).collect();
+        let tags = super::Tags { title: "Song".into(), artist: "Band".into(), track: 1, tracks: 1, disc: 1, discs: 1, media: Some("Vinyl".into()), ..Default::default() };
+        super::write(&f, &samples, &tags, Some(("image/png", b"\x89PNGfake"))).unwrap();
+        let secs = super::trim(&f, 1.0, 1.5).unwrap();
+        assert!((secs - 2.5).abs() < 0.01, "{secs}");
+        let (back, rate) = super::read_samples(&f).unwrap();
+        assert_eq!(rate, 44_100);
+        assert_eq!(back.len(), (44_100.0 * 2.5) as usize * 2);
+        let t = metaflac::Tag::read_from_path(&f).unwrap();
+        assert_eq!(t.get_vorbis("TITLE").and_then(|mut v| v.next()), Some("Song"));
+        assert_eq!(t.get_vorbis("MEDIA").and_then(|mut v| v.next()), Some("Vinyl"));
+        assert_eq!(t.pictures().count(), 1);
+        assert!(super::trim(&f, 2.0, 0.6).is_err(), "can't leave under a second");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

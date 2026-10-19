@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, PencilLine, Shuffle, X } from "lucide-react";
+import { ArrowLeftRight, Disc3, FolderPlus, ImagePlus, Mic, PencilLine, Scissors, Shuffle, X } from "lucide-react";
+import { TrimSong } from "../components/TrimSong";
+import { VinylRipper } from "../components/VinylRipper";
+import { closeVinyl, startRedo, useVinyl } from "../lib/vinyl";
 import type { Go } from "../App";
 import type { Track } from "../lib/types";
 import { usePlayer } from "../lib/player";
@@ -154,6 +157,21 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
   const me = useRippedAlbums().find((r) => r.key === a.key);
   const copies = me && me.copies.length > 1 ? [...me.copies].sort((x, y) => (x.format === "Vinyl" ? 0 : 1) - (y.format === "Vinyl" ? 0 : 1)) : [];
   const [coverMsg, setCoverMsg] = useState("");
+  // A song you ripped or recorded: trim it, or (from a record) record it again.
+  const [trimming, setTrimming] = useState<string | null>(null);
+  const vinyl = useVinyl();
+  const redoHere = vinyl.open && !!vinyl.redo && a.tracks.some((t) => t.id === vinyl.redo!.trackId);
+  const [redoMsg, setRedoMsg] = useState("");
+  const recordAgain = (t: Track) => {
+    setTrimming(null);
+    const busy = startRedo({ target: t.id.replace(/^local:/, ""), trackId: t.id, albumKey: a.key, title: t.title, album: a.title, artist: a.artist, disc: t.tags?.discNo ?? 1 });
+    setRedoMsg(busy ?? "");
+    if (!busy) setTimeout(() => document.querySelector(".vinyl-ripper")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  };
+  const setLength = (id: string, seconds: number) => {
+    const t = a.tracks.find((x) => x.id === id);
+    if (t) p.updateLocalTracks([{ ...t, duration: seconds }]);
+  };
   const newCover = async () => { setCoverMsg(""); setCoverMsg((await changeRippedCover(a, p.updateLocalTracks)) ?? ""); };
   // A CD you ripped: its album title, year and song titles can be changed.
   const editRipped = useEditRipped();
@@ -264,18 +282,39 @@ function ComputerAlbumView({ album: a, go }: { album: ComputerAlbum; go: Go }) {
             )}
           </div>
           {coverMsg && <p className="form-error" role="alert">{coverMsg}</p>}
+          {redoMsg && <p className="form-error" role="alert">{redoMsg}</p>}
           {sure && <p className="caption muted">The files stay on your computer. This only takes them off Your Computer in Milk Crate.</p>}
         </div>
       </header>
+      {redoHere && <VinylRipper go={go} onClose={closeVinyl} onReplaced={(id, secs) => { setLength(id, secs); closeVinyl(); }} />}
       <div>
         {discGroups(a.tracks).map((g) => (
           <section key={g.disc} className="disc-group" aria-label={g.label}>
             {g.label && <h2 className="catalog eyebrow disc-heading">{g.label}</h2>}
             {g.items.map(({ t, i }) => (
-              <TrackRow key={t.id} trackId={t.id} index={t.tags?.trackNo ?? i + 1} title={t.title} artist={a.artist === "Various artists" ? fileArtist(t) : undefined}
-                duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
-                playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(a.tracks, i)}
-                actions={<AddToPlaylist trackIds={[t.id]} />} />
+              <div key={t.id}>
+                <TrackRow trackId={t.id} index={t.tags?.trackNo ?? i + 1} title={t.title} artist={a.artist === "Various artists" ? fileArtist(t) : undefined}
+                  duration={t.duration ? formatTime(t.duration) : "—"} favorite={p.isFavorite(t.id)} onFavorite={() => p.toggleFavorite(t.id)}
+                  playing={p.current?.id === t.id} paused={!p.playing} onToggle={p.toggle} onPlay={() => p.playQueue(a.tracks, i)}
+                  actions={<>
+                    {ripped && isDesktop() && (
+                      <button type="button" className={`mc-icon-btn${trimming === t.id ? " on" : ""}`} aria-label={`Trim ${t.title}`} title="Trim (change where it starts and ends)"
+                        aria-expanded={trimming === t.id} onClick={() => setTrimming((x) => (x === t.id ? null : t.id))}>
+                        <Scissors size={16} strokeWidth={1.75} aria-hidden="true" />
+                      </button>
+                    )}
+                    {ripped && me?.format === "Vinyl" && isDesktop() && (
+                      <button type="button" className="mc-icon-btn" aria-label={`Record ${t.title} again`} title="Record this song again from the record"
+                        disabled={vinyl.recording || !!vinyl.take} onClick={() => recordAgain(t)}>
+                        <Mic size={16} strokeWidth={1.75} aria-hidden="true" />
+                      </button>
+                    )}
+                    <AddToPlaylist trackIds={[t.id]} />
+                  </>} />
+                {trimming === t.id && (
+                  <TrimSong track={t} onClose={() => setTrimming(null)} onDone={(secs) => { setLength(t.id, secs); setTrimming(null); }} />
+                )}
+              </div>
             ))}
           </section>
         ))}

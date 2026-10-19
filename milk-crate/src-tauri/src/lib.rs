@@ -70,6 +70,7 @@ fn set_title_bar_colors(window: tauri::WebviewWindow, caption: u32, text: u32, b
 /// CD ripping (Your Computer › Rip a CD). The work happens in the cdrip crate; these run it off the
 /// main thread and report progress to the app with "cd-rip-progress" events.
 mod secure;
+mod outputs;
 
 mod cd {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -151,6 +152,24 @@ mod cd {
     #[tauri::command]
     pub async fn cd_set_cover(files: Vec<String>, cover: String) -> Result<(), String> {
         joined(spawn_blocking(move || cdrip::set_cover(&files.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>(), &cover)).await)
+    }
+
+    /// A ripped or recorded song must be one of Milk Crate's (in Music › Milk Crate), and a FLAC.
+    pub fn own_song(app: &tauri::AppHandle, path: &str) -> Result<std::path::PathBuf, String> {
+        let root = app.path().audio_dir().map_err(|e| e.to_string())?.join("Milk Crate").canonicalize().map_err(|_| "Only songs ripped or recorded by Milk Crate can be changed.".to_string())?;
+        let p = std::path::Path::new(path).canonicalize().map_err(|_| "That song's file is gone.".to_string())?;
+        if p.starts_with(&root) && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("flac")) {
+            Ok(p)
+        } else {
+            Err("Only songs ripped or recorded by Milk Crate can be changed.".into())
+        }
+    }
+
+    /// Trims a ripped or recorded song: seconds off its start and its end. Returns its new length.
+    #[tauri::command]
+    pub async fn cd_trim(app: tauri::AppHandle, path: String, cut_start: f64, cut_end: f64) -> Result<f64, String> {
+        let p = own_song(&app, &path)?;
+        joined(spawn_blocking(move || cdrip::flac::trim(&p, cut_start, cut_end)).await)
     }
 
     /// New titles, album name or year for songs you ripped (saved into their FLAC files).
@@ -269,6 +288,15 @@ mod vinyl_cmd {
         })
         .await
         .map_err(|e| e.to_string())?
+    }
+
+    /// Records one song of a record again: part of a recording replaces that song's file
+    /// (which keeps its name, tags and cover). Returns its new length.
+    #[tauri::command]
+    pub async fn vinyl_replace(app: tauri::AppHandle, path: String, rate: u32, start: f64, end: f64, target: String) -> Result<f64, String> {
+        let p = own_recording(&app, &path)?;
+        let t = crate::cd::own_song(&app, &target)?;
+        spawn_blocking(move || vinyl::replace_song(&p, rate, start, end, &t)).await.map_err(|e| e.to_string())?
     }
 
     #[tauri::command]
@@ -419,6 +447,7 @@ pub fn run() {
             cd::cd_eject,
             cd::cd_set_cover,
             cd::cd_set_tags,
+            cd::cd_trim,
             link::link_receive_start,
             link::link_receive_stop,
             link::link_find,
@@ -437,7 +466,10 @@ pub fn run() {
             vinyl_cmd::vinyl_snippet,
             vinyl_cmd::vinyl_save,
             vinyl_cmd::vinyl_search,
-            vinyl_cmd::vinyl_record_info
+            vinyl_cmd::vinyl_record_info,
+            vinyl_cmd::vinyl_replace,
+            outputs::audio_outputs,
+            outputs::set_audio_output
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

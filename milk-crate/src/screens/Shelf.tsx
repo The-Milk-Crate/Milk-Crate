@@ -123,7 +123,7 @@ export function Shelf({ go, format }: { go: Go; format?: ShelfFormat }) {
       {/* Beneath the CDs: the same ripper as in Your Computer; a ripped CD lands on this shelf. */}
       {ripOpen && (!current || current.id === "cds") && <CdRipper onClose={() => setRipOpen(false)} onRipped={addRipped} />}
       {/* Beneath the records: recording one from the turntable; it lands on this shelf. */}
-      {vinyl.open && (!current || current.id === "vinyl" || !hasVinyl) && <VinylRipper go={go} onClose={() => setVinyl({ open: false })} />}
+      {vinyl.open && !vinyl.redo && (!current || current.id === "vinyl" || !hasVinyl) && <VinylRipper go={go} onClose={() => setVinyl({ open: false })} />}
 
     </div>
   );

@@ -53,6 +53,8 @@ export interface VinylState {
   start: number;
   end: number;
   cuts: number[];
+  /** Where each song ends, when it's cut short of the next song's start (null: it runs up to it). */
+  ends: (number | null)[];
   unsure: boolean[];
   saving: boolean;
   /** Songs saved so far (all sides). */
@@ -62,12 +64,16 @@ export interface VinylState {
   error: string;
   /** Recording finished (or the side ended) while you were elsewhere. */
   notice: string | null;
+  /** Recording one song again (from its album page), to replace that song's file. */
+  redo: Redo | null;
 }
+
+export interface Redo { target: string; trackId: string; albumKey: string; title: string }
 
 const blank: VinylState = {
   open: false, shown: false, step: "pick", query: "", results: [], searching: false, album: "", artist: "", year: "", cover: null,
   sides: [], discs: 1, side: 0, inputs: [], device: "", recording: false, paused: false, seconds: 0, env: [], left: 0, right: 0,
-  quietFor: 0, clipped: false, dead: false, take: null, start: 0, end: 0, cuts: [], unsure: [], saving: false, saved: [], doneSides: [], error: "", notice: null,
+  quietFor: 0, clipped: false, dead: false, take: null, start: 0, end: 0, cuts: [], ends: [], unsure: [], saving: false, saved: [], doneSides: [], error: "", notice: null, redo: null,
 };
 let state: VinylState = blank;
 const listeners = new Set<() => void>();
@@ -188,8 +194,8 @@ export async function stopSide(ended = false) {
     const n = Math.max(1, side?.tracks.length ?? 1);
     const end = Math.max(1, take.seconds - Math.min(quiet, take.seconds - 1) + (ended ? 2 : 0));
     const cuts = Array.from({ length: n - 1 }, (_, i) => (end * (i + 1)) / n);
-    setVinyl({ take, step: "check", start: 0, end: Math.min(end, take.seconds), cuts, unsure: cuts.map(() => false),
-      notice: ended && !state.shown ? `Side ${side?.label ?? ""} of ${state.album || "your record"} is done. Check the songs.` : null });
+    setVinyl({ take, step: "check", start: 0, end: Math.min(end, take.seconds), cuts, ends: Array.from({ length: n }, () => null), unsure: cuts.map(() => false),
+      notice: ended && !state.shown ? (state.redo ? `${state.redo.title} is recorded. Check it.` : `Side ${side?.label ?? ""} of ${state.album || "your record"} is done. Check the songs.`) : null });
   } catch (e) {
     setVinyl({ error: String(e), step: "pick" });
   }
@@ -199,7 +205,7 @@ export async function cancelSide() {
   setVinyl({ recording: false });
   await call("vinyl_discard", { path: "" }).catch(() => {});
   if (state.take) await call("vinyl_discard", { path: state.take.path }).catch(() => {});
-  setVinyl({ take: null, step: state.saved.length ? "record" : "pick", env: [], seconds: 0 });
+  setVinyl({ take: null, step: state.saved.length || state.redo ? "record" : "pick", env: [], seconds: 0 });
 }
 
 /* ---------- Checking and saving ---------- */
@@ -223,10 +229,11 @@ export async function saveSide(): Promise<string[]> {
   const side = s.sides[s.side];
   if (!t || !side) throw new Error("Nothing recorded to save.");
   const bounds = [s.start, ...s.cuts, s.end];
+  const ends = songEnds(s);
   const before = s.sides.slice(0, s.side).reduce((n, x) => n + x.tracks.length, 0);
   const total = s.sides.reduce((n, x) => n + x.tracks.length, 0);
   const songs = side.tracks.map((tr, i) => ({
-    start: bounds[i], end: bounds[i + 1], title: tr.title.trim() || `Track ${before + i + 1}`, artist: tr.artist, track: before + i + 1, disc: side.disc,
+    start: bounds[i], end: ends[i], title: tr.title.trim() || `Track ${before + i + 1}`, artist: tr.artist, track: before + i + 1, disc: side.disc,
   }));
   setVinyl({ saving: true, error: "" });
   try {
@@ -245,6 +252,48 @@ export async function saveSide(): Promise<string[]> {
     throw e;
   }
 }
+
+/** Where each song ends (seconds): its own end if it was cut short, else where the next one starts. */
+export function songEnds(s: Pick<VinylState, "start" | "cuts" | "end" | "ends">): number[] {
+  const starts = [s.start, ...s.cuts];
+  return starts.map((at, i) => {
+    const next = i === starts.length - 1 ? s.end : starts[i + 1];
+    const own = s.ends[i];
+    return own == null ? next : Math.max(at + 1, Math.min(next, own));
+  });
+}
+
+/* ---------- Recording one song again ---------- */
+
+/** Opens the recorder to record one song of a record again (it replaces that song's file). */
+export function startRedo(r: Redo & { album: string; artist: string; disc?: number }): string | null {
+  if (state.recording || state.take) return "The recorder is busy with another record. Finish or cancel that first.";
+  setVinyl({ ...blank, open: true, shown: state.shown, inputs: state.inputs, device: state.device, step: "record",
+    album: r.album, artist: r.artist, redo: { target: r.target, trackId: r.trackId, albumKey: r.albumKey, title: r.title },
+    sides: [{ label: "", disc: r.disc ?? 1, tracks: [{ title: r.title, artist: r.artist }] }], side: 0 });
+  if (!state.inputs.length) void loadInputs();
+  return null;
+}
+
+/** Replaces the song's file with the new recording (between the start and end you set). Returns its new length. */
+export async function replaceSong(): Promise<number> {
+  const s = state;
+  const t = s.take;
+  if (!t || !s.redo) throw new Error("Nothing recorded to save.");
+  setVinyl({ saving: true, error: "" });
+  try {
+    const seconds = await call<number>("vinyl_replace", { path: t.path, rate: t.rate, start: s.start, end: songEnds(s)[0], target: s.redo.target });
+    await call("vinyl_discard", { path: t.path }).catch(() => {});
+    setVinyl({ ...blank, open: false, shown: s.shown, inputs: s.inputs, device: s.device });
+    return seconds;
+  } catch (e) {
+    setVinyl({ saving: false, error: String(e) });
+    throw e;
+  }
+}
+
+/** Closes the recorder (after a song recorded again, or giving up on it). */
+export const closeVinyl = () => setVinyl(state.redo ? { ...blank, inputs: state.inputs, device: state.device, shown: state.shown } : { open: false });
 
 /** Start over with another record. */
 export const resetVinyl = () => setVinyl({ ...blank, open: true, shown: state.shown, inputs: state.inputs, device: state.device });

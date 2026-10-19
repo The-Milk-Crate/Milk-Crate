@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
 import { usePlayer } from "../lib/player";
 import { EqPopover } from "./EqPopover";
+import { OutputPopover, outputIcon } from "./OutputPopover";
+import { useOutputs } from "../lib/outputs";
 import { useCatalog } from "../lib/catalog";
 import { sleeveSeed } from "../lib/sleeve";
-import { Disc3, ListMusic, Maximize2, Repeat, Repeat1, Shuffle } from "lucide-react";
+import { Disc3, ListMusic, Maximize2, Repeat, Repeat1, Shuffle, Speaker } from "lucide-react";
 import { VOLUME_FOLD_PX, VolumeIcon, VolumePopover, useNarrow } from "./VolumePopover";
 import type { Go } from "../App";
 import { SeekBar } from "./SeekBar";
@@ -15,6 +17,9 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
   const p = usePlayer();
   const [eqOpen, setEqOpen] = useState(false);
   const eqBtn = useRef<HTMLButtonElement>(null);
+  const [outOpen, setOutOpen] = useState(false);
+  const outBtn = useRef<HTMLButtonElement>(null);
+  const outputs = useOutputs();
   const [volOpen, setVolOpen] = useState(false);
   const volBtn = useRef<HTMLButtonElement>(null);
   const folded = useNarrow(VOLUME_FOLD_PX);
@@ -87,6 +92,18 @@ export function PlayerBar({ go, onImmersive, queueOpen, onQueue }: { go: Go; onI
             </>
           )}
           {folded && volOpen && <VolumePopover anchor={volBtn} onClose={() => setVolOpen(false)} />}
+          {outputs.mode !== "none" && (() => {
+            const cur = outputs.outputs.find((o) => o.current);
+            const Icon = cur && cur.id !== "" ? outputIcon(cur.kind) : Speaker;
+            return (
+              <button ref={outBtn} type="button" className={`mc-icon-btn out-btn${outOpen || (cur && cur.id !== "" && !(outputs.mode === "system" && cur.kind === "builtin")) ? " on" : ""}`}
+                aria-label={`Play on${cur?.name ? `: ${cur.name}` : ""}`} aria-expanded={outOpen} aria-haspopup="dialog"
+                title={cur?.name ? `Playing on ${cur.name}` : "Choose where the sound plays"} onClick={() => setOutOpen((o) => !o)}>
+                <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            );
+          })()}
+          {outOpen && <OutputPopover anchor={outBtn} onClose={() => setOutOpen(false)} />}
           <button ref={eqBtn} type="button" className={`eq-btn${p.eqOn ? " on" : ""}`} aria-label={`Equalizer (${p.eqOn ? "on" : "off"})`}
             aria-expanded={eqOpen} aria-haspopup="dialog" title={`Equalizer ${p.eqOn ? "on" : "off"}`} onClick={() => setEqOpen((o) => !o)}>EQ</button>
           {eqOpen && <EqPopover anchor={eqBtn} onClose={() => setEqOpen(false)} onMore={() => go({ name: "settings", tab: "sound" })} />}

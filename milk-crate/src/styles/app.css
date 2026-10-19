@@ -1586,3 +1586,38 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .vinyl-cover-btn:hover .vinyl-cover.is-empty { color: var(--ink); border-color: var(--line-strong); }
 /* What each album you can send came from (src/components/ComputerLink.tsx). */
 .link-format { display: inline-block; min-width: 44px; margin-right: 4px; padding: 2px 6px; border-radius: 4px; text-align: center; font: 500 10px/14px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); box-shadow: inset 0 0 0 1px var(--line-strong); vertical-align: 1px; }
+
+/* ---------- Song ends (vinyl check) ---------- */
+.vinyl-songs.has-ends li { grid-template-columns: 28px 32px minmax(0, 1fr) 96px 84px 90px 84px 32px 48px; }
+.vinyl-play.is-end { opacity: .8; }
+.vinyl-gap { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(0, 0, 0, .55) 0 4px, rgba(0, 0, 0, .3) 4px 8px); pointer-events: none; border-radius: 2px; }
+.vinyl-marker.is-end .vinyl-marker-tag { width: auto; left: auto; right: -2px; padding: 0 6px; border-radius: 10px; font-size: 10px; background: var(--sticker, #ffcc4d); color: var(--on-sticker, #1a1a1a); }
+.vinyl-marker.is-end::before { background: var(--sticker, #ffcc4d); }
+@media (max-width: 1100px) {
+  .vinyl-songs.has-ends li { grid-template-columns: 24px 30px minmax(0, 1fr) 84px 84px 32px 44px; }
+  .vinyl-songs.has-ends li .vinyl-start-at { display: none; }
+}
+
+/* ---------- Trimming a song (album page, TrimSong.tsx) ---------- */
+.trim-panel { margin: 4px 0 12px; padding: 16px 18px; border-radius: var(--panel-radius, 16px); background: rgba(0, 0, 0, .25); box-shadow: inset 0 0 0 1px var(--panel-edge, var(--line)); display: flex; flex-direction: column; gap: 14px; }
+.trim-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.trim-bar { position: relative; height: 10px; border-radius: 5px; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 14%, transparent) 0 4px, transparent 4px 8px); }
+.trim-bar span { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--accent); transition: left .1s, right .1s; }
+.trim-fields { display: flex; gap: 24px; flex-wrap: wrap; }
+.trim-field { display: flex; flex-direction: column; gap: 6px; }
+.trim-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.trim-input { display: inline-flex; align-items: center; gap: 6px; }
+.trim-input input { width: 72px; height: 30px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--ground-sunken); color: var(--ink); font: 500 13px var(--font-mono); }
+.trim-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* ---------- Where the sound plays (OutputPopover.tsx) ---------- */
+.eq-pop.out-pop { width: min(360px, calc(100vw - 24px)); }
+.out-list { display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; }
+.out-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: 500 14px var(--font-sans); text-align: left; cursor: pointer; }
+.out-item:hover, .out-item:focus-visible { background: color-mix(in srgb, var(--ink) 8%, transparent); outline: none; }
+.out-item.is-current { background: var(--accent-soft); }
+.out-item.is-current > svg:first-child { color: var(--accent); }
+.out-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden; text-overflow: ellipsis; }
+.out-note { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(0, 0, 0, .2); }
+.out-foot { margin: 0; }
+.out-btn.on { color: var(--accent); }

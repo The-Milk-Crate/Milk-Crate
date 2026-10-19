@@ -47,8 +47,19 @@ export class AudioOut {
   private normOn = false;
   private normDb = 0;
   private normTrack?: string;
+  private sink = "";
 
   constructor(private el: HTMLAudioElement) {}
+
+  /**
+   * Which device the sound plays on ("" for the computer's default). Goes to the audio context
+   * once Web Audio is wired in, else to the audio element. Where neither can choose (a Mac), it does nothing.
+   */
+  async setSink(id: string) {
+    this.sink = id;
+    const target = (this.ctx ?? this.el) as unknown as { setSinkId?: (id: string) => Promise<void> };
+    if (typeof target.setSinkId === "function") await target.setSinkId(id);
+  }
 
   /** True once Web Audio has been wired in (from then on audio must load with CORS). */
   get routed() {
@@ -138,6 +149,7 @@ export class AudioOut {
     node.connect(this.gain);
     this.gain.connect(ctx.destination);
     this.ctx = ctx;
+    if (this.sink) void this.setSink(this.sink).catch(() => {});
     if (!el.paused) void ctx.resume();
   }
 

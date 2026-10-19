@@ -25,6 +25,7 @@ import { computerKey, fileArtist, loadComputerTracks } from "./fileTags";
 import type { Track } from "./types";
 import { attempt, useLibrary } from "./library";
 import { AudioOut, FLAT } from "./audioOut";
+import { attachOutput } from "./outputs";
 import { normalizerGainDb, type Loudness } from "./loudness";
 import { cachedLoudness, measureTrack } from "./normalizer";
 import { useDownloads } from "./downloads";
@@ -135,6 +136,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const audio = useRef<HTMLAudioElement>(new Audio());
   const out = useRef<AudioOut | null>(null);
   out.current ??= new AudioOut(audio.current);
+  useEffect(() => attachOutput(out.current!), []);
   const [volume, setVolume] = usePersistentState("mc.volume", 0.8);
   const [muted, setMuted] = usePersistentState("mc.muted", false);
   const [eqOn, setEqOn] = usePersistentState("mc.eqOn", false);
