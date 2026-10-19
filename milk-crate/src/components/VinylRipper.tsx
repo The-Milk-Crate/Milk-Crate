@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Disc3, Pause, Play, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Disc3, Pause, Play, Plus, Search, X } from "lucide-react";
 import type { Go } from "../App";
 import { Button } from "./ui";
 import { Select } from "./Select";
@@ -73,8 +73,6 @@ export function VinylRipper({ go, onClose }: { go: Go; onClose: () => void }) {
 function Pick() {
   const v = useVinyl();
   const [q, setQ] = useState(v.query);
-  const byHand = !v.releaseId && v.sides.length > 0;
-  const total = (s: Side) => s.tracks.reduce((n, t) => n + (t.seconds ?? 0), 0);
   const ready = v.sides.length > 0 && v.sides[v.side]?.tracks.length > 0;
   return (
     <div className="vinyl-pick">
@@ -113,25 +111,7 @@ function Pick() {
               </div>
             </div>
           </div>
-          <div className="vinyl-sides">
-            {v.sides.map((s, i) => (
-              <div key={`${s.disc}${s.label}`} className={`vinyl-side${i === v.side ? " is-next" : ""}`}>
-                <span className="catalog eyebrow">Side {s.label}{total(s) ? ` · ${clock(total(s))}` : ""}</span>
-                {byHand ? (
-                  <textarea rows={6} aria-label={`Songs on side ${s.label}, one per line`} placeholder="One song per line"
-                    value={s.tracks.map((t) => t.title).join("\n")}
-                    onChange={(e) => setVinyl((st) => ({ sides: st.sides.map((x, j) => j === i ? { ...x, tracks: e.target.value.split("\n").map((title) => ({ title, artist: "" })) } : x) }))} />
-                ) : (
-                  <ol>{s.tracks.map((t, k) => <li key={k}>{t.title}</li>)}</ol>
-                )}
-              </div>
-            ))}
-          </div>
-          {byHand && (
-            <button type="button" className="link-btn caption" onClick={() => setVinyl((st) => ({ sides: [...st.sides, { label: String.fromCharCode(65 + st.sides.length), disc: Math.floor(st.sides.length / 2) + 1, tracks: [] }], discs: Math.floor(st.sides.length / 2) + 1 }))}>
-              Add a side
-            </button>
-          )}
+          <SidesEditor />
           <div className="vinyl-start">
             <div className="field" style={{ minWidth: 0 }}>
               <span id="vinyl-input" className="caption">Listening to</span>
@@ -149,6 +129,73 @@ function Pick() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The record's sides, always editable: MusicBrainz sometimes gets them wrong. Retitle a song,
+ * move it to the side before or after, add or take out songs, add a side.
+ */
+function SidesEditor() {
+  const v = useVinyl();
+  const total = (s: Side) => s.tracks.reduce((n, t) => n + (t.seconds ?? 0), 0);
+  const edit = (f: (sides: Side[]) => Side[]) => setVinyl((st) => ({ sides: f(st.sides.map((x) => ({ ...x, tracks: [...x.tracks] }))) }));
+  const move = (from: number, k: number, to: number) => edit((sides) => {
+    const [t] = sides[from].tracks.splice(k, 1);
+    // Moving forward: it becomes the first song of the next side; back: the last of the one before.
+    if (to > from) sides[to].tracks.unshift(t); else sides[to].tracks.push(t);
+    return sides;
+  });
+  const addSide = () => setVinyl((st) => {
+    const n = st.sides.length;
+    return { sides: [...st.sides, { label: String.fromCharCode(65 + n), disc: Math.floor(n / 2) + 1, tracks: [] }], discs: Math.max(st.discs, Math.floor(n / 2) + 1) };
+  });
+  const removeSide = (i: number) => setVinyl((st) => ({
+    sides: st.sides.filter((_, j) => j !== i).map((x, j) => ({ ...x, label: String.fromCharCode(65 + j), disc: Math.floor(j / 2) + 1 })),
+    side: Math.min(st.side, st.sides.length - 2),
+  }));
+  return (
+    <div className="vinyl-sides-edit">
+      <div className="vinyl-sides">
+        {v.sides.map((s, i) => (
+          <div key={i} className={`vinyl-side${i === v.side ? " is-next" : ""}`}>
+            <div className="vinyl-side-head">
+              <span className="catalog eyebrow">Side {s.label}{total(s) ? ` · ${clock(total(s))}` : ""}</span>
+              {v.sides.length > 1 && !s.tracks.length && (
+                <button type="button" className="mc-icon-btn" aria-label={`Take out side ${s.label}`} title="Take out this side" onClick={() => removeSide(i)}><X size={14} aria-hidden="true" /></button>
+              )}
+            </div>
+            <ol>
+              {s.tracks.map((t, k) => (
+                <li key={k}>
+                  <span className="numeral muted">{k + 1}</span>
+                  <input aria-label={`Side ${s.label}, song ${k + 1}`} value={t.title} placeholder="Song title"
+                    onChange={(e) => { const title = e.target.value; edit((sides) => { sides[i].tracks[k] = { ...sides[i].tracks[k], title }; return sides; }); }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      edit((sides) => { sides[i].tracks.splice(k + 1, 0, { title: "", artist: "" }); return sides; });
+                      setTimeout(() => (document.querySelector(`[aria-label="Side ${s.label}, song ${k + 2}"]`) as HTMLInputElement | null)?.focus(), 0);
+                    }} />
+                  <span className="vinyl-song-tools">
+                    {i > 0 && <button type="button" aria-label={`Move ${t.title || "this song"} to side ${v.sides[i - 1].label}`} title={`Move to side ${v.sides[i - 1].label}`} onClick={() => move(i, k, i - 1)}><ChevronLeft size={14} aria-hidden="true" /></button>}
+                    {i < v.sides.length - 1 && <button type="button" aria-label={`Move ${t.title || "this song"} to side ${v.sides[i + 1].label}`} title={`Move to side ${v.sides[i + 1].label}`} onClick={() => move(i, k, i + 1)}><ChevronRight size={14} aria-hidden="true" /></button>}
+                    <button type="button" aria-label={`Take out ${t.title || "this song"}`} title="Take it out" onClick={() => edit((sides) => { sides[i].tracks.splice(k, 1); return sides; })}><X size={14} aria-hidden="true" /></button>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <button type="button" className="link-btn caption" onClick={() => {
+              edit((sides) => { sides[i].tracks.push({ title: "", artist: "" }); return sides; });
+              setTimeout(() => (document.querySelector(`[aria-label="Side ${s.label}, song ${s.tracks.length + 1}"]`) as HTMLInputElement | null)?.focus(), 0);
+            }}>
+              <Plus size={12} aria-hidden="true" /> Add a song
+            </button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="link-btn caption" onClick={addSide}>Add a side</button>
     </div>
   );
 }

@@ -1548,3 +1548,17 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 .mc-player-empty-art { width: 86px; height: 86px; box-sizing: border-box; display: grid; place-items: center; border-radius: calc(var(--panel-radius, 18px) - 5px);
   color: var(--ink-muted); background: rgba(255, 250, 240, .04); border: 1px dashed color-mix(in srgb, var(--ink-muted) 45%, transparent); }
 [data-theme="light"] .mc-player-empty-art { background: rgba(40, 32, 24, .04); }
+/* Editing a record's sides before recording (src/components/VinylRipper.tsx). */
+.vinyl-sides-edit { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.vinyl-sides-edit .vinyl-sides { align-self: stretch; }
+.vinyl-side-head { display: flex; align-items: center; justify-content: space-between; min-height: 28px; }
+.vinyl-side ol { list-style: none; padding: 0; gap: 2px; }
+.vinyl-side li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.vinyl-side li input { height: 30px; min-width: 0; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid transparent; background: transparent; color: var(--ink); font: inherit; user-select: text; }
+.vinyl-side li input:hover, .vinyl-side li input:focus { border-color: var(--line-strong); background: var(--ground-sunken); }
+.vinyl-side li input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.vinyl-song-tools { display: inline-flex; gap: 2px; opacity: 0; transition: opacity .12s ease-out; }
+.vinyl-side li:hover .vinyl-song-tools, .vinyl-side li:focus-within .vinyl-song-tools { opacity: 1; }
+.vinyl-song-tools button { width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 4px; background: none; color: var(--ink-muted); cursor: pointer; }
+.vinyl-song-tools button:hover { background: var(--accent-soft); color: var(--ink); }
+.vinyl-side .link-btn { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; }
