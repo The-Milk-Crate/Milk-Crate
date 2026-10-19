@@ -4,6 +4,7 @@ import { albumFolder, cancelRip, ejectDisc, fetchCover, findDiscs, imageAsDataUr
 import { pickImage } from "../lib/localFiles";
 import { ripState, useRip, setRip, type Draft } from "../lib/ripSession";
 import { formatTime } from "../lib/format";
+import { Select } from "./Select";
 import { Button, Sleeve } from "./ui";
 
 
@@ -239,16 +240,11 @@ export function CdRipper({ onClose, onRipped }: { onClose: () => void; onRipped:
                 {found === "offline" && "Couldn't reach MusicBrainz. Type in the names, or check your connection."}
               </p>
               {matches.length > 1 && (
-                <label className="field">
-                  <span className="caption">Edition</span>
-                  <select value={pick} onChange={(e) => choose(Number(e.target.value))} disabled={ripping}>
-                    {matches.map((m, i) => (
-                      <option key={`${m.releaseId}-${m.disc}`} value={i}>
-                        {m.title} — {m.artist}{m.detail ? ` (${m.detail})` : ""}{m.discs > 1 ? ` · disc ${m.disc} of ${m.discs}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="field">
+                  <span id="rip-edition" className="caption">Edition</span>
+                  <Select labelledBy="rip-edition" value={pick} onChange={choose} disabled={ripping}
+                    options={matches.map((m, i) => ({ value: i, label: `${m.title} — ${m.artist}${m.detail ? ` (${m.detail})` : ""}${m.discs > 1 ? ` · disc ${m.disc} of ${m.discs}` : ""}` }))} />
+                </div>
               )}
               <label className="field">
                 <span className="caption">Album</span>

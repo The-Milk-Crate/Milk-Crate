@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Select } from "../components/Select";
 import { Check, ChevronRight, Heart, ImagePlus, Plus, Shuffle, Trash2, X } from "lucide-react";
 import type { CrateTab, Go } from "../App";
 import { useCatalog } from "../lib/catalog";
@@ -320,12 +321,10 @@ function Entries({ go }: { go: Go }) {
   return (
     <>
       <div className="section-title" style={{ justifyContent: "space-between" }}>
-        <label className="field sort-field">
-          <span className="catalog eyebrow">Sort by</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value as EntrySort)}>
-            {ENTRY_SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-          </select>
-        </label>
+        <div className="field sort-field">
+          <span id="albums-sort" className="catalog eyebrow">Sort by</span>
+          <Select labelledBy="albums-sort" value={sort} onChange={setSort} options={ENTRY_SORTS.map((x) => ({ value: x.id, label: x.label }))} />
+        </div>
         <span className="caption muted">{plural(list.length, "album")}</span>
       </div>
       <div className="release-grid">
@@ -398,12 +397,10 @@ function Songs({ go, favoritesFirst }: { go: Go; favoritesFirst: boolean }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <label className="field sort-field">
-            <span className="catalog eyebrow">Sort by</span>
-            <select value={sort} onChange={(e) => setSort(e.target.value as SongSort)}>
-              {SONG_SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-            </select>
-          </label>
+          <div className="field sort-field">
+            <span id="songs-sort" className="catalog eyebrow">Sort by</span>
+            <Select labelledBy="songs-sort" value={sort} onChange={setSort} options={SONG_SORTS.map((x) => ({ value: x.id, label: x.label }))} />
+          </div>
           <span className="caption muted">{plural(tracks.length, "song")}</span>
         </div>
       </div>

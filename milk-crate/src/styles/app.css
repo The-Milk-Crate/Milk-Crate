@@ -1439,3 +1439,39 @@ button.catalog.immersive-link { color: var(--ink-muted); }
 /* A multi-disc album's songs, under "Disc 1", "Disc 2"… (src/screens/Computer.tsx). */
 .disc-group + .disc-group { margin-top: var(--space-6, 24px); }
 .disc-heading { margin: 0 0 8px; padding-left: 12px; }
+
+/* Dropdowns that match the app (src/components/Select.tsx). */
+.mc-select { position: relative; display: inline-flex; min-width: 0; }
+.field .mc-select { display: flex; }
+.mc-select-btn {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0;
+  height: 40px; padding: 0 10px 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong);
+  background: var(--ground-sunken); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.mc-select-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); }
+.mc-select-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mc-select-btn:disabled { opacity: .55; cursor: default; }
+.mc-select-btn > svg { flex: none; color: var(--ink-muted); transition: transform .15s ease; }
+.mc-select.is-open .mc-select-btn > svg { transform: rotate(180deg); }
+.mc-select-value { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sort-field .mc-select-btn { height: 32px; padding: 0 8px 0 10px; }
+:root[data-glass="on"] .mc-select-btn { background: rgba(0, 0, 0, .28); }
+:root[data-glass="on"][data-theme="light"] .mc-select-btn { background: rgba(255, 255, 255, .55); }
+.mc-select-menu {
+  position: absolute; z-index: 80; top: calc(100% + 6px); left: 0; min-width: 100%; max-width: min(520px, 90vw); max-height: 300px; overflow-y: auto;
+  margin: 0; padding: 4px; list-style: none; outline: none;
+  border-radius: var(--radius-md); border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--glass-solid, var(--ground-raised)) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5); backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow: inset 0 1px 0 var(--panel-shine, rgba(255, 255, 255, .08)), 0 18px 44px rgba(0, 0, 0, .45);
+  animation: mc-select-in .12s ease-out both;
+}
+.mc-select-menu li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px;
+  border-radius: var(--radius-sm); color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.mc-select-menu li.is-active { background: var(--accent-soft); }
+.mc-select-menu li[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+.mc-select-menu li > svg { flex: none; }
+@keyframes mc-select-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mc-select-menu { animation: none; } .mc-select-btn > svg { transition: none; } }
