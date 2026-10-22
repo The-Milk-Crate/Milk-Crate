@@ -3,130 +3,382 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  // Links shared from the app (…/?album=, ?artist=, ?scene=) used to land here. Send them to the share page.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    if (q.has("album") || q.has("artist") || q.has("scene")) location.replace("share.html" + location.search + location.hash);
+  })();
+</script>
 <title>Milk Crate</title>
-<meta name="description" content="Milk Crate: a nonprofit music app. Listen to the bands around you and far beyond.">
+<meta name="description" content="Milk Crate is a free, nonprofit music app for Windows and Mac. Find the bands in your scene, keep your records next to your streams, and pay the artists you actually play. No ads, no charts.">
 <meta property="og:title" content="Milk Crate">
-<meta property="og:description" content="Listen on Milk Crate.">
+<meta property="og:description" content="A nonprofit music app. Find the bands in your scene. No ads, no charts.">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#13110f">
 <link rel="icon" href="mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
-<!--
-  Milk Crate share page (GitHub Pages). Shared links look like
-    …/?album=<id>   …/?artist=<id>   …/?scene=NC/Durham   …/?scene=CA/ON/Toronto
-  It shows what was shared (read from the Milk Crate server with the public,
-  read-only key the app ships with) and opens it in the app via milkcrate://.
-  Keep SERVER and KEY in step with milk-crate/src/config.ts.
--->
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --ground: #13110f; --panel: #1d1a17; --ink: #f3ede3; --muted: #b9b0a3; --line: rgba(243, 237, 227, .12); --accent: #cfb1f8; --on-accent: #1b1430; }
-  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --ground: #f3eee5; --panel: #fbf8f2; --ink: #1b1714; --muted: #5c544a; --line: rgba(27, 23, 20, .12); --accent: #6c4ab3; --on-accent: #fff; } }
+  /* Colors from the app's design tokens (milk-crate/src/styles/tokens.css). */
+  :root {
+    --ground: #13110f; --raised: #1d1a17; --sunken: #0c0b0a;
+    --line: #38332d; --ink: #f3ede3; --muted: #a89e90;
+    --accent: #cfb1f8; --on-accent: #13110f; --accent-soft: #28223a;
+    --crate: #bf69f7; --sticker: #ffd43b;
+    --glass: rgba(19, 17, 15, .58); --glass-edge: rgba(243, 237, 227, .16);
+    --pool: #4a433b;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #ebe5da; --raised: #f6f2ea; --sunken: #e0d8cb;
+      --line: #d6ccbc; --ink: #1b1714; --muted: #5f574d;
+      --accent: #6c4ab3; --on-accent: #ffffff; --accent-soft: #e9e4fe;
+      --crate: #692d94; --sticker: #ffcf2e;
+      --glass: rgba(246, 242, 234, .66); --glass-edge: rgba(27, 23, 20, .12);
+      --pool: #c9bfae;
+      color-scheme: light;
+    }
+  }
+
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   html, body { margin: 0; }
-  body { min-height: 100vh; background: var(--ground); color: var(--ink); font: 16px/1.5 Archivo, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 24px 16px 48px; }
-  header { width: 100%; max-width: 720px; display: flex; align-items: center; gap: 10px; }
-  header img { width: 28px; height: 28px; }
-  .word { font-family: "Archivo Black", sans-serif; letter-spacing: .02em; text-transform: uppercase; font-size: 18px; color: var(--accent); }
-  main { width: 100%; max-width: 720px; margin-top: 48px; display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
-  .cover { width: 260px; max-width: 100%; aspect-ratio: 1; border-radius: 14px; flex: none; background: var(--panel); background-size: cover; background-position: center; box-shadow: 0 18px 40px rgba(0, 0, 0, .35); display: grid; place-items: center; }
-  .cover.swatch { background-image: none; }
-  .cover.swatch span { font-family: "Archivo Black", sans-serif; font-size: 64px; color: rgba(0, 0, 0, .55); }
-  .info { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-  h1 { font-family: "Archivo Black", sans-serif; font-size: clamp(32px, 6vw, 52px); line-height: 1.02; margin: 0; overflow-wrap: anywhere; }
-  .by { font-size: 18px; font-weight: 600; margin: 0; }
-  .muted { color: var(--muted); }
-  .soon { align-self: flex-start; padding: 4px 12px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 22%, transparent); color: var(--accent); font-weight: 600; font-size: 14px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink); }
+  body { background: var(--ground); color: var(--ink); font: 400 17px/1.6 Archivo, "Segoe UI", system-ui, sans-serif; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+  .wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  @media (max-width: 600px) { .wrap { padding: 0 16px; } }
+  h1, h2, h3 { font-family: "Archivo Black", "Arial Black", sans-serif; font-weight: 400; margin: 0; }
+  h2 { font-size: clamp(30px, 4.6vw, 46px); line-height: 1.04; letter-spacing: -.01em; max-width: 18ch; }
+  h3 { font-size: 20px; line-height: 1.2; }
+  p { margin: 0; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 60ch; }
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: 8px; z-index: 10; }
+  .skip:focus { left: 8px; }
+
+  /* Header */
+  .top { position: absolute; inset: 0 0 auto; z-index: 3; }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 16px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
+  .brand svg { width: 30px; height: 30px; fill: var(--accent); }
+  .word { font-family: "Archivo Black", sans-serif; text-transform: uppercase; letter-spacing: .02em; font-size: 18px; color: var(--accent); }
+  .top nav { display: flex; gap: 22px; font-weight: 600; font-size: 15px; }
+  .top nav a { text-decoration: none; }
+  .top nav a:hover { text-decoration: underline; text-underline-offset: 4px; }
+  @media (max-width: 640px) { .top nav a:not(.go) { display: none; } }
+
+  /* Hero: album colors swirling behind frosted glass, the way the app looks when a record plays. */
+  .hero { position: relative; min-height: min(860px, 100svh); display: flex; align-items: center; overflow: hidden; isolation: isolate; padding: 104px 0 64px; }
+  .hero canvas { position: absolute; inset: -10%; width: 120%; height: 120%; z-index: -2; filter: blur(70px) saturate(1.15); }
+  .hero::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(to bottom, transparent 70%, var(--ground)); }
+  .glass {
+    position: relative; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 40px; align-items: center;
+    padding: clamp(28px, 5vw, 56px); border-radius: 28px;
+    background: var(--glass); border: 1px solid var(--glass-edge);
+    -webkit-backdrop-filter: blur(28px) saturate(1.3); backdrop-filter: blur(28px) saturate(1.3);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .28);
+  }
+  .glass::before { /* the app's fine frosted speckle */
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .13; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .hero h1 { font-size: clamp(42px, 7.2vw, 84px); line-height: .98; letter-spacing: -.02em; }
+  .hero .lede { color: var(--ink); opacity: .86; margin-top: 22px; font-size: clamp(17px, 1.6vw, 20px); }
+  .crate { justify-self: center; width: 100%; max-width: 300px; }
+  .crate svg { width: 100%; height: auto; display: block; fill: var(--accent); filter: drop-shadow(0 20px 40px rgba(0,0,0,.3)); }
+  @media (max-width: 820px) {
+    .glass { grid-template-columns: 1fr; }
+    .crate { order: -1; max-width: 120px; justify-self: start; }
+  }
+
+  .get { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 24px; border-radius: 999px; font: 600 16px/1 Archivo, sans-serif; text-decoration: none; border: 1px solid var(--glass-edge); background: transparent; color: var(--ink); }
+  .btn svg { width: 18px; height: 18px; fill: currentColor; flex: none; }
   .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .note { font-size: 14px; }
-  footer { width: 100%; max-width: 720px; margin-top: auto; padding-top: 64px; font-size: 13px; }
-  footer a { color: var(--muted); }
+  .btn:hover { filter: brightness(1.06); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .fine { margin-top: 14px; font-size: 14px; color: var(--ink); opacity: .7; }
+
+  section { padding: clamp(72px, 10vw, 128px) 0; }
+  section + section { border-top: 1px solid var(--line); }
+
+  /* Money */
+  .money { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(32px, 6vw, 80px); align-items: start; }
+  .money .lede { margin-top: 20px; }
+  .money .lede + .lede { margin-top: 14px; }
+  @media (max-width: 860px) { .money { grid-template-columns: 1fr; } }
+  .split { background: var(--raised); border: 1px solid var(--line); border-radius: 20px; padding: clamp(22px, 3.5vw, 34px); }
+  .split figcaption { font-size: 15px; color: var(--muted); }
+  .split figcaption strong { color: var(--ink); font-weight: 600; }
+  .model + .model { margin-top: 30px; }
+  .model h3 { font-family: Archivo, sans-serif; font-weight: 700; font-size: 17px; margin-bottom: 4px; }
+  .model > p { font-size: 15px; color: var(--muted); margin-bottom: 12px; }
+  .bar { display: flex; height: 44px; border-radius: 10px; overflow: hidden; gap: 3px; }
+  .bar span { display: block; height: 100%; }
+  .bar .pool { background: var(--pool); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 14px; color: var(--muted); list-style: none; padding: 0; }
+  .legend li { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .b1 { background: #cfb1f8; } .b2 { background: #ffd43b; } .b3 { background: #7fd0c0; } .run { background: var(--muted); opacity: .55; }
+  .split .note { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+
+  /* Promises */
+  .promises { list-style: none; padding: 0; margin: 44px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; }
+  .promises li { padding: 22px 0; border-top: 1px solid var(--line); }
+  .promises b { display: block; font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 21px; line-height: 1.2; margin-bottom: 6px; }
+  .promises span { color: var(--muted); font-size: 16px; }
+  @media (max-width: 720px) { .promises { grid-template-columns: 1fr; } }
+
+  /* Features */
+  .features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 48px; margin-top: 48px; }
+  .features h3 { margin-bottom: 8px; }
+  .features h3::before { content: ""; display: block; width: 28px; height: 4px; border-radius: 2px; background: var(--accent); margin-bottom: 16px; }
+  .features p { color: var(--muted); font-size: 16px; }
+  @media (max-width: 860px) { .features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+
+  /* Artists */
+  .artists { background: var(--accent-soft); }
+  .artists .wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 80px); align-items: start; }
+  .artists ul { margin: 0; padding: 0; list-style: none; }
+  .artists li { padding: 14px 0 14px 30px; position: relative; border-bottom: 1px solid var(--line); }
+  .artists li::before { content: ""; position: absolute; left: 4px; top: 22px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  .artists .lede { margin-top: 18px; color: var(--ink); opacity: .8; }
+  @media (max-width: 760px) { .artists .wrap { grid-template-columns: 1fr; } }
+  section.artists + section { border-top: 0; }
+
+  /* Download */
+  .platforms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 44px; }
+  .platform { background: var(--raised); border: 1px solid var(--line); border-radius: 20px; padding: clamp(24px, 3.5vw, 36px); display: flex; flex-direction: column; gap: 18px; }
+  .platform header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .platform header p { font-size: 14px; color: var(--muted); }
+  .platform ol { margin: 0; padding-left: 22px; color: var(--muted); font-size: 16px; }
+  .platform ol li + li { margin-top: 8px; }
+  .platform ol strong { color: var(--ink); font-weight: 600; }
+  .platform .btn { align-self: flex-start; }
+  .platform.mine { border-color: var(--accent); }
+  @media (max-width: 760px) { .platforms { grid-template-columns: 1fr; } }
+  .after { margin-top: 28px; color: var(--muted); font-size: 15px; max-width: 70ch; }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 56px; font-size: 14px; color: var(--muted); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; justify-content: space-between; align-items: center; }
+  footer nav { display: flex; gap: 22px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
-<header><img src="mark.svg" alt=""><span class="word">Milk Crate</span></header>
-<main id="main" aria-live="polite">
-  <div class="info"><span class="eyebrow">Loading…</span></div>
-</main>
-<footer class="muted">
-  Milk Crate is a nonprofit music app for local scenes: real towns on a real map, no charts, no ads.
-  <a href="https://github.com/The-Milk-Crate/Milk-Crate/releases/latest">Get it free for Windows and Mac</a>.
-</footer>
-<script>
-  const SERVER = "https://dpnkngadsewzrkedlwmi.supabase.co";
-  const KEY = "sb_publishable_XU6XAR4PCvNBJbPIlDxiFQ_4mbxrAN_";
-  const DOWNLOAD = "https://github.com/The-Milk-Crate/Milk-Crate/releases/latest";
-  const REGIONS = { CA: "Canada", AU: "Australia" };
+<a class="skip" href="#why">Skip to content</a>
 
-  const main = document.getElementById("main");
-  const q = new URLSearchParams(location.search);
-  const isId = (v) => /^[0-9a-f-]{36}$/i.test(v || "");
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const safeImg = (u) => (typeof u === "string" && u.startsWith(SERVER + "/storage/v1/object/public/") ? u : null);
-  const safeColor = (c) => (/^#[0-9a-f]{6}$/i.test(c || "") ? c : "#c2b1f8");
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 64 64"><path fill-rule="evenodd" d="M14 11H50A2 2 0 0 1 52 13V17H12V13A2 2 0 0 1 14 11ZM10 20H54A6 6 0 0 1 60 26V56A6 6 0 0 1 54 62H10A6 6 0 0 1 4 56V26A6 6 0 0 1 10 20ZM12 26H20A2 2 0 0 1 22 28V36A2 2 0 0 1 20 38H12A2 2 0 0 1 10 36V28A2 2 0 0 1 12 26ZM12 44H20A2 2 0 0 1 22 46V54A2 2 0 0 1 20 56H12A2 2 0 0 1 10 54V46A2 2 0 0 1 12 44ZM28 26H36A2 2 0 0 1 38 28V36A2 2 0 0 1 36 38H28A2 2 0 0 1 26 36V28A2 2 0 0 1 28 26ZM28 44H36A2 2 0 0 1 38 46V54A2 2 0 0 1 36 56H28A2 2 0 0 1 26 54V46A2 2 0 0 1 28 44ZM44 26H52A2 2 0 0 1 54 28V36A2 2 0 0 1 52 38H44A2 2 0 0 1 42 36V28A2 2 0 0 1 44 26ZM44 44H52A2 2 0 0 1 54 46V54A2 2 0 0 1 52 56H44A2 2 0 0 1 42 54V46A2 2 0 0 1 44 44Z"/></symbol>
+  <symbol id="win" viewBox="0 0 24 24"><path d="M3 5.2 10 4.2v7.2H3zM11 4l10-1.5v8.9H11zM3 12.5h7v7.3l-7-1zM11 12.5h10v9L11 20.1z"/></symbol>
+  <symbol id="mac" viewBox="0 0 24 24"><path d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9s-2-.9-3.3-.8a4.9 4.9 0 0 0-4.1 2.5c-1.8 3.1-.5 7.6 1.3 10.1.8 1.2 1.8 2.6 3.1 2.5 1.3-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4a10 10 0 0 0 1.4-2.8 4.3 4.3 0 0 1-2.5-4.2zM14 5.2A4.3 4.3 0 0 0 15 2a4.4 4.4 0 0 0-2.9 1.5 4.1 4.1 0 0 0-1 3.1A3.6 3.6 0 0 0 14 5.2z"/></symbol>
+</svg>
 
-  async function get(path) {
-    const res = await fetch(`${SERVER}/rest/v1/${path}`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
-    if (!res.ok) throw new Error(String(res.status));
-    return res.json();
-  }
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="Milk Crate home"><svg aria-hidden="true"><use href="#mark"/></svg><span class="word">Milk Crate</span></a>
+    <nav aria-label="Sections">
+      <a href="#why">Why</a>
+      <a href="#app">The app</a>
+      <a href="#artists">For artists</a>
+      <a class="go" href="#download">Download</a>
+    </nav>
+  </div>
+</header>
 
-  function render({ eyebrow, title, by, art, color, letter, soon, deepLink, what }) {
-    document.title = `${title} · Milk Crate`;
-    const cover = art
-      ? `<div class="cover" role="img" aria-label="${esc(title)} cover" style="background-image:url('${esc(art)}')"></div>`
-      : `<div class="cover swatch" aria-hidden="true" style="background:${safeColor(color)}"><span>${esc(letter || "")}</span></div>`;
-    main.innerHTML = `${cover}
-      <div class="info">
-        <span class="eyebrow">${esc(eyebrow)}</span>
-        <h1>${esc(title)}</h1>
-        ${by ? `<p class="by">${esc(by)}</p>` : ""}
-        ${soon ? `<span class="soon">${esc(soon)}</span>` : ""}
-        <div class="actions">
-          <a class="btn primary" href="${esc(deepLink)}">Open in Milk Crate</a>
-          <a class="btn" href="${DOWNLOAD}">Get Milk Crate</a>
+<main>
+  <div class="hero">
+    <canvas id="swirl" aria-hidden="true"></canvas>
+    <div class="wrap">
+      <div class="glass">
+        <div>
+          <h1>Music from your town, and everywhere else.</h1>
+          <p class="lede">Milk Crate is a free music app built as a nonprofit. Find the bands in your scene, keep your records and CDs next to your streams, and when you pay, your money goes to the artists you actually play.</p>
+          <div class="get" id="hero-get">
+            <a class="btn primary" data-os="win" href="https://github.com/The-Milk-Crate/Milk-Crate/releases/latest"><svg aria-hidden="true"><use href="#win"/></svg>Download for Windows</a>
+            <a class="btn" data-os="mac" href="https://github.com/The-Milk-Crate/Milk-Crate/releases/latest"><svg aria-hidden="true"><use href="#mac"/></svg>Download for Mac</a>
+          </div>
+          <p class="fine" id="version">Free for Windows 10 and 11, and macOS. No ads, ever.</p>
         </div>
-        <p class="note muted">"Open in Milk Crate" opens ${esc(what)} in the app. Don't have it yet? It's free for Windows and Mac.</p>
-      </div>`;
-  }
-  function notFound(msg) {
-    main.innerHTML = `<div class="info"><span class="eyebrow">Milk Crate</span><h1>Milk Crate.</h1>
-      <p class="muted">${esc(msg || "A nonprofit music app. No ads.")}</p>
-      <div class="actions"><a class="btn primary" href="${DOWNLOAD}">Get Milk Crate</a></div></div>`;
-  }
-  const releaseDay = (iso) => new Date(iso).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+        <div class="crate" aria-hidden="true"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
+      </div>
+    </div>
+  </div>
 
-  (async () => {
-    try {
-      if (isId(q.get("album"))) {
-        const id = q.get("album");
-        const [r] = await get(`releases?id=eq.${id}&select=title,kind,year,art_url,release_at,artists(name,place,accent)`);
-        if (!r) return notFound("This album isn't on Milk Crate any more.");
-        const a = r.artists || {};
-        const soon = r.release_at && Date.parse(r.release_at) > Date.now() ? `Out ${releaseDay(r.release_at)}` : "";
-        render({ eyebrow: [r.kind, r.year, a.place].filter(Boolean).join(" · "), title: r.title, by: a.name, art: safeImg(r.art_url), color: a.accent,
-          letter: (r.title || "?")[0], soon, deepLink: `milkcrate://album/${id}`, what: "the album" });
-      } else if (isId(q.get("artist"))) {
-        const id = q.get("artist");
-        const [a] = await get(`artists?id=eq.${id}&select=name,place,genres,accent`);
-        if (!a) return notFound("This artist isn't on Milk Crate any more.");
-        render({ eyebrow: [a.place, (a.genres || []).slice(0, 2).join(", ")].filter(Boolean).join(" · "), title: a.name, color: a.accent,
-          letter: (a.name || "?")[0], deepLink: `milkcrate://artist/${id}`, what: "their page" });
-      } else if (q.get("scene")) {
-        const parts = q.get("scene").split("/").filter(Boolean);
-        const [country, state, town] = parts.length >= 3 ? parts : ["US", parts[0], parts.slice(1).join("/")];
-        if (!state || !town) return notFound();
-        const where = REGIONS[country] ? `${state}, ${REGIONS[country]}` : state;
-        render({ eyebrow: `The scene · ${where}`, title: town, by: "", color: "#c2b1f8", letter: town[0],
-          deepLink: `milkcrate://scene/${parts.map(encodeURIComponent).join("/")}`, what: `${town}'s bins` });
-      } else notFound();
-    } catch {
-      notFound("Couldn't reach Milk Crate right now. Try again in a minute.");
+  <section id="why">
+    <div class="wrap money">
+      <div>
+        <h2>Your money should reach the bands you play.</h2>
+        <p class="lede">Most streaming services put every subscription into one big pot and split it by total plays across the whole service. If you spend the month on three bands from your town, most of your money still ends up with the most-streamed artists in the world.</p>
+        <p class="lede">Milk Crate splits what you pay between the artists you listened to, keeps only what it costs to run, and publishes the numbers every year. You can also buy an album outright, or pay an artist once to become their Fan and get everything they release.</p>
+      </div>
+      <figure class="split" style="margin:0">
+        <figcaption><strong>Say you spent the month on three local bands.</strong> Here's roughly where your subscription goes.</figcaption>
+        <div class="model" style="margin-top:24px">
+          <h3>A pooled streaming service</h3>
+          <p>Split by everyone's plays, not yours.</p>
+          <div class="bar" role="img" aria-label="Almost all of it goes to artists you didn't play; a sliver reaches your three bands.">
+            <span class="pool" style="flex:92"></span><span class="b1" style="flex:3"></span><span class="b2" style="flex:3"></span><span class="b3" style="flex:2"></span>
+          </div>
+          <ul class="legend"><li><i class="pool" style="background:var(--pool)"></i>Artists you never played</li><li><i class="b1"></i>Your three bands</li></ul>
+        </div>
+        <div class="model">
+          <h3>Milk Crate</h3>
+          <p>Split between the artists you played.</p>
+          <div class="bar" role="img" aria-label="Most of it is split between your three bands; a small part pays to run Milk Crate.">
+            <span class="b1" style="flex:38"></span><span class="b2" style="flex:30"></span><span class="b3" style="flex:20"></span><span class="run" style="flex:12"></span>
+          </div>
+          <ul class="legend"><li><i class="b1"></i>Band you played most</li><li><i class="b2"></i>Second</li><li><i class="b3"></i>Third</li><li><i class="run"></i>Running Milk Crate</li></ul>
+        </div>
+        <p class="note">An illustration, not real figures. Listening is free while Milk Crate is new; paid plans come later, with the artists' share written into our terms.</p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="promises">
+    <div class="wrap">
+      <h2>What we promise.</h2>
+      <p class="lede" style="margin-top:18px">These are in Milk Crate's terms, not just on this page. If one ever changes, you'll hear about it 30 days ahead and can leave instead.</p>
+      <ul class="promises">
+        <li><b>No ads.</b><span>Not in the app, not between songs, not ever.</span></li>
+        <li><b>Your information isn't for sale.</b><span>We never sell or rent it, or share it for advertising.</span></li>
+        <li><b>Nobody pays to be promoted.</b><span>No paid placement for artists, labels or songs. Discovery favors local and up-and-coming artists, and there are no top-100 charts.</span></li>
+        <li><b>Artists come first in the split.</b><span>When you pay, your money goes to the artists you listen to, and we publish how it was divided every year.</span></li>
+        <li><b>Full-quality downloads.</b><span>Download whole albums to play offline in the app, at full quality. Artists can't switch that off.</span></li>
+        <li><b>If it closes, nobody cashes out.</b><span>Artists get at least 30 days to take their work, and anything left goes to another nonprofit, never to a person.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="app">
+    <div class="wrap">
+      <h2>Like digging through a record store's crates.</h2>
+      <div class="features">
+        <div><h3>Your scene</h3><p>Set your city and Milk Crate builds your scene: towns within 35 miles plus your state's bigger cities, with every band on a real map.</p></div>
+        <div><h3>Your crate</h3><p>Save albums, make playlists, and catalog the vinyl, cassettes and CDs on your shelf. Rip your own CDs to lossless FLAC; they stay on your computer.</p></div>
+        <div><h3>Stars that steer shuffle</h3><p>Rate albums and songs from one to five. Shuffle leans toward what you love, and nothing gets ranked on a chart.</p></div>
+        <div><h3>Pages artists design</h3><p>Every artist designs their own page: banner, lettering, city and genre. You'll find who they sound like from how their songs actually sound.</p></div>
+        <div><h3>Sounds the way you want</h3><p>A six-band equalizer with presets, and an immersive mode that fills the screen with the album and its colors.</p></div>
+        <div><h3>Keeps itself current</h3><p>Milk Crate tells you when a new version is ready and updates in one click.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="artists" class="artists">
+    <div class="wrap">
+      <div>
+        <h2>Making music?</h2>
+        <p class="lede">Download Milk Crate and apply for an artist account. A person reviews every new artist before their music goes public, so the bins stay worth digging through.</p>
+      </div>
+      <ul>
+        <li>You keep every right to your music and artwork.</li>
+        <li>Take a release down whenever you want.</li>
+        <li>Sell or share your music anywhere else you like.</li>
+        <li>Upload WAV, AIFF or FLAC; listeners stream high-quality copies.</li>
+        <li>When listeners pay, it goes to the artists they play, not a shared pool.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <h2>Get Milk Crate.</h2>
+      <p class="lede" style="margin-top:18px">It's free. You'll need an account to save music and follow artists: you must be 13 or older, and under 18 with a parent's permission.</p>
+      <div class="platforms">
+        <div class="platform" id="p-win">
+          <header><h3>Windows</h3><p>Windows 10 and 11</p></header>
+          <ol>
+            <li>Download the installer and open it.</li>
+            <li>If Windows says <strong>"Windows protected your PC"</strong>, click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+            <li>Follow the installer, then open Milk Crate from the Start menu.</li>
+          </ol>
+          <a class="btn primary" data-os="win" href="https://github.com/The-Milk-Crate/Milk-Crate/releases/latest"><svg aria-hidden="true"><use href="#win"/></svg>Download for Windows</a>
+        </div>
+        <div class="platform" id="p-mac">
+          <header><h3>Mac</h3><p>Apple silicon and Intel</p></header>
+          <ol>
+            <li>Download the disk image, open it, and drag Milk Crate into Applications.</li>
+            <li>Open Milk Crate. If macOS won't open it, go to <strong>System Settings</strong>, then <strong>Privacy &amp; Security</strong>, and click <strong>Open Anyway</strong>.</li>
+            <li>You only do this once.</li>
+          </ol>
+          <a class="btn primary" data-os="mac" href="https://github.com/The-Milk-Crate/Milk-Crate/releases/latest"><svg aria-hidden="true"><use href="#mac"/></svg>Download for Mac</a>
+        </div>
+      </div>
+      <p class="after">Those warnings appear because Milk Crate is new and its installers aren't signed with a paid developer certificate yet. Every version is built from the public code on GitHub.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Milk Crate is a nonprofit music app. No ads, no charts, no paid placement.</p>
+    <nav aria-label="More">
+      <a href="https://github.com/The-Milk-Crate/Milk-Crate/releases">All versions</a>
+      <a href="https://github.com/The-Milk-Crate/Milk-Crate">Source code</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  // Point the buttons straight at the newest installers, and put this visitor's system first.
+  (function () {
+    var ua = navigator.userAgent || "";
+    var mac = /Macintosh|Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua);
+    if (mac) {
+      var get = document.getElementById("hero-get");
+      var m = get.querySelector('[data-os="mac"]'), w = get.querySelector('[data-os="win"]');
+      m.classList.add("primary"); w.classList.remove("primary"); get.insertBefore(m, w);
+      var pm = document.getElementById("p-mac"); pm.parentNode.insertBefore(pm, document.getElementById("p-win"));
+    }
+    document.getElementById(mac ? "p-mac" : "p-win").classList.add("mine");
+
+    fetch("https://api.github.com/repos/The-Milk-Crate/Milk-Crate/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (rel) {
+        if (!rel || !rel.assets) return;
+        var find = function (re) { var a = rel.assets.filter(function (x) { return re.test(x.name); })[0]; return a && a.browser_download_url; };
+        var urls = { win: find(/_x64-setup\.exe$/), mac: find(/\.dmg$/) };
+        document.querySelectorAll("[data-os]").forEach(function (a) { var u = urls[a.dataset.os]; if (u) a.href = u; });
+        var v = (rel.tag_name || "").replace(/^v/, "");
+        if (v) document.getElementById("version").textContent = "Version " + v + ". Free for Windows 10 and 11, and macOS. No ads, ever.";
+      })
+      .catch(function () {});
+  })();
+
+  // Album colors drifting behind the glass. Still when reduced motion is on or the hero is off screen.
+  (function () {
+    var c = document.getElementById("swirl"), ctx = c.getContext("2d");
+    var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var blobs = [
+      { col: "#cfb1f8", r: .55, x: .25, y: .3, sx: .00011, sy: .00007, p: 0 },
+      { col: "#bf69f7", r: .45, x: .75, y: .65, sx: .00008, sy: .00012, p: 2 },
+      { col: "#ffd43b", r: .32, x: .7, y: .2, sx: .00013, sy: .00009, p: 4 },
+      { col: "#ff8a5c", r: .3, x: .15, y: .8, sx: .00009, sy: .00011, p: 1 },
+      { col: "#5fc4b5", r: .34, x: .5, y: .55, sx: .0001, sy: .00008, p: 3 }
+    ];
+    var w, h, visible = true;
+    function size() { var d = Math.min(devicePixelRatio || 1, 1.5); w = c.width = c.offsetWidth * d / 3; h = c.height = c.offsetHeight * d / 3; }
+    function draw(t) {
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ground");
+      ctx.fillRect(0, 0, w, h);
+      var m = Math.max(w, h);
+      blobs.forEach(function (b) {
+        var x = (b.x + Math.sin(t * b.sx + b.p) * .18) * w, y = (b.y + Math.cos(t * b.sy + b.p) * .18) * h;
+        var g = ctx.createRadialGradient(x, y, 0, x, y, b.r * m);
+        g.addColorStop(0, b.col); g.addColorStop(1, b.col + "00");
+        ctx.globalAlpha = .85; ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      });
+      ctx.globalAlpha = 1;
+    }
+    function loop(t) { if (visible) draw(t); requestAnimationFrame(loop); }
+    size(); draw(0);
+    addEventListener("resize", function () { size(); draw(performance.now()); });
+    if (!still) {
+      new IntersectionObserver(function (e) { visible = e[0].isIntersecting; }).observe(c);
+      requestAnimationFrame(loop);
     }
   })();
 </script>
