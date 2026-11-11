@@ -55,22 +55,39 @@ Branch `phase0/b-database`.
 - One schema that runs on Supabase Postgres and Aurora PostgreSQL: releases, tracks,
   uploads, rights and parties, review decisions, play events, qualified streams, audit rows.
 - The release state enum and the rule that only the server moves a state. Match the
-  state table in the contract.
-- SQL functions the schedules and handlers call, such as "make this release live on its date".
-- Play events: a batch with the same idempotency key counts once. The server decides what
-  is a qualified stream (30 seconds or more). The client never sends counts.
+  state table in the contract. Approve does not change the state; it records
+  `review.decision = approved`.
+- Rights: parties with side (recording or composition), role, name, email, percent and state
+  (invited, accepted, declined). Shares for each side must total 100 at submit.
 - Split invite codes (settled): store only a hash of the code, with `expires_at` set to 14 days
   after the invitation is sent, plus `used_at`. A code works once. `resendInvitation` replaces
-  the hash and expiry, so the old code stops working. Count sends per party per day. Session G checks all three
-  in one transaction.
+  the hash and expiry, so the old code stops working. Count sends per party per day. Never
+  store or return the code itself. Session G checks all three in one transaction.
+- The staff table `(user_id, account_type)` for `internal`, `internal_accounting` and
+  `third_party`, with the staff and `artist` exclusion enforced in the database. Every
+  `public.admins` row means `administrator`. Session C writes the claim hook and read rules.
+- Play events: a batch with the same idempotency key counts once. The server decides what
+  is a qualified stream (30 seconds or more). The client never sends counts.
 - Master keys follow `masters/{artist}/{release}/{track}/original`. Store keys, never public URLs.
-- Migrations as plain SQL files, safe to run twice, with a test that applies them to an empty
-  Postgres and checks the state rules.
+- SQL functions the schedules and handlers call, such as "make this release live on its date".
+- Audit rows for takedown, listing what was removed.
 - Write SQL that works through `Database` on both sides: parameters as `$1`, `$2`, no
   Postgres-only client features. Keep each call's result small (RDS Data API: 1 MB, 45 seconds).
-- Don't write read rules (session C) or handlers (session G).
+- Where things go (settled): migrations in `db/migrations/` at the repository root, as numbered
+  plain SQL files (`0001_...sql`). The test and `db/README.md` in `db/test/` and `db/`. Not in
+  `milk-crate/supabase/`, which is the app's own hand-run SQL.
+- Migrations are safe to run twice. The test uses a throwaway local PostgreSQL 16 and no Docker:
+  a script starts a temporary cluster (`initdb` and `pg_ctl` as the `postgres` user, on a temp
+  directory and a free port), applies every migration twice, runs the checks, then stops the
+  cluster and removes the directory, even when a check fails. No keys and no network. Checks:
+  state rules, the 100-percent rule, idempotent play batches, single-use invite codes, and the
+  staff and artist exclusion. Keep it free of anything specific to one machine, because session D
+  runs the same script in CI.
+- Don't write read rules or the claim hook (session C), handlers (session G), or deployment code
+  (sessions E and F). Don't change the app's existing tables or policies; add alongside them.
 
-Done when: the migrations apply cleanly to an empty Postgres, the tests pass, and every table
+Done when: the migrations apply cleanly to an empty Postgres, twice, and the tests pass; `db/test/`
+runs from a clean checkout with one documented command and leaves nothing behind; and every table
 and state in the contract has a home.
 
 ## C: Read rules and the account-type claim
