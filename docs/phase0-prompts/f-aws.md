@@ -27,6 +27,29 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
 - Database: the RDS Data API behind the `Database` interface. Translate `$1`, `$2` parameters into the Data API's form, carry transactions through its transaction id, and handle its limits (1 MB per response, 45 seconds per call). Never build SQL by joining values into text.
 - Infrastructure: stand up, confirm, tear down, as an infrastructure definition plus a script K Marcus runs (Aurora PostgreSQL with the Data API on, Cognito pool and groups, S3 bucket with the checksum setting, CloudFront with a key group, API Gateway, Lambda, SQS or equivalent, Fargate, EventBridge Scheduler, SES, IAM). Propose the simplest definition tool that fits (CDK, Terraform, SAM or plain CloudFormation), say why, and list the choice as an open point. You write it; you do not run it against anything real.
 
+### From session B (merged; handle these)
+- **Applying the migrations.** Each file in `db/migrations/` holds several statements and `$$` function bodies, and the Data API runs one statement per call. The stand-up applies the files in number order, each one whole, by one of two routes:
+  - `psql` over a temporary connection
+  - a splitter that respects dollar quotes and comments, with a test over every current migration file
+
+  Say which you chose and why. Don't edit B's files. Apply only `db/migrations/`, never `db/supabase/`.
+- **Calling B's functions through the Data API** (see `db/README.md`):
+  - Cast parameters in the SQL text (`$1::uuid`, `$2::jsonb`, `$3::timestamptz`).
+  - Pass lists as JSON text.
+  - Read `numeric`, `bigint`, `date`, `timestamptz` and `jsonb` results as strings.
+  - B's rules raise SQLSTATE `MC403`, `MC404`, `MC409` and `MC422` with a code word at the start of the message. Your `Database` must surface the SQLSTATE and message so G can map them to HTTP codes. Test it with a mocked Data API error.
+- **Schedules.** The go-live function is `api_release_go_live` with the named argument `p_release_id`. It moves only `scheduled` → `live` and does nothing otherwise, so a schedule that fires after a takedown is harmless.
+- **Jobs.**
+  - `enqueue` creates the row with `api_create_job(release, 'process_release')`; the release must be `processing`.
+  - The worker calls `api_job_started(job)` when it picks the job up.
+  - The result goes through G's function to `api_apply_job_result`, which is safe to call twice.
+- **Takedown storage.** `api_takedown_release` returns the prefixes to delete. After `ObjectStorage.delete` succeeds for each, call `api_takedown_files_deleted(audit)`.
+- **The account sync.**
+  - The post-confirmation trigger only updates `email` on an existing `api_accounts` row; it never inserts one.
+  - An artist row never changes type.
+  - An account with releases, reviews or takedowns is never deleted. It is `suspended` instead (B refuses the delete with `MC409 has_history`).
+  - Session C decides which claim a suspended account gets (suggested: `end_user`). Until then, put a suspended account in no group, and list it as an open point.
+
 ### Constraints
 - No real AWS account, no real resources, no keys. Code, infrastructure definition and a script are the deliverable. Tests use mocks.
 - This environment has PostgreSQL 16 (no Docker daemon, no AWS access). The Data API has no local emulator, so test the parameter translation, transaction handling and result mapping with mocks, and rely on session B's tests for the SQL itself. Mock S3, CloudFront, SQS, ECS, EventBridge and SES at their SDK edges and check each with a test. Say what you could not run.
