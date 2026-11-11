@@ -21,7 +21,8 @@ Your job: the account-type claim and the read rules. Both deployments must give 
   - `internal`, `internal_accounting` and `third_party` rows are written directly into `api_accounts`.
   - Pending and declined applicants have no row, so they stay `end_user` until a reviewer approves them.
   - On AWS, session F fills `api_accounts` and the Cognito groups. You define the group names.
-- One role per account (settled). Staff types and `artist` are mutually exclusive: one `api_accounts` row per account, and B refuses changing a row between them. Your sync refuses an artist approval for an account with a staff row, and an admins row for an approved artist. If the app's tables ever hold both anyway, the sync takes the higher-privilege type (`administrator`, `internal`, `internal_accounting`, `third_party`, `artist`, `end_user`, in that order) and the artist endpoints refuse them.
+- One role per account (settled). Staff types and `artist` are mutually exclusive: one `api_accounts` row per account, and B refuses changing a row to or from `artist` (from any other type, `third_party` included). Your sync refuses an artist approval for an account that already has a non-artist row, and an admins row for an approved artist. If the app's tables ever hold both anyway, the sync takes the higher-privilege type (`administrator`, `internal`, `internal_accounting`, `third_party`, `artist`, `end_user`, in that order) and the artist endpoints refuse them.
+- Removing a role: B refuses deleting an `api_accounts` row that owns a release, made a review decision or took a release down (`MC409 has_history`). When such an account loses its role (for example an artist profile is no longer approved), your sync sets `suspended = true` instead of deleting the row. Rows with no history may be deleted. Decide which claim a suspended account gets (suggested: `end_user`), list it as an open point, and test it.
 - The claim is read when the token is issued, so a role change shows after the token refreshes. Say so in your tests and notes.
 - Read rules for session B's tables:
   - Listeners see only `live` releases.
@@ -36,6 +37,21 @@ Your job: the account-type claim and the read rules. Both deployments must give 
 - Who enforces reads (settled): on both deployments, session G's handlers enforce access in every query, passing the caller. On Supabase your row level security also guards direct table access, because the app talks to Supabase directly. Aurora uses one shared login, so it has no per-caller rules; there is nothing to build on that side.
 - The expected-results table: write, as a shared test fixture (for example `db/test/access-expected.json`), each account type against what it may read (own, other artist's, live, not live, invitee with code). Your Supabase tests use it, and session G's handler tests will use it too.
 - Tests that sign in as each account type and check what each can read under the Supabase rules, against that fixture. On the plain test cluster, a minimal test-only `auth` stand-in (an `auth.users` table and an `auth.uid()` that reads a setting) is fine so the app's SQL and your migrations load; keep it in `db/test/`, never in a migration.
+
+### From session B (merged; handle these)
+- **Supabase's default access.** On Supabase, new tables and functions in `public` are granted to `anon` and `authenticated` by default, so B's `api_` tables and functions are reachable through PostgREST until your SQL runs. In `db/supabase/`:
+  - turn on row level security on every `api_` table
+  - revoke all on `api_` tables, and execute on `api_` functions, from `anon`, `authenticated` and `public`
+  - grant back only what the app and the invitee path need
+
+  Test that `anon` and `authenticated` cannot read any `api_` table directly beyond your policies, and cannot call a function such as `api_takedown_release` or `api_record_review`. Session E applies `db/supabase/` in the same stand-up step as `db/migrations/`.
+- **The reply function takes a user id.** `api_respond_to_invite(release, party, code_hash, user_id, response)` links whatever `user_id` it is given, and both it and `api_get_invitation` are `SECURITY DEFINER`. Don't grant them to clients as they are. If clients call the invitee path directly, write wrappers in `db/supabase/` that pass `auth.uid()` (and take no user id), and grant only the wrappers. Test that a client cannot reply as another account.
+- **What B already enforces** (don't rebuild it):
+  - The invite functions return a status (`ok`, `not_found`, `rate_limited`, `wrong_code`, `replied`, `taken_down`, `expired`) and record wrong codes; after 10 wrong codes in an hour a party is locked.
+  - The owner's own party is `is_owner` and accepted at once.
+  - `api_list_releases(caller, ...)` already scopes by caller (staff all, artist own, suspended or anyone else nothing).
+
+  See `db/README.md`.
 
 ### Constraints
 - Reuse session B's test approach in `db/test/` (a throwaway local PostgreSQL 16, no Docker). Put your tests beside it, and keep them free of anything specific to this machine, because session D runs them in CI.
