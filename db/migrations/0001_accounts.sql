@@ -18,16 +18,6 @@ begin
 end
 $$;
 
--- Staff account types. third_party is not staff (it may reply to a split invitation).
-create or replace function public.api_is_staff_type(p_type text)
-returns boolean
-language sql
-immutable
-set search_path = ''
-as $$
-  select p_type in ('administrator', 'internal', 'internal_accounting')
-$$;
-
 -- One row per account, so one role per account. No row means end_user.
 -- user_id is the identity's user id: the Supabase user id or the Cognito sub.
 create table if not exists public.api_accounts (
@@ -38,6 +28,9 @@ create table if not exists public.api_accounts (
   email text,
   artist_id uuid unique,
   artist_name text,
+  -- A suspended account keeps its row (and its releases and keys) but may not act.
+  -- Suspend instead of deleting an account that has history.
+  suspended boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   -- artist_id and artist_name are set, and required, only for artist.
@@ -51,19 +44,28 @@ create table if not exists public.api_accounts (
 comment on table public.api_accounts is
   'The account source for the account_type claim. One row per account; no row means end_user.';
 
--- A row cannot change between artist and a staff type, and user_id never changes.
--- A staff member who makes music uses a second account.
+-- An artist account stays an artist, and no other account becomes one. user_id never
+-- changes. A staff member who makes music uses a second account. An account with history
+-- (owns a release, made a review decision, took a release down) is never deleted: suspend it.
 create or replace function public.api_accounts_guard()
 returns trigger
 language plpgsql
 set search_path = ''
 as $$
 begin
+  if tg_op = 'DELETE' then
+    if exists (select 1 from public.api_releases r where r.owner_id = old.user_id)
+       or exists (select 1 from public.api_review_decisions d where d.reviewer_id = old.user_id)
+       or exists (select 1 from public.api_audit_log l where l.actor_id = old.user_id) then
+      raise exception using errcode = 'MC409',
+        message = 'has_history: this account has releases, reviews or takedowns; suspend it instead';
+    end if;
+    return old;
+  end if;
   if new.user_id <> old.user_id then
     raise exception using errcode = 'MC422', message = 'fixed_field: user_id cannot change';
   end if;
-  if (old.account_type = 'artist' and public.api_is_staff_type(new.account_type))
-     or (public.api_is_staff_type(old.account_type) and new.account_type = 'artist') then
+  if (old.account_type = 'artist') <> (new.account_type = 'artist') then
     raise exception using errcode = 'MC403',
       message = format('one_role: an account cannot change from %s to %s; use a second account',
                        old.account_type, new.account_type);
@@ -74,7 +76,7 @@ $$;
 
 drop trigger if exists api_accounts_guard on public.api_accounts;
 create trigger api_accounts_guard
-  before update on public.api_accounts
+  before update or delete on public.api_accounts
   for each row execute function public.api_accounts_guard();
 
 drop trigger if exists api_accounts_touch on public.api_accounts;

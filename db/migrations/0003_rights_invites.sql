@@ -3,6 +3,10 @@
 -- Invite codes: only a SHA-256 hash of the code is stored (lowercase hex, worked out by the
 -- caller). The code itself is never stored or returned. A code expires 14 days after it is
 -- sent and works once. A resend replaces the hash and expiry, so the old code stops working.
+-- After 10 wrong codes in an hour a party's invitation is locked for the rest of that hour,
+-- even if the caller is not counting.
+-- The release owner's own party (is_owner) is accepted when it is created and gets no code.
+-- Every other reply must use up a valid code.
 
 create table if not exists public.api_parties (
   id uuid primary key default gen_random_uuid(),
@@ -13,7 +17,9 @@ create table if not exists public.api_parties (
   -- Where the invitation goes. Not needed for the owner.
   email text check (email is null or length(email) between 3 and 320),
   percent numeric(5, 2) not null check (percent >= 0 and percent <= 100),
-  -- Set by the server only. New parties start as invited.
+  -- The release owner's own share. Accepted at once; no invitation.
+  is_owner boolean not null default false,
+  -- Set by the server only. New parties start as invited (the owner's as accepted).
   state text not null default 'invited' check (state in ('invited', 'accepted', 'declined')),
   -- The account that replied. No foreign key: an end_user has no api_accounts row.
   responder_user_id uuid,
@@ -30,7 +36,8 @@ create table if not exists public.api_parties (
     and (invite_sent_at is null) = (invite_expires_at is null)
   ),
   constraint api_parties_invite_14_days check (invite_expires_at = invite_sent_at + interval '14 days'),
-  constraint api_parties_invite_used check (invite_used_at is null or invite_code_hash is not null)
+  constraint api_parties_invite_used check (invite_used_at is null or invite_code_hash is not null),
+  constraint api_parties_owner check (not is_owner or (state = 'accepted' and invite_code_hash is null))
 );
 
 create index if not exists api_parties_release on public.api_parties (release_id);
@@ -54,7 +61,8 @@ create index if not exists api_invite_wrong_codes_party
   on public.api_invite_wrong_codes (party_id, attempted_at);
 
 -- Parties change only while rights are editable. A party whose details change goes back to
--- invited and its code stops working. A reply moves invited to accepted or declined, once.
+-- invited and its code stops working (the owner's party stays accepted). A reply moves invited
+-- to accepted or declined, once, and only by using up a code.
 create or replace function public.api_parties_guard()
 returns trigger
 language plpgsql
@@ -62,8 +70,10 @@ set search_path = ''
 as $$
 declare
   v_state text;
+  v_owner uuid;
 begin
-  select r.state into v_state from public.api_releases r where r.id = coalesce(new.release_id, old.release_id);
+  select r.state, r.owner_id into v_state, v_owner
+    from public.api_releases r where r.id = coalesce(new.release_id, old.release_id);
 
   if tg_op = 'DELETE' then
     if v_state is not null and not public.api_release_rights_editable(v_state) then
@@ -76,14 +86,20 @@ begin
     if not public.api_release_rights_editable(v_state) then
       raise exception using errcode = 'MC409', message = format('not_editable: rights cannot change while %s', v_state);
     end if;
-    if new.state <> 'invited' or new.invite_code_hash is not null or new.responder_user_id is not null then
+    if new.state <> 'invited' or new.invite_code_hash is not null or new.invite_used_at is not null
+       or new.responder_user_id is not null or new.responded_at is not null then
       raise exception using errcode = 'MC422', message = 'server_state: a new party starts invited, with no code yet';
+    end if;
+    if new.is_owner then
+      new.state := 'accepted';
+      new.responder_user_id := v_owner;
+      new.responded_at := now();
     end if;
     return new;
   end if;
 
-  if new.id <> old.id or new.release_id <> old.release_id then
-    raise exception using errcode = 'MC422', message = 'fixed_field: id and release_id cannot change';
+  if new.id <> old.id or new.release_id <> old.release_id or new.is_owner <> old.is_owner then
+    raise exception using errcode = 'MC422', message = 'fixed_field: id, release_id and is_owner cannot change';
   end if;
 
   if (new.side, new.role, new.name, new.email, new.percent)
@@ -91,13 +107,15 @@ begin
     if not public.api_release_rights_editable(v_state) then
       raise exception using errcode = 'MC409', message = format('not_editable: rights cannot change while %s', v_state);
     end if;
-    new.state := 'invited';
-    new.responder_user_id := null;
-    new.responded_at := null;
-    new.invite_code_hash := null;
-    new.invite_sent_at := null;
-    new.invite_expires_at := null;
-    new.invite_used_at := null;
+    if not new.is_owner then
+      new.state := 'invited';
+      new.responder_user_id := null;
+      new.responded_at := null;
+      new.invite_code_hash := null;
+      new.invite_sent_at := null;
+      new.invite_expires_at := null;
+      new.invite_used_at := null;
+    end if;
   elsif new.state <> old.state then
     if v_state = 'taken_down' then
       raise exception using errcode = 'MC409', message = 'wrong_state: the release is taken down';
@@ -105,9 +123,23 @@ begin
     if not (old.state = 'invited' and new.state in ('accepted', 'declined')) then
       raise exception using errcode = 'MC409', message = 'already_replied: this party already replied';
     end if;
+    if old.invite_used_at is not null or new.invite_used_at is null then
+      raise exception using errcode = 'MC409', message = 'no_code: a reply must use up a valid invite code';
+    end if;
   end if;
   return new;
 end
+$$;
+
+-- True while a party has had 10 or more wrong codes in the last hour.
+create or replace function public.api_invite_locked(p_party_id uuid)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select count(*) >= 10 from public.api_invite_wrong_codes w
+  where w.party_id = p_party_id and w.attempted_at > now() - interval '1 hour'
 $$;
 
 drop trigger if exists api_parties_guard on public.api_parties;
@@ -183,8 +215,8 @@ begin
 end
 $$;
 
--- Wrong codes for a party in the last p_window_seconds. The caller compares it with its limit
--- before calling api_get_invitation or api_respond_to_invite (429 when over).
+-- Wrong codes for a party in the last p_window_seconds, if the caller wants a stricter limit
+-- than the built-in 10 an hour.
 create or replace function public.api_invite_wrong_count(p_party_id uuid, p_window_seconds integer)
 returns integer
 language sql
@@ -200,7 +232,8 @@ $$;
 -- their only way in. It checks the code's hash and expiry without using up the code, and
 -- returns only the release basics and this one party's own share: never other parties,
 -- emails or owner_id. A wrong code is counted, so commit even when status is wrong_code.
--- status: ok, not_found, wrong_code, replied, taken_down, expired. Fields are set only for ok.
+-- status: ok, not_found, rate_limited (10 wrong codes in the last hour; nothing is checked),
+-- wrong_code, replied, taken_down, expired. Fields are set only for ok.
 create or replace function public.api_get_invitation(p_release_id uuid, p_party_id uuid, p_code_hash text)
 returns table (
   status text,
@@ -226,6 +259,12 @@ begin
     where p.id = p_party_id and p.release_id = p_release_id;
   if not found then
     return query select 'not_found'::text, null::text, null::text, null::date, null::jsonb,
+                        null::text, null::text, null::numeric, null::text;
+    return;
+  end if;
+
+  if public.api_invite_locked(p_party_id) then
+    return query select 'rate_limited'::text, null::text, null::text, null::date, null::jsonb,
                         null::text, null::text, null::numeric, null::text;
     return;
   end if;
@@ -273,7 +312,7 @@ $$;
 -- The reply for respondToSplit. Same checks as api_get_invitation; on ok it uses up the code,
 -- links p_user_id (the signed-in account) to the party and moves it to accepted or declined.
 -- A wrong code is counted, so commit even when status is wrong_code.
--- status: ok, not_found, wrong_code, replied, taken_down, expired.
+-- status: ok, not_found, rate_limited, wrong_code, replied, taken_down, expired.
 create or replace function public.api_respond_to_invite(
   p_release_id uuid, p_party_id uuid, p_code_hash text, p_user_id uuid, p_response text)
 returns table (status text, party_state text)
@@ -298,6 +337,11 @@ begin
     for update;
   if not found then
     return query select 'not_found'::text, null::text;
+    return;
+  end if;
+
+  if public.api_invite_locked(p_party_id) then
+    return query select 'rate_limited'::text, null::text;
     return;
   end if;
 

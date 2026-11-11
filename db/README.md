@@ -44,13 +44,13 @@ Every table and function starts with `api_`, because the app already has `public
 
 | Table | Holds |
 |---|---|
-| `api_accounts` | The account source for the `account_type` claim. One row per account (`user_id`: Supabase user id or Cognito `sub`); no row means `end_user`. `artist_id` and `artist_name` only for `artist`. A row cannot change between `artist` and a staff type. |
+| `api_accounts` | The account source for the `account_type` claim. One row per account (`user_id`: Supabase user id or Cognito `sub`); no row means `end_user`. `artist_id` and `artist_name` only for `artist`. An artist row stays an artist. `suspended` keeps the row (and its releases) but stops the account acting. |
 | `api_releases` | The release, its `state`, `failure_reason`, and the current review decision (`review_decision`, `review_reason`, `review_decided_at`). `owner_id` points at `api_accounts`. `artist_id` is copied from the owner at creation. |
 | `api_tracks` | Tracks with `position` (order) and `title`; the confirmed master (`master_key`, `master_sha256`, ...); and what playback needs: `stream_key`, `duration_ms`, `sample_rate_hz` (session H fills them). |
 | `api_uploads` | Master and cover uploads: `kind` (`master` or `cover`), `method`, the storage module's `provider_upload_id`, `object_key`, `state` (`open`, `confirmed`, `replaced`, `cancelled`). |
 | `api_covers` | The confirmed cover, one per release (format, size, width, height). No row means no cover. |
 | `api_review_decisions` | Every review decision, with the reviewer. |
-| `api_parties` | Rights: side, role, name, email, percent, state (`invited`, `accepted`, `declined`), the invite code hash, sent, expiry and used times, and the account that replied. |
+| `api_parties` | Rights: side, role, name, email, percent, state (`invited`, `accepted`, `declined`), `is_owner` (the owner's own share), the invite code hash, sent, expiry and used times, and the account that replied. |
 | `api_invite_sends` | Invitations sent per party per day (UTC). |
 | `api_invite_wrong_codes` | Wrong invite codes per party, with times. |
 | `api_jobs` | Jobs: release, kind (`process_release`), state (`queued`, `running`, `succeeded`, `failed`), times, failure message. |
@@ -80,12 +80,18 @@ Triggers enforce these whoever writes the row:
   `uploading`, `awaiting_splits` and `needs_changes`. Tracks are added only in `draft` and never
   removed. Rights change only in `draft`, `uploading`, `processing`, `awaiting_splits` and
   `needs_changes`.
-- **Parties.** A new party is `invited` with no code. A party whose details change goes back to
-  `invited` and its code is voided. A reply moves `invited` to `accepted` or `declined`, once.
+- **Parties.** A new party is `invited` with no code. The owner's own party (`is_owner`) is
+  `accepted` at once, gets no code, and stays accepted when its share changes. Any other party
+  whose details change goes back to `invited` and its code is voided. A reply moves `invited` to
+  `accepted` or `declined`, once, and only by using up a code.
 - **Invite codes.** Only a SHA-256 hash (64 lowercase hex). Expiry is exactly 14 days after the
-  send.
-- **Accounts.** `artist` to a staff type (`administrator`, `internal`, `internal_accounting`), or
-  back, is refused. One row per `user_id`.
+  send. After 10 wrong codes in an hour, a party's invitation is locked (`rate_limited`) for the
+  rest of that hour, even for the right code.
+- **Accounts.** An artist account stays an artist, and no other account becomes one (a staff
+  member who makes music uses a second account). One row per `user_id`. An account that owns a
+  release, made a review decision or took a release down cannot be deleted: set `suspended`.
+  A suspended account cannot create releases, review, take down or list. Session C decides which
+  claim a suspended account gets (suggested: `end_user`).
 
 ## Functions
 
@@ -106,8 +112,8 @@ Handlers (session G), workers and schedules call these. Each returns a few rows 
 | `api_takedown_files_deleted(audit)` | Storage deleted the prefixes. |
 | `api_list_releases(caller, state, limit, after_created_at, after_id)` | `listReleases`. Newest first. Staff see all, an artist their own, others nothing. Keyset paging; ask for limit + 1 to learn if there is a next page (at most 101). |
 | `api_issue_invite(party, code_hash, daily_limit)` | Send or resend an invitation. Status `issued`, `not_found`, `not_invited`, `taken_down` or `rate_limited`. |
-| `api_invite_wrong_count(party, window_seconds)` | Wrong codes in the window, for the 429. |
-| `api_get_invitation(release, party, code_hash)` | `getInvitation`. Only the `Invitation` fields. Does not use up the code. Status `ok`, `not_found`, `wrong_code`, `replied`, `taken_down` or `expired`. `SECURITY DEFINER`. |
+| `api_invite_wrong_count(party, window_seconds)` | Wrong codes in the window, if G wants a stricter limit than the built-in 10 an hour. |
+| `api_get_invitation(release, party, code_hash)` | `getInvitation`. Only the `Invitation` fields. Does not use up the code. Status `ok`, `not_found`, `rate_limited`, `wrong_code`, `replied`, `taken_down` or `expired`. `SECURITY DEFINER`. |
 | `api_respond_to_invite(release, party, code_hash, user, 'accept' or 'decline')` | `respondToSplit`. Uses up the code and links the account. Same statuses. `SECURITY DEFINER`. |
 | `api_record_play_batch(user, idempotency_key, events_json)` | `recordPlays`. Status `ok`, `duplicate` or `conflict` (same key, other events). Returns the qualified streams it added. |
 

@@ -661,5 +661,84 @@ begin
 end
 $$;
 
+-- Settled open points ----------------------------------------------------------------
+\echo '# artist stays artist; suspend, never delete; owner party; wrong-code lock'
+
+do $$
+declare
+  v_rel uuid;
+  v_owner_party uuid;
+  v_p uuid;
+  v_row record;
+begin
+  perform t.fails(format($q$update public.api_accounts set account_type = 'third_party', artist_id = null, artist_name = null
+                           where user_id = %L$q$, t.id('artist')),
+                  'MC403', 'artist cannot become third_party');
+  perform t.fails(format($q$update public.api_accounts set account_type = 'artist', artist_id = gen_random_uuid(), artist_name = 'X'
+                           where user_id = %L$q$, t.id('third')),
+                  'MC403', 'third_party cannot become artist');
+  update public.api_accounts set account_type = 'internal' where user_id = t.id('third');
+  update public.api_accounts set account_type = 'third_party' where user_id = t.id('third');
+  perform t.ok(true, 'third_party and staff types can change between each other');
+
+  perform t.fails(format($q$delete from public.api_accounts where user_id = %L$q$, t.id('artist')),
+                  'MC409', 'an artist with releases cannot be deleted');
+  perform t.fails(format($q$delete from public.api_accounts where user_id = %L$q$, t.id('internal')),
+                  'MC409', 'a reviewer with decisions cannot be deleted');
+  perform t.fails(format($q$delete from public.api_accounts where user_id = %L$q$, t.id('admin')),
+                  'MC409', 'an administrator with takedowns cannot be deleted');
+  insert into public.api_accounts (user_id, account_type) values ('00000000-0000-0000-0000-0000000000c1', 'internal_accounting');
+  delete from public.api_accounts where user_id = '00000000-0000-0000-0000-0000000000c1';
+  perform t.ok(true, 'an account with no history can be deleted');
+
+  update public.api_accounts set suspended = true where user_id = t.id('artist2');
+  perform t.fails(format($q$insert into public.api_releases (owner_id, title, release_date) values (%L, 'X', current_date)$q$,
+                         t.id('artist2')),
+                  'MC403', 'a suspended artist cannot create a release');
+  perform t.eq((select count(*)::text from public.api_list_releases(t.id('artist2'), null, 100, null, null)), '0',
+               'a suspended artist lists nothing');
+  perform t.ok((select count(*) = 1 from public.api_releases where owner_id = t.id('artist2')),
+               'a suspended artist''s releases stay');
+  update public.api_accounts set suspended = false where user_id = t.id('artist2');
+  update public.api_accounts set suspended = true where user_id = t.id('internal');
+  perform t.eq((select count(*)::text from public.api_list_releases(t.id('internal'), null, 100, null, null)), '0',
+               'a suspended reviewer lists nothing');
+  update public.api_accounts set suspended = false where user_id = t.id('internal');
+
+  -- The owner's own party: accepted at once, no code.
+  v_rel := t.put('rel5', t.new_release(t.id('artist'), 'Fifth', t.today() + 5, 1));
+  insert into public.api_parties (release_id, side, role, name, percent, is_owner)
+    values (v_rel, 'recording', 'artist', 'Artist A', 70, true) returning id into v_owner_party;
+  perform t.ok((select state = 'accepted' and responder_user_id = t.id('artist') and invite_code_hash is null
+                from public.api_parties where id = v_owner_party), 'the owner''s party is accepted at once');
+  select * into v_row from public.api_issue_invite(v_owner_party, t.hash('owner-code-00000001'), 3);
+  perform t.eq(v_row.status, 'not_invited', 'the owner''s party gets no invitation');
+  update public.api_parties set percent = 60 where id = v_owner_party;
+  perform t.eq((select state from public.api_parties where id = v_owner_party), 'accepted',
+               'the owner''s party stays accepted when its share changes');
+  perform t.fails(format($q$update public.api_parties set is_owner = false where id = %L$q$, v_owner_party),
+                  'MC422', 'is_owner cannot change');
+
+  insert into public.api_parties (release_id, side, role, name, email, percent)
+    values (v_rel, 'recording', 'producer', 'Producer', 'p@example.invalid', 40) returning id into v_p;
+  perform t.fails(format($q$update public.api_parties set state = 'accepted', responded_at = now() where id = %L$q$, v_p),
+                  'MC409', 'another party cannot be accepted without using a code');
+  perform public.api_issue_invite(v_p, t.hash('producer-code-0001'), 3);
+
+  -- 10 wrong codes in an hour lock the invitation, even for the right code.
+  for i in 1..10 loop
+    perform public.api_get_invitation(v_rel, v_p, t.hash('guess-' || i));
+  end loop;
+  select * into v_row from public.api_get_invitation(v_rel, v_p, t.hash('producer-code-0001'));
+  perform t.eq(v_row.status, 'rate_limited', 'after 10 wrong codes in an hour the read is locked');
+  select * into v_row from public.api_respond_to_invite(v_rel, v_p, t.hash('producer-code-0001'), t.id('listener'), 'accept');
+  perform t.eq(v_row.status, 'rate_limited', 'after 10 wrong codes in an hour the reply is locked');
+  perform t.eq(public.api_invite_wrong_count(v_p, 3600)::text, '10', 'locked attempts are not counted again');
+  update public.api_invite_wrong_codes set attempted_at = now() - interval '61 minutes' where party_id = v_p;
+  select * into v_row from public.api_respond_to_invite(v_rel, v_p, t.hash('producer-code-0001'), t.id('listener'), 'accept');
+  perform t.eq(v_row.status, 'ok', 'the lock lifts after an hour');
+end
+$$;
+
 set client_min_messages = warning;
 drop schema t cascade;

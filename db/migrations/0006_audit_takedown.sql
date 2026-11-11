@@ -38,7 +38,8 @@ begin
   if not found then
     raise exception using errcode = 'MC404', message = 'not_found: no such release';
   end if;
-  select a.account_type into v_type from public.api_accounts a where a.user_id = p_actor_id;
+  select a.account_type into v_type from public.api_accounts a
+    where a.user_id = p_actor_id and not a.suspended;
   if v_type is distinct from 'administrator' then
     raise exception using errcode = 'MC403', message = 'not_allowed: only an administrator can take a release down';
   end if;

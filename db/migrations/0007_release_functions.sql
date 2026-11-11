@@ -178,7 +178,8 @@ begin
   if not found then
     raise exception using errcode = 'MC404', message = 'not_found: no such release';
   end if;
-  select a.account_type into v_type from public.api_accounts a where a.user_id = p_reviewer_id;
+  select a.account_type into v_type from public.api_accounts a
+    where a.user_id = p_reviewer_id and not a.suspended;
   if v_type is null or v_type not in ('administrator', 'internal') or p_reviewer_id = v_release.owner_id then
     raise exception using errcode = 'MC403', message = 'not_allowed: only an administrator or internal reviewer can review';
   end if;
@@ -259,8 +260,8 @@ $$;
 
 -- listReleases. Summaries, newest first, for the caller:
 -- administrator and internal see every release, an artist sees only their own, anyone else
--- sees nothing. p_state filters (null for all). Keyset paging: pass the created_at and id of
--- the last row of the previous page (both null for the first page). At most 101 rows: ask for
+-- sees nothing, and a suspended caller sees nothing. p_state filters (null for all).
+-- Keyset paging: pass the created_at and id of the last row of the previous page (both null for the first page). At most 101 rows: ask for
 -- limit + 1 to learn whether there is a next page.
 create or replace function public.api_list_releases(
   p_caller uuid, p_state text, p_limit integer, p_after_created_at timestamptz, p_after_id uuid)
@@ -284,7 +285,7 @@ as $$
          exists (select 1 from public.api_covers c where c.release_id = r.id),
          r.created_at, r.updated_at
   from public.api_releases r
-  join public.api_accounts a on a.user_id = p_caller
+  join public.api_accounts a on a.user_id = p_caller and not a.suspended
   where (a.account_type in ('administrator', 'internal')
          or (a.account_type = 'artist' and r.owner_id = p_caller))
     and (p_state is null or r.state = p_state)

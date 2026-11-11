@@ -106,6 +106,7 @@ as $$
 declare
   v_type text;
   v_artist uuid;
+  v_suspended boolean;
   v_side text;
   v_total numeric;
   v_count integer;
@@ -115,10 +116,10 @@ begin
     if new.state <> 'draft' or new.review_decision <> 'none' then
       raise exception using errcode = 'MC409', message = 'wrong_state: a new release starts as draft';
     end if;
-    select a.account_type, a.artist_id into v_type, v_artist
+    select a.account_type, a.artist_id, a.suspended into v_type, v_artist, v_suspended
       from public.api_accounts a where a.user_id = new.owner_id;
-    if v_type is distinct from 'artist' then
-      raise exception using errcode = 'MC403', message = 'not_artist: only an artist account can own a release';
+    if v_type is distinct from 'artist' or v_suspended then
+      raise exception using errcode = 'MC403', message = 'not_artist: only an artist account that is not suspended can own a release';
     end if;
     if new.artist_id is null then
       new.artist_id := v_artist;
