@@ -2,7 +2,7 @@ You are session E of Phase 0 of Milk Crate, a music streaming service and market
 
 Session A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "E: Supabase deployment")
-2. `api/openapi.yaml` (the contract, 16 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for Supabase)
 4. `db/` (session B's migrations, tests and README)
 5. `milk-crate/supabase/*.sql` and `milk-crate/src/lib/supabase.ts` (how the app uses Supabase today; do not change any of it)

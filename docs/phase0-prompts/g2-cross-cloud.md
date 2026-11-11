@@ -4,7 +4,7 @@ The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `mil
 
 Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and "G: Shared core handlers and the cross-cloud check")
-2. `api/openapi.yaml` (the contract, 16 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
 3. Your own stage 1 handlers and tests in `core/`, and the handler path stated in that pull request
 4. `deploy/supabase/` and `deploy/aws/` (sessions E and F: their modules, adapters, tests and the open points in their pull requests)
 5. `db/` (session B's test approach)
@@ -16,7 +16,7 @@ Your job: a test suite that runs the same scenario against both deployments' mod
   1. An artist creates a draft release with two tracks.
   2. Starts an upload for each master, interrupts one, resumes it from where it stopped, confirms both (with the checksums the contract asks for).
   3. The processing result arrives (success), and the release moves to `awaiting_splits`.
-  4. The artist adds rights and splits for recording and composition; the invitees accept with their invite codes; one wrong or reused code is refused.
+  4. The artist adds rights and splits for recording and composition; each invitee first views the invitation with their code (they see only the release basics and their own share, never other parties, emails or `owner_id`), then accepts; a wrong code is refused (403) on both the view and the reply, too many wrong codes give 429, and a used code gives 409 on the view.
   5. Submit, then a reviewer asks for changes with a reason, the artist fixes and resubmits, a reviewer approves.
   6. Publish with a future release date (`scheduled`), then the schedule fires and the release goes `live`.
   7. A listener reads the public view (no `owner_id`) and gets playback for a track; a listener cannot see a release that is not live.

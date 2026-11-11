@@ -316,6 +316,52 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/releases/{releaseId}/rights/parties/{partyId}/invitation:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+      - name: partyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Releases]
+      operationId: getInvitation
+      summary: See what a split invitation is for, before replying
+      x-account-types: [end_user, artist, third_party]
+      x-state-moves: []
+      description: |
+        For the invited person, signed in with any account. It is a POST so the `inviteCode` goes
+        in the body and stays out of URLs and logs. It does not use up the code.
+        Returns only the release basics and this one party's own share. Other parties' names,
+        emails and shares are never included, and neither is `owner_id`.
+        Returns 403 for a wrong or expired code, 409 if the party already replied or the
+        release is `taken_down`, and 429 after too many wrong codes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inviteCode]
+              properties:
+                inviteCode:
+                  type: string
+                  minLength: 16
+                  maxLength: 256
+                  description: From the invitation email.
+      responses:
+        "200":
+          description: The invitation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /v1/releases/{releaseId}/rights/parties/{partyId}/respond:
     parameters:
       - $ref: "#/components/parameters/ReleaseId"
@@ -909,6 +955,30 @@ components:
                   state:
                     type: string
                     enum: [invited, accepted, declined]
+    Invitation:
+      type: object
+      description: |
+        What an invited person sees before replying. Release basics and their own share only.
+      required: [releaseTitle, artistName, releaseDate, trackTitles, party]
+      properties:
+        releaseTitle: { type: string }
+        artistName: { type: string }
+        releaseDate: { type: string, format: date }
+        trackTitles:
+          type: array
+          items: { type: string }
+        party:
+          type: object
+          required: [side, role, percent, state]
+          properties:
+            side:
+              type: string
+              enum: [recording, composition]
+            role: { type: string }
+            percent: { type: number }
+            state:
+              type: string
+              enum: [invited, accepted, declined]
     ReviewRequest:
       type: object
       required: [decision]

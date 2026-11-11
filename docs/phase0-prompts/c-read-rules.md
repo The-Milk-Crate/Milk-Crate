@@ -2,7 +2,7 @@ You are session C of Phase 0 of Milk Crate, a music streaming service and market
 
 Sessions A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "C: Read rules and the account-type claim")
-2. `api/openapi.yaml` (the contract, 16 operations; each operation lists `x-account-types`, and the top of the file has the table of release state moves)
+2. `api/openapi.yaml` (the contract, 17 operations; each operation lists `x-account-types`, and the top of the file has the table of release state moves)
 3. `api/README.md` (who may call what)
 4. `core/src/platform/` (the eight interfaces; read `identity.ts` and `database.ts`)
 5. `db/` (session B's migrations, tests and README)
@@ -29,6 +29,7 @@ Your job: the account-type claim and the read rules. Both deployments must give 
   - `administrator` and `internal` see what the contract says they see.
   - Match each operation's `x-account-types` and the notes in `api/README.md`.
   - Playback and play events follow the contract (owner and reviewers may get a grant for a release that is not live; everyone else gets 404).
+- The invitee path: `getInvitation` and `respondToSplit` are called by accounts that have no rights to the release rows. Don't open the tables to them. Allow only session B's narrow invitation function (and the one write that records a reply) on both sides. Test that an invitee with a valid code sees only the `Invitation` fields and nothing else, and that a wrong or expired code sees nothing.
 - Supabase: row level security policies and the hook, as migrations added alongside the app's existing ones.
 - AWS: the equivalent checks on Aurora. Aurora through the RDS Data API uses one shared database login, so row level security by caller does not work the same way there. Propose how the checks work on that side (for example, views or functions that take the caller's id and account type as arguments, so every query through `Database` carries them). Write your proposal in the pull request as an open point for K Marcus, and build the part that doesn't depend on the answer.
 - Tests that sign in as each account type and check what each can read: one set for the Supabase rules, one for the Aurora-side checks, with the same expected results in both.

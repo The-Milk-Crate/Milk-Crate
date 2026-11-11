@@ -2,7 +2,7 @@ You are session G of Phase 0 of Milk Crate, a music streaming service and market
 
 Sessions A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "G: Shared core handlers and the cross-cloud check")
-2. `api/openapi.yaml` (the contract, 16 operations; each lists `x-account-types` and `x-state-moves`, and the top of the file has the table of release state moves)
+2. `api/openapi.yaml` (the contract, 17 operations; each lists `x-account-types` and `x-state-moves`, and the top of the file has the table of release state moves)
 3. `api/README.md` (who may call what)
 4. `core/src/platform/` (the eight interfaces and `Modules`; read `types.ts`, `database.ts`, `storage.ts` and `playback.ts` closely)
 5. `db/` (session B's tables, SQL functions, tests and README; your handlers call these)
@@ -13,12 +13,12 @@ Your job is in two stages. Do stage 1 now, then stop.
 One handler per operation, in `core/`. Handlers use web-standard `Request` and `Response`, take their modules (`Modules`: database, identity, storage, jobs, schedules, secrets and email) as an argument, and run unchanged on Edge Functions (Deno) and Lambda (Node 22). No platform SDK imports, and no runtime dependencies in `core/`.
 
 Build:
-- Handlers for all 16 operations in the contract: `createRelease`, `getRelease`, `getPublicRelease`, `startUpload`, `getUpload`, `signUploadParts`, `confirmUpload`, `putRights`, `respondToSplit`, `resendInvitation`, `submitRelease`, `reviewRelease`, `publishRelease`, `takedownRelease`, `getPlayback`, `recordPlays`.
+- Handlers for all 17 operations in the contract: `createRelease`, `getRelease`, `getPublicRelease`, `startUpload`, `getUpload`, `signUploadParts`, `confirmUpload`, `putRights`, `getInvitation`, `respondToSplit`, `resendInvitation`, `submitRelease`, `reviewRelease`, `publishRelease`, `takedownRelease`, `getPlayback`, `recordPlays`.
 - Request checks written from the contract (hand-written small validators; the library route is closed because `core/` has no runtime dependencies). Responses and errors use the contract's shapes, and every error uses the one `Error` shape with a stable `code`, plain-words `message` and a `requestId`.
 - The account-type rules: each operation allows only the account types in its `x-account-types`, plus the owner checks the contract describes. A hidden release looks like a missing one (404) to listeners.
 - State moves: only the server moves a release. Do every move through session B's SQL functions, inside one `Database` transaction wherever more than one write must go together. Follow the contract: approve records the decision and does not change the state; publish needs approval first (409 otherwise) and picks `scheduled` or `live` by the release date, and a scheduled release goes `live` through `Schedules` and B's SQL function.
 - Uploads: `startUpload` calls `ObjectStorage` and returns the `UploadSession` as the contract's tagged union by `method`. Store keys, never public URLs. Masters are never altered.
-- Split invitations: make a random single-use code, store only its hash (use the Web Crypto `crypto.subtle`, which exists on both Deno and Node 22), send it by email through `SecretsAndEmail`, and never return it from any endpoint. `respondToSplit` checks the hash, expiry (14 days) and used-at in one transaction and links the replying account to the party. `resendInvitation` replaces the code and counts sends per party per day.
+- Split invitations: make a random single-use code, store only its hash (use the Web Crypto `crypto.subtle`, which exists on both Deno and Node 22), send it by email through `SecretsAndEmail`, and never return it from any endpoint. `getInvitation` calls session B's narrow invitation function (the invitee has no access to the tables), checks the same hash and expiry without using up the code and returns only the contract's `Invitation` (release basics and that one party's own share; never other parties, emails or `owner_id`); count wrong codes per party and return 429 after too many. `respondToSplit` checks the hash, expiry (14 days) and used-at in one transaction and links the replying account to the party. `resendInvitation` replaces the code and counts sends per party per day.
 - Plays: `recordPlays` takes a batch with the `Idempotency-Key` header; the same key twice counts once and returns `duplicate: true`. The server decides what is a qualified stream (30 seconds or more) through session B's SQL; the client never sends counts.
 - Playback: `getPlayback` checks entitlement and asks `ObjectStorage.signRead` for the grant; the core adds the track id. Owners and reviewers may get a grant for a release that is not live; everyone else gets 404.
 - Takedown: administrator only. Remove listener access, delete every file of the release through `ObjectStorage.delete`, write the audit row listing what was removed, email the owner.
@@ -46,7 +46,7 @@ Build:
 - Every operation has a handler and tests, and the tests pass.
 - `core/` and `milk-crate/` type-check and `cd milk-crate && npm test` still passes.
 - The handler path is stated at the top of the pull request.
-- The pull request description lists: what you built, what you ran and its result, the open points for K Marcus (at least: the test runner choice, any change a handler needs in another session's work, and where rate limits (429) for play batches and resends are enforced), and anything you assumed.
+- The pull request description lists: what you built, what you ran and its result, the open points for K Marcus (at least: the test runner choice, any change a handler needs in another session's work, where rate limits (429) for play batches and resends are enforced, and the numbers: wrong codes allowed before 429 and over what window, and sends per party per day), and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.
 
 ### Stage 2 (do not start it now)

@@ -2,7 +2,7 @@ You are session F of Phase 0 of Milk Crate, a music streaming service and market
 
 Sessions A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "F: AWS deployment")
-2. `api/openapi.yaml` (the contract, 16 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for AWS)
 4. `db/` (session B's migrations, tests and README)
 
