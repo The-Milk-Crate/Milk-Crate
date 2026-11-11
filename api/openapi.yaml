@@ -290,6 +290,32 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/rights/parties/{partyId}/resend:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+      - name: partyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Releases]
+      operationId: resendInvitation
+      summary: Resend a split invitation
+      x-account-types: [artist]
+      x-state-moves: []
+      description: |
+        Issues a new invite code, valid for 14 days, and emails it to the party.
+        The old code stops working. Only for a party whose `state` is `invited`
+        (409 otherwise), and only by the release owner. Limited to a few sends
+        per party per day (429).
+      responses:
+        "204":
+          description: A new invitation was sent.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /v1/releases/{releaseId}/rights/parties/{partyId}/respond:
     parameters:
       - $ref: "#/components/parameters/ReleaseId"
@@ -304,22 +330,29 @@ paths:
       x-account-types: [end_user, artist, third_party]
       x-state-moves: []
       description: |
-        Called by the invited person. The server checks that the signed-in account is the
-        one invited (the verified email matches the invitation). Moves the party's
-        `state` from `invited` to `accepted` or `declined`. No release state changes;
-        `submitRelease` checks the parties.
-        Returns 409 if the party already replied or the release is `taken_down`.
+        Called by the invited person, signed in with any account. The invitation email carries
+        a single-use `inviteCode` that expires. The code is never returned by any endpoint.
+        A valid code links the signed-in account to the party and moves the party's `state`
+        from `invited` to `accepted` or `declined`. The invited email address does not have to
+        match the account. No release state changes; `submitRelease` checks the parties.
+        Returns 403 for a wrong or expired code, and 409 if the party already replied or the
+        release is `taken_down`.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [response]
+              required: [response, inviteCode]
               properties:
                 response:
                   type: string
                   enum: [accept, decline]
+                inviteCode:
+                  type: string
+                  minLength: 16
+                  maxLength: 256
+                  description: From the invitation email. Single use.
       responses:
         "200":
           description: Updated rights.

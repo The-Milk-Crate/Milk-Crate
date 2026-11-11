@@ -1,3 +1,4 @@
+import type { Database } from "./database";
 import type { Identity } from "./identity";
 import type { ObjectStorage } from "./storage";
 import type { Jobs } from "./jobs";
@@ -13,9 +14,11 @@ export type * from "./schedules";
 export type * from "./functions";
 export type * from "./secrets-email";
 export type * from "./infrastructure";
+export type * from "./database";
 
 /** What a handler in the shared core is given. */
 export interface Modules {
+  database: Database;
   identity: Identity;
   storage: ObjectStorage;
   jobs: Jobs;

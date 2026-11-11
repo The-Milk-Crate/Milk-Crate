@@ -198,6 +198,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/releases/{releaseId}/rights/parties/{partyId}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a split invitation
+         * @description Issues a new invite code, valid for 14 days, and emails it to the party.
+         *     The old code stops working. Only for a party whose `state` is `invited`
+         *     (409 otherwise), and only by the release owner. Limited to a few sends
+         *     per party per day (429).
+         */
+        post: operations["resendInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/releases/{releaseId}/rights/parties/{partyId}/respond": {
         parameters: {
             query?: never;
@@ -212,11 +238,13 @@ export interface paths {
         put?: never;
         /**
          * Accept or decline a split invitation
-         * @description Called by the invited person. The server checks that the signed-in account is the
-         *     one invited (the verified email matches the invitation). Moves the party's
-         *     `state` from `invited` to `accepted` or `declined`. No release state changes;
-         *     `submitRelease` checks the parties.
-         *     Returns 409 if the party already replied or the release is `taken_down`.
+         * @description Called by the invited person, signed in with any account. The invitation email carries
+         *     a single-use `inviteCode` that expires. The code is never returned by any endpoint.
+         *     A valid code links the signed-in account to the party and moves the party's `state`
+         *     from `invited` to `accepted` or `declined`. The invited email address does not have to
+         *     match the account. No release state changes; `submitRelease` checks the parties.
+         *     Returns 403 for a wrong or expired code, and 409 if the party already replied or the
+         *     release is `taken_down`.
          */
         post: operations["respondToSplit"];
         delete?: never;
@@ -965,6 +993,32 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    resendInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new invitation was sent. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     respondToSplit: {
         parameters: {
             query?: never;
@@ -980,6 +1034,8 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     response: "accept" | "decline";
+                    /** @description From the invitation email. Single use. */
+                    inviteCode: string;
                 };
             };
         };
