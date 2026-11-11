@@ -76,8 +76,14 @@ Branch `phase0/c-read-rules`.
 - Read rules (row level security on Supabase; the equivalent checks on Aurora) for the tables
   from B. Listeners see only `live` releases. Public views hide `owner_id`. An artist sees
   only their own. Reviewers see what the contract says they see.
-- Map today's `public.admins` rows to `administrator`. Don't change the app's existing tables
-  or policies; add alongside them.
+- Source of the claim (settled): every `public.admins` row maps to `administrator`. A new
+  staff table `(user_id, account_type)` holds `internal`, `internal_accounting` and
+  `third_party`. An account with an approved artist profile (what `is_approved_artist()` checks
+  today) gets `artist`. Everyone else is `end_user`. Pending and declined applicants stay
+  `end_user` until a reviewer approves them. The Supabase hook and the AWS Cognito groups
+  read the same source. Don't change the app's existing tables or policies; add alongside them.
+- The claim is read when the token is issued, so a role change shows after the token refreshes.
+  Say so in your tests and notes.
 - Tests that sign in as each account type and check what each can read.
 
 Done when: tests prove each account type reads only what the contract allows, on both
@@ -143,7 +149,10 @@ the cross-cloud scenario runs against both deployments' code.
 - **Database access.** An eighth interface, `Database` (`query` and `transaction`), in
   `core/src/platform/database.ts`. Supabase uses a Postgres connection; AWS uses the RDS Data API.
 
+- **Reviewer claim mapping.** As written in session C above.
+
 ## Open before work starts
-1. **Reviewer claim mapping.** How `admins` maps to `administrator` (session C).
+1. **More than one role.** The claim holds one value. If an account is both staff and an
+   approved artist, which wins? Session C proposes a rule in its pull request; K Marcus decides.
 2. **Who is "the invited person".** `respondToSplit` assumes the verified email matches the
    invitation (sessions C and G).
