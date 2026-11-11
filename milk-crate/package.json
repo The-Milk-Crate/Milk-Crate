@@ -12,7 +12,10 @@
     "tauri": "tauri",
     "app": "tauri dev",
     "app:build": "tauri build",
-    "app:build:win": "tauri build --bundles nsis"
+    "app:build:win": "tauri build --bundles nsis",
+    "api:lint": "npx --yes @redocly/cli@2.77.0 lint --config ../api/redocly.yaml ../api/openapi.yaml",
+    "api:client": "npx --yes openapi-typescript@7.13.0 ../api/openapi.yaml -o src/lib/api/schema.d.ts",
+    "api:core": "cd ../core && npm install --no-audit --no-fund && npx tsc --noEmit"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
@@ -40,6 +43,7 @@
     "d3-geo": "^3.1.1",
     "lucide-react": "^0.546.0",
     "music-metadata": "11.16.1",
+    "openapi-fetch": "0.17.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "topojson-client": "^3.1.0",
