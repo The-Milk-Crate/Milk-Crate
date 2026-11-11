@@ -53,6 +53,7 @@ E, F and G stage 1 merged.
 | F | AWS deployment |
 | G | Shared core handlers (stage 1) and the cross-cloud check (stage 2) |
 | H | Processing work: what happens to a master while a release is `processing` |
+| I | Security and abuse review of the merged work (report only; no fixes) |
 
 ## Kickoff prompts
 | Session | Prompt |
@@ -66,6 +67,7 @@ E, F and G stage 1 merged.
 | G stage 1 | `docs/phase0-prompts/g1-core.md` |
 | G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md` |
 | H | `docs/phase0-prompts/h-processing.md` |
+| I | `docs/phase0-prompts/i-security-review.md` |
 
 If a prompt and a section below disagree, the prompt is newer; tell K Marcus.
 
@@ -229,6 +231,20 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
 
 Done when: every track is checked, hashed and turned into a streaming copy by one shared piece,
 and the release reaches `awaiting_splits` or `failed` through the job result path.
+
+## I: Security and abuse review
+Branch `phase0/i-security-review`. Not in the original plan. Run it after B, C, E, F and G stage 1
+are merged and before the live stand-up, so fixes land before anything is reachable.
+- A read-only review of the merged work against 14 areas (authentication, authorization against
+  the contract, the account-type claim, the state machine, invitations, uploads and keys, reads,
+  plays, takedown, injection, secrets and configuration, rate limits, dependencies and workflows,
+  the desktop client).
+- It adds one file, `docs/security/review-phase0.md`, with findings ranked by severity, marked
+  `confirmed` or `suspected`, with the owning session for each fix, plus what could not be checked
+  without real accounts. It fixes nothing.
+
+Done when: every area has findings or a "checked, nothing found" line, and the report is the only
+file added.
 
 ## Settled before work starts
 - **Database access.** An eighth interface, `Database` (`query` and `transaction`), in
