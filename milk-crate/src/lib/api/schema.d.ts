@@ -224,6 +224,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/releases/{releaseId}/rights/parties/{partyId}/invitation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * See what a split invitation is for, before replying
+         * @description For the invited person, signed in with any account. It is a POST so the `inviteCode` goes
+         *     in the body and stays out of URLs and logs. It does not use up the code.
+         *     Returns only the release basics and this one party's own share. Other parties' names,
+         *     emails and shares are never included, and neither is `owner_id`.
+         *     Returns 403 for a wrong or expired code, 409 if the party already replied or the
+         *     release is `taken_down`, and 429 after too many wrong codes.
+         */
+        post: operations["getInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/releases/{releaseId}/rights/parties/{partyId}/respond": {
         parameters: {
             query?: never;
@@ -611,6 +639,22 @@ export interface components {
                 /** @enum {string} */
                 state: "invited" | "accepted" | "declined";
             })[];
+        };
+        /** @description What an invited person sees before replying. Release basics and their own share only. */
+        Invitation: {
+            releaseTitle: string;
+            artistName: string;
+            /** Format: date */
+            releaseDate: string;
+            trackTitles: string[];
+            party: {
+                /** @enum {string} */
+                side: "recording" | "composition";
+                role: string;
+                percent: number;
+                /** @enum {string} */
+                state: "invited" | "accepted" | "declined";
+            };
         };
         ReviewRequest: {
             /** @enum {string} */
@@ -1012,6 +1056,42 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description From the invitation email. */
+                    inviteCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The invitation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

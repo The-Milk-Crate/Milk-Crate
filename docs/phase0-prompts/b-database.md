@@ -2,7 +2,7 @@ You are session B of Phase 0 of Milk Crate, a music streaming service and market
 
 Session A is merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "B: Database")
-2. `api/openapi.yaml` (the contract, 16 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; read `database.ts` closely)
 4. `milk-crate/supabase/*.sql` (the app's existing tables and policies; do not change them)
 
@@ -12,7 +12,7 @@ Your job: the database. One schema that runs on both Supabase Postgres and Auror
 - Tables for: releases, tracks, uploads, rights and parties, review decisions, play events, qualified streams, audit rows.
 - The release state enum (draft, uploading, processing, awaiting_splits, awaiting_review, needs_changes, scheduled, live, failed, taken_down) and the rule that only the server moves a state. Match the state table in the contract. Approve does not change the state; it records `review.decision = approved`.
 - Rights: parties with side (recording or composition), role, name, email, percent, and state (invited, accepted, declined). Shares for each side must total 100 at submit.
-- Split invite codes: store only a hash of the code, `expires_at` set to 14 days after the invitation is sent, and `used_at`. A code works once. `resendInvitation` replaces the hash and expiry, so the old code stops working. Count sends per party per day. Never store or return the code itself.
+- Split invite codes: store only a hash of the code, `expires_at` set to 14 days after the invitation is sent, and `used_at`. A code works once. `resendInvitation` replaces the hash and expiry, so the old code stops working. Count sends per party per day. Never store or return the code itself. Also count wrong code attempts per party (for `getInvitation` and `respondToSplit` rate limits).
 - The account-type staff table `(user_id, account_type)` for `internal`, `internal_accounting` and `third_party`. Staff types and `artist` are mutually exclusive, enforced in the database. Every `public.admins` row means `administrator`. Session C writes the claim hook and read rules; you only provide the table and the exclusion rule.
 - Play events: a batch with the same idempotency key counts once. The server decides what is a qualified stream (30 seconds or more) from positions and times. The client never sends counts.
 - Master keys follow `masters/{artist}/{release}/{track}/original`. Store keys, never public URLs.

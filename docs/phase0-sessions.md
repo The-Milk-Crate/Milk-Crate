@@ -30,7 +30,7 @@ prompt for your session from `docs/phase0-prompts/` (index below).
   Then stop. K Marcus and a separate review agent review it.
 
 ## What exists
-- Contract: `api/openapi.yaml` (16 operations). Lint: `cd milk-crate && npm run api:lint`.
+- Contract: `api/openapi.yaml` (17 operations). Lint: `cd milk-crate && npm run api:lint`.
   The table of release state moves is at the top of the file.
 - Interfaces: `core/src/platform/` (the seven modules: identity, storage, jobs, schedules,
   server functions, secrets and email, infrastructure; an eighth, `Database`; plus
@@ -80,7 +80,8 @@ Branch `phase0/b-database`.
 - Split invite codes (settled): store only a hash of the code, with `expires_at` set to 14 days
   after the invitation is sent, plus `used_at`. A code works once. `resendInvitation` replaces
   the hash and expiry, so the old code stops working. Count sends per party per day. Never
-  store or return the code itself. Session G checks all three in one transaction.
+  store or return the code itself. Also count wrong code
+  attempts per party (for `getInvitation` and `respondToSplit` rate limits). Session G checks all three in one transaction.
 - The staff table `(user_id, account_type)` for `internal`, `internal_accounting` and
   `third_party`, with the staff and `artist` exclusion enforced in the database. Every
   `public.admins` row means `administrator`. Session C writes the claim hook and read rules.
@@ -231,6 +232,10 @@ and the release reaches `awaiting_splits` or `failed` through the job result pat
   `respondToSplit`; the account that replies is linked to the party. The invited email does
   not have to match. Store only a hash of the code. Never return the code from any endpoint.
   Session B holds the hash, expiry (14 days) and used-at; session G checks them in one transaction.
+
+- **Invitee view.** A new endpoint, `getInvitation`: the invitee sends the code in a POST body and
+  sees the release basics and only their own share. It does not use up the code. Wrong or
+  expired code is 403; wrong codes are rate limited (429). Session G builds it.
 
 - **Resending an invitation.** A new endpoint, `resendInvitation`: release owner only, party
   must be `invited`, issues a new 14-day code and voids the old one, limited per party per day.

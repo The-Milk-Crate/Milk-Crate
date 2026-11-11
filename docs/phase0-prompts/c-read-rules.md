@@ -2,7 +2,7 @@ You are session C of Phase 0 of Milk Crate, a music streaming service and market
 
 Sessions A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "C: Read rules and the account-type claim")
-2. `api/openapi.yaml` (the contract, 16 operations; each operation lists `x-account-types`, and the top of the file has the table of release state moves)
+2. `api/openapi.yaml` (the contract, 17 operations; each operation lists `x-account-types`, and the top of the file has the table of release state moves)
 3. `api/README.md` (who may call what)
 4. `core/src/platform/` (the eight interfaces; read `identity.ts` and `database.ts`)
 5. `db/` (session B's migrations, tests and README)

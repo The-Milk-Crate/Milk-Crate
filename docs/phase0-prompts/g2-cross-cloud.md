@@ -4,7 +4,7 @@ The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `mil
 
 Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and "G: Shared core handlers and the cross-cloud check")
-2. `api/openapi.yaml` (the contract, 16 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
 3. Your own stage 1 handlers and tests in `core/`, and the handler path stated in that pull request
 4. `deploy/supabase/` and `deploy/aws/` (sessions E and F: their modules, adapters, tests and the open points in their pull requests)
 5. `db/` (session B's test approach)
