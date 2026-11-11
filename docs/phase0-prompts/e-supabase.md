@@ -27,6 +27,21 @@ Your job: the Supabase deployment. Implement each platform interface on Supabase
 - Database: a pooled Postgres connection with transactions, with parameters (`$1`, `$2`). Never build SQL by joining values into text.
 - Infrastructure: stand up, confirm, tear down, as a script and config K Marcus runs (`deploy/supabase/supabase/config.toml`, migration push of `db/migrations/` and then `db/supabase/`, in that order, function deploy, storage buckets and limits, the Fly app config). You write them; you do not run them against anything real.
 
+### From session B (merged; handle these)
+See `db/README.md`.
+- **Database errors.** B's rules raise SQLSTATE `MC403`, `MC404`, `MC409` and `MC422`, with a code word at the start of the message. Your `Database` must surface the SQLSTATE and message unchanged so session G can map them to HTTP codes. Test it.
+- **Schedules.**
+  - pg_cron runs `api_release_go_live` with the named argument `p_release_id` on the release date.
+  - It moves only `scheduled` → `live` and does nothing otherwise, so a run after a takedown is harmless.
+  - Remove the pg_cron job after it runs.
+- **Jobs.**
+  - `enqueue` creates the row with `api_create_job(release, 'process_release')`; the release must be `processing`.
+  - The worker calls `api_job_started(job)` when it picks the job up.
+  - The result goes through G's function to `api_apply_job_result`, which is safe to call twice.
+- **Takedown storage.** `api_takedown_release` returns the prefixes to delete. After `ObjectStorage.delete` succeeds for each, call `api_takedown_files_deleted(audit)`.
+- **The connection role.** Session C revokes Supabase's default grants on the `api_` tables and functions from `anon` and `authenticated`. The server's database connection (Edge Functions and the worker) must use a role that keeps full access, such as the owner that applied `db/migrations/`, not a client role. Say which role you use and why.
+- **Stand-up order.** Apply `db/migrations/`, then `db/supabase/`, in one step, so the default grants are never left open.
+
 ### Constraints
 - No real projects, no real keys. You have no Supabase or Fly account access. Code, config and a script are the deliverable, and tests use mocks or a local Postgres.
 - This environment has PostgreSQL 16 (no Docker daemon, no Supabase CLI). Reuse session B's throwaway Postgres approach in `db/test/` for the database module. Mock Supabase Storage, Fly and email at their HTTP edges, and check each with a test. Say what you could not run.

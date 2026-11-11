@@ -204,6 +204,13 @@ Branch `phase0/e-supabase`.
 - Don't create real projects or use real keys. Provide the code, config and a script K Marcus
   runs. Tests use local Supabase or mocks.
 - Edge Function entry points call G's handlers and only do wiring.
+- From B (merged):
+  - `Database` surfaces B's SQLSTATEs (`MC403`, `MC404`, `MC409`, `MC422`).
+  - pg_cron runs `api_release_go_live` with `p_release_id`.
+  - Jobs use `api_create_job` and `api_job_started`.
+  - The server's connection uses a role that keeps access after C revokes the default grants.
+
+  Details in `docs/phase0-prompts/e-supabase.md`.
 
 Done when: the interface tests pass against local Supabase or mocks, and the stand-up script
 is ready for K Marcus to run.
@@ -254,6 +261,15 @@ Stage 1:
 - Unit tests with fake modules, and session B's throwaway Postgres for paths that run SQL. The
   same handler code runs on Deno and Node.
 
+- From B (merged): call B's functions and map their results, rather than rebuilding the checks.
+  - B checks invite codes, counts wrong codes and locks a party after 10 an hour. Map its
+    statuses to HTTP codes.
+  - Map B's SQLSTATEs (`MC403`, `MC404`, `MC409`, `MC422`) to the same HTTP codes.
+  - The owner's own party (`is_owner`) gets no invitation. A changed party needs a new one.
+  - Refuse suspended accounts.
+
+  Details in `docs/phase0-prompts/g1-core.md`.
+
 Stage 2 (after E, F and G stage 1 are merged):
 - A suite that runs the same scenario against both deployments' module sets (create a release,
   upload a master, resume it, add splits, submit, review, publish, play, take down) and checks
@@ -277,6 +293,8 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
 - `ObjectStorage` has only `readHead` (small ranged reads), no stream read or write for a worker.
   With K Marcus's approval only, add the smallest addition in `core/` and in the storage modules
   of E and F.
+- From B (merged): record `stream_key`, `duration_ms` and `sample_rate_hz` on `api_tracks`;
+  compare against `api_tracks.master_sha256`; call `api_job_started` when a job is picked up.
 
 Done when: every track is checked, hashed and turned into a streaming copy by one shared piece,
 and the release reaches `awaiting_splits` or `failed` through the job result path.

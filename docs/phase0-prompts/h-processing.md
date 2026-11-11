@@ -29,7 +29,8 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 - The processing piece: given a `process_release` job, for each track of the release:
   - Read the master as a stream (never load a 5 GiB file into memory), check it, hash it, compare the SHA-256 to what the client sent, and make the streaming copy.
   - Write the streaming copy under the agreed key. The master is never altered.
-  - Record what is needed to play and show it (duration, sample rate, streaming copy key) in session B's track columns through `Database`, with parameters. Session G's `getPlayback` signs that key.
+  - Record what is needed to play and show it in session B's track columns through `Database`, with parameters: `api_tracks.stream_key` (under `streams/{artist}/{release}/{track}/`; B refuses any other key), `duration_ms` and `sample_rate_hz`. Session G's `getPlayback` signs that key. The client's SHA-256 to compare against is `api_tracks.master_sha256`.
+  - When the worker picks a job up, it calls `api_job_started(job)`.
 - The release result: success when every track passes; failure with one plain-words reason for the artist when any track fails. Report it through the job result path so the release moves to `awaiting_splits` or `failed` (session G's function applies it; don't move states yourself).
 - Safe to run twice: a retried job gives the same result, never leaves half-written derived files behind (clean up on failure), and never touches the master.
 - The container: one `Dockerfile` for the worker (Node 22 plus ffmpeg), and the thin entry point each platform's worker skeleton calls. Don't change the platforms' worker skeletons beyond calling your function.

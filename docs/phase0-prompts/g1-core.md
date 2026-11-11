@@ -21,7 +21,7 @@ Build:
 - Release details: `updateRelease` allows only `draft`, `uploading`, `awaiting_splits` and `needs_changes` (409 otherwise) and never changes the state; `startUpload` allows only `draft`, `uploading`, `needs_changes` and `failed` (409 otherwise), and from `failed` moves to `uploading` and clears the failure reason; a `tracks` list that misses, repeats or invents a track is 422. `listReleases` is scoped by account type (an artist sees only their own; `administrator` and `internal` see all), newest first, with the `state` filter and cursor paging; summaries only.
 - Cover art: `startCoverUpload` returns the same `UploadSession` with `kind` set to `cover` (JPEG or PNG, up to 20 MiB, stored at `art/{artist}/{release}/cover/original`, never altered). `confirmUpload` for a cover also reads the first bytes with `ObjectStorage.readHead` and gets the width and height from the PNG or JPEG header with a small hand-written reader (no image library in `core/`), and returns 422 if the image is unreadable or not square; it queues no processing and changes no state. `getCover` follows the same rules as playback: owners, `administrator` and `internal` in any state, everyone else only when `live`, 404 when there is no cover.
 - Uploads: `startUpload` calls `ObjectStorage` and returns the `UploadSession` as the contract's tagged union by `method`. Store keys, never public URLs. Masters are never altered. `confirmUpload` checks what storage reports (size, and CRC64NVME on S3) and records the client's SHA-256; the worker checks the SHA-256 later (settled).
-- Split invitations: make a random single-use code, store only its hash (use the Web Crypto `crypto.subtle`, which exists on both Deno and Node 22), send it by email through `SecretsAndEmail`, and never return it from any endpoint. `getInvitation` calls session B's narrow invitation function (the invitee has no access to the tables), checks the same hash and expiry without using up the code and returns only the contract's `Invitation` (release basics and that one party's own share; never other parties, emails or `owner_id`); count wrong codes per party and return 429 after too many. `respondToSplit` checks the hash, expiry (14 days) and used-at in one transaction and links the replying account to the party; its wrong codes count in the same per-party counter, with the same 429. `resendInvitation` replaces the code and counts sends per party per day.
+- Split invitations: make a random single-use code, store only its hash (use the Web Crypto `crypto.subtle`, which exists on both Deno and Node 22), send it by email through `SecretsAndEmail`, and never return it from any endpoint. Session B's functions do the checking (see "From session B" below): `getInvitation` calls `api_get_invitation`, which checks the hash and expiry without using up the code and returns only the contract's `Invitation`; `respondToSplit` calls `api_respond_to_invite` with the signed-in account, which checks hash, expiry and used-at in one go and links the account; `resendInvitation` calls `api_issue_invite` with your daily send limit. B counts wrong codes per party for both and locks a party after 10 in an hour; map its statuses to HTTP codes.
 - Plays: `recordPlays` takes a batch with the `Idempotency-Key` header; the same key twice counts once and returns `duplicate: true`. The server decides what is a qualified stream (30 seconds or more) through session B's SQL; the client never sends counts.
 - Playback: `getPlayback` checks entitlement and asks `ObjectStorage.signRead` for the grant on the track's streaming copy key (session B's track column, under `streams/{artist}/{release}/{track}/`; never a master); the core adds the track id. 404 when the track has no streaming copy yet (session H fills it later; test with a fake key). Owners and reviewers may get a grant for a release that is not live; everyone else gets 404.
 - Takedown: administrator only. Remove listener access, delete the release's `masters/`, `streams/` and `art/` prefixes through `ObjectStorage.delete`, write the audit row listing what was removed, and email the owner (the email is in `api_accounts`). `review_needs_changes` uses the same email.
@@ -29,6 +29,38 @@ Build:
 - A small router that maps method and path to a handler, so each deployment's entry point stays thin. Choose where the handlers live (suggested: `core/src/handlers/`), state the path at the top of your pull request, and export everything a deployment needs from one place. Sessions E and F are waiting on this path.
 - Tests with fake modules (an in-memory fake of `Database` is not enough for transactions and SQL functions: use session B's throwaway local PostgreSQL 16 approach in `db/test/` for the paths that run SQL, and fakes for storage, jobs, schedules, email and identity). Cover: every operation's allowed and refused account types, every state move and every refused move (409), the 100-percent rule, invite code single use and expiry, idempotent play batches, hidden releases, and takedown.
 - Keep a clock and a random source as injected arguments so tests are repeatable.
+
+### From session B (merged; use these, don't rebuild them)
+Read `db/README.md`. B's functions lock the release row and enforce the rules, so your handlers mostly call them and map the result.
+- **Errors.** B raises SQLSTATE `MC403`, `MC404`, `MC409` and `MC422`, with a code word at the start of the message (for example `wrong_state:`). Map them to 403, 404, 409 and 422, and put the code word in the `Error` `code`. A plain constraint error (`23xxx`) means a handler sent something it should have caught as 400 or 422.
+- **Invitation statuses.**
+  - `ok` → 200.
+  - `wrong_code` and `expired` → 403.
+  - `replied` and `taken_down` → 409.
+  - `rate_limited` → 429.
+  - `not_found` → 404.
+  - For `api_issue_invite`, `not_invited` → 409.
+
+  The invite functions record wrong codes, so commit even when they return `wrong_code`. `api_invite_wrong_count` is there only if you want a stricter limit than B's 10 an hour.
+- **Rights (`putRights`).**
+  - The owner's own share is a party with `is_owner = true`. It is accepted at once and gets no invitation.
+  - New parties start `invited`. Send each one an invitation with `api_issue_invite`.
+  - A non-owner party whose details change goes back to `invited` with its code voided, so send it a new invitation.
+  - Keep party ids for parties the request sends back.
+- **Suspended accounts.** `api_accounts.suspended` means the account may not act. B already refuses a suspended owner creating a release, and a suspended reviewer or administrator, and lists nothing for them. Refuse a suspended account on the other artist and staff endpoints too (403).
+- **Functions per operation.**
+  - `listReleases`: `api_list_releases(caller, state, limit + 1, after_created_at, after_id)`. Build the cursor from the last row's `created_at` and `id`, kept exactly as returned.
+  - `startUpload` and `startCoverUpload`: `api_upload_key`, then storage, then `api_start_upload`.
+  - `confirmUpload`: `api_confirm_upload`. Queue the job when `start_processing` is true.
+  - `reviewRelease`: `api_record_review`.
+  - `publishRelease`: `api_publish_release`. When it returns `scheduled`, call `Schedules.runSqlFunctionAt` with `fn: "api_release_go_live"` and `args: { p_release_id }` on the release date.
+  - `takedownRelease`: `api_takedown_release`, delete the returned prefixes, then `api_takedown_files_deleted`.
+  - `recordPlays`: `api_record_play_batch`, where `duplicate` → 202 with `duplicate: true` and `conflict` → 409.
+  - The job result: `api_apply_job_result`, which is safe to call twice.
+- **Calling through `Database`.**
+  - Cast parameters in the SQL (`$1::uuid`, `$2::jsonb`).
+  - Pass lists as JSON text.
+  - Read `numeric`, `bigint`, `date`, `timestamptz` and `jsonb` results as strings or parsed values, the same on both deployments.
 
 ### Constraints
 - `core/` gets no runtime dependencies. A test runner or `@types/node` may be added as a dev dependency only. Propose your choice in the pull request as an open point; keep it minimal. Check the handlers also run on Deno if Deno is available here, and say so if you can't.
