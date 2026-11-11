@@ -11,7 +11,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List releases
+         * @description An artist sees only their own releases, in any state. Administrator and Internal non-admin
+         *     see every release, so reviewers can pull a queue (for example `state=awaiting_review`).
+         *     Newest first. Summaries only; use `getRelease` for the full release.
+         *     Page with `cursor`: send back the `nextCursor` of the last page.
+         */
+        get: operations["listReleases"];
         put?: never;
         /**
          * Create a draft release
@@ -46,7 +53,16 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit a release's details
+         * @description Changes the title, the release date, track titles and track order. Send only what changes.
+         *     Allowed in `draft`, `uploading`, `awaiting_splits` and `needs_changes`; any other state
+         *     returns 409. It cannot add or remove tracks and does not change the state.
+         *     `tracks` lists every track of the release exactly once, in the new order, with a new
+         *     `title` for any that changes. A list that misses a track, repeats one or names one that
+         *     is not on the release returns 422.
+         */
+        patch: operations["updateRelease"];
         trace?: never;
     };
     "/v1/public/releases/{releaseId}": {
@@ -94,6 +110,60 @@ export interface paths {
          *     Starting a new upload for a track that already has a master replaces that master.
          */
         post: operations["startUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/releases/{releaseId}/cover/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a cover art upload
+         * @description Same upload session as a master (`tus` or `s3_multipart`), with `kind` set to `cover`,
+         *     then `getUpload`, `signUploadParts` and `confirmUpload` work the same way.
+         *     JPEG or PNG, up to 20 MiB. The image must be square; `confirmUpload` returns 422 if it
+         *     is not or cannot be read.
+         *     Stored at `art/{artist}/{release}/cover/original` and never altered. A new upload replaces
+         *     the old cover when confirmed. Allowed in `draft`, `uploading`, `processing`,
+         *     `awaiting_splits` and `needs_changes`; any other state returns 409. It never changes the
+         *     release state.
+         */
+        post: operations["startCoverUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/releases/{releaseId}/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * How to read a release's cover art
+         * @description Like playback, it answers how to read, as a tagged union (`signed_url` or
+         *     `cloudfront_cookies`), and carries no fixed URL. Returns 404 when the release has no
+         *     cover, and 404 unless the release is `live` (the owner, Administrator and Internal
+         *     non-admin may read it in any state).
+         */
+        get: operations["getCover"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -164,6 +234,8 @@ export interface paths {
          *     The server checks them against the stored object. On a mismatch it returns 422 and
          *     the upload stays open so the client can retry.
          *     When every track of the release is confirmed, the server queues processing.
+         *     For a cover (`kind` is `cover`) it also checks the image is a readable, square JPEG or
+         *     PNG (422 if not) and does not queue processing or change the release state.
          */
         post: operations["confirmUpload"];
         delete?: never;
@@ -479,6 +551,8 @@ export interface components {
             /** Format: date */
             releaseDate: string;
             state: components["schemas"]["ReleaseState"];
+            /** @description True when a cover is confirmed. Read it with `getCover`. */
+            hasCover: boolean;
             /** @description Plain words. Only when `state` is `failed`. */
             failureReason?: string;
             review?: components["schemas"]["ReviewStatus"];
@@ -501,6 +575,8 @@ export interface components {
             title: string;
             /** Format: date */
             releaseDate: string;
+            /** @description True when a cover exists. Read it with `getCover`. */
+            hasCover: boolean;
             tracks: {
                 /** Format: uuid */
                 id: string;
@@ -515,6 +591,77 @@ export interface components {
             reason?: string;
             /** Format: date-time */
             decidedAt?: string;
+        };
+        UpdateReleaseRequest: {
+            title?: string;
+            /** Format: date */
+            releaseDate?: string;
+            /** @description Every track exactly once, in the new order. */
+            tracks?: {
+                /** Format: uuid */
+                id: string;
+                title?: string;
+            }[];
+        };
+        ReleaseSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            owner_id: string;
+            title: string;
+            /** Format: date */
+            releaseDate: string;
+            state: components["schemas"]["ReleaseState"];
+            trackCount: number;
+            hasCover: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ReleasePage: {
+            items: components["schemas"]["ReleaseSummary"][];
+            /** @description Send it back as `cursor` for the next page. Absent on the last page. */
+            nextCursor?: string;
+        };
+        StartCoverUploadRequest: {
+            /** @enum {string} */
+            format: "jpeg" | "png";
+            /** @description Up to 20 MiB. */
+            sizeBytes: number;
+        };
+        /**
+         * @description How to read the cover. A tagged union by `method`, tied to the signed-in account and
+         *     short-lived, like `PlaybackGrant`.
+         */
+        CoverGrant: components["schemas"]["SignedUrlCoverGrant"] | components["schemas"]["CloudFrontCookiesCoverGrant"];
+        SignedUrlCoverGrant: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            method: "signed_url";
+            /** Format: uuid */
+            releaseId: string;
+            /** Format: uri */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        CloudFrontCookiesCoverGrant: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            method: "cloudfront_cookies";
+            /** Format: uuid */
+            releaseId: string;
+            /** Format: uri */
+            streamUrl: string;
+            cookies: {
+                name: string;
+                value: string;
+            }[];
+            /** Format: date-time */
+            expiresAt: string;
         };
         StartUploadRequest: {
             format: components["schemas"]["AudioFormat"];
@@ -534,8 +681,13 @@ export interface components {
             method: "tus";
             /** Format: uuid */
             uploadId: string;
-            /** Format: uuid */
-            trackId: string;
+            /** @enum {string} */
+            kind: "master" | "cover";
+            /**
+             * Format: uuid
+             * @description Set when `kind` is `master`.
+             */
+            trackId?: string;
             /** @example masters/{artist}/{release}/{track}/original */
             objectKey: string;
             sizeBytes: number;
@@ -565,8 +717,13 @@ export interface components {
             method: "s3_multipart";
             /** Format: uuid */
             uploadId: string;
-            /** Format: uuid */
-            trackId: string;
+            /** @enum {string} */
+            kind: "master" | "cover";
+            /**
+             * Format: uuid
+             * @description Set when `kind` is `master`.
+             */
+            trackId?: string;
             /** @example masters/{artist}/{release}/{track}/original */
             objectKey: string;
             sizeBytes: number;
@@ -609,8 +766,13 @@ export interface components {
         ConfirmUploadResponse: {
             /** Format: uuid */
             uploadId: string;
-            /** Format: uuid */
-            trackId: string;
+            /** @enum {string} */
+            kind: "master" | "cover";
+            /**
+             * Format: uuid
+             * @description Set when `kind` is `master`.
+             */
+            trackId?: string;
             releaseState: components["schemas"]["ReleaseState"];
         };
         Party: {
@@ -802,6 +964,33 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listReleases: {
+        parameters: {
+            query?: {
+                state?: components["schemas"]["ReleaseState"];
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of releases. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     createRelease: {
         parameters: {
             query?: never;
@@ -854,6 +1043,38 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    updateRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReleaseRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Release"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getPublicRelease: {
@@ -911,6 +1132,63 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    startCoverUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartCoverUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Upload session. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadSession"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getCover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cover read grant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverGrant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getUpload: {

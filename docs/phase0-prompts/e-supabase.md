@@ -2,7 +2,7 @@ You are session E of Phase 0 of Milk Crate, a music streaming service and market
 
 Session A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "E: Supabase deployment")
-2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for Supabase)
 4. `db/` (session B's migrations, tests and README)
 5. `milk-crate/supabase/*.sql` and `milk-crate/src/lib/supabase.ts` (how the app uses Supabase today; do not change any of it)
@@ -15,6 +15,7 @@ Your job: the Supabase deployment. Implement each platform interface on Supabase
   - Upload session method `tus`: resumable uploads through Supabase Storage. An interrupted upload resumes from the stored offset. Masters are WAV, AIFF or FLAC, up to 5 GiB, stored at `masters/{artist}/{release}/{track}/original` and never altered. Store keys, never public URLs.
   - Confirm: the client sends a SHA-256 of the file. Supabase Storage does not keep a SHA-256 of a stored object, and an Edge Function cannot read and hash 5 GiB within its time and memory limits. Do not pretend it can. Say plainly in the pull request how you check the SHA-256 (for example, the worker streams the object and hashes it, and confirm also checks the stored size) and what it costs for 5 GiB. List it as an open point.
   - Sign a read: playback method `signed_url`, a link made for that listener, short-lived, per request. If Supabase cannot bind a link to one listener, say so plainly in the pull request as an open point; don't pretend.
+  - Cover art: the same `tus` session for a `jpeg` or `png` up to 20 MiB at `art/{artist}/{release}/cover/original`; a signed read for the cover uses the same `signRead` as playback.
   - Delete everything under a prefix (used by takedown).
   - Storage limits: the app's README says the free plan caps a file at 50 MB. Record the file size limit and plan that 5 GiB needs in the stand-up script and the pull request.
 - Jobs: queue a job and report its result. The worker runs on Fly Machines. Build the queue, the worker skeleton (picks up a `process_release` job, reports success or a plain-words failure) and the result path. What processing actually does to a master is not decided; don't invent it. List it as an open point.

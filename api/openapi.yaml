@@ -50,6 +50,40 @@ tags:
     description: Playback access and play events.
 paths:
   /v1/releases:
+    get:
+      tags: [Releases]
+      operationId: listReleases
+      summary: List releases
+      x-account-types: [artist, administrator, internal]
+      x-state-moves: []
+      description: |
+        An artist sees only their own releases, in any state. Administrator and Internal non-admin
+        see every release, so reviewers can pull a queue (for example `state=awaiting_review`).
+        Newest first. Summaries only; use `getRelease` for the full release.
+        Page with `cursor`: send back the `nextCursor` of the last page.
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ReleaseState" }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: A page of releases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleasePage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [Releases]
       operationId: createRelease
@@ -80,6 +114,38 @@ paths:
   /v1/releases/{releaseId}:
     parameters:
       - $ref: "#/components/parameters/ReleaseId"
+    patch:
+      tags: [Releases]
+      operationId: updateRelease
+      summary: Edit a release's details
+      x-account-types: [artist]
+      x-state-moves: []
+      description: |
+        Changes the title, the release date, track titles and track order. Send only what changes.
+        Allowed in `draft`, `uploading`, `awaiting_splits` and `needs_changes`; any other state
+        returns 409. It cannot add or remove tracks and does not change the state.
+        `tracks` lists every track of the release exactly once, in the new order, with a new
+        `title` for any that changes. A list that misses a track, repeats one or names one that
+        is not on the release returns 422.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReleaseRequest"
+      responses:
+        "200":
+          description: The updated release.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
     get:
       tags: [Releases]
       operationId: getRelease
@@ -157,6 +223,67 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/cover/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Uploads]
+      operationId: startCoverUpload
+      summary: Start a cover art upload
+      x-account-types: [artist]
+      x-state-moves: []
+      description: |
+        Same upload session as a master (`tus` or `s3_multipart`), with `kind` set to `cover`,
+        then `getUpload`, `signUploadParts` and `confirmUpload` work the same way.
+        JPEG or PNG, up to 20 MiB. The image must be square; `confirmUpload` returns 422 if it
+        is not or cannot be read.
+        Stored at `art/{artist}/{release}/cover/original` and never altered. A new upload replaces
+        the old cover when confirmed. Allowed in `draft`, `uploading`, `processing`,
+        `awaiting_splits` and `needs_changes`; any other state returns 409. It never changes the
+        release state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartCoverUploadRequest"
+      responses:
+        "201":
+          description: Upload session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/cover:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    get:
+      tags: [Playback]
+      operationId: getCover
+      summary: How to read a release's cover art
+      x-account-types: [end_user, artist, third_party, administrator, internal, internal_accounting]
+      x-state-moves: []
+      description: |
+        Like playback, it answers how to read, as a tagged union (`signed_url` or
+        `cloudfront_cookies`), and carries no fixed URL. Returns 404 when the release has no
+        cover, and 404 unless the release is `live` (the owner, Administrator and Internal
+        non-admin may read it in any state).
+      responses:
+        "200":
+          description: Cover read grant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverGrant"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/uploads/{uploadId}:
     parameters:
       - $ref: "#/components/parameters/UploadId"
@@ -237,6 +364,8 @@ paths:
         The server checks them against the stored object. On a mismatch it returns 422 and
         the upload stays open so the client can retry.
         When every track of the release is confirmed, the server queues processing.
+        For a cover (`kind` is `cover`) it also checks the image is a readable, square JPEG or
+        PNG (422 if not) and does not queue processing or change the release state.
       requestBody:
         required: true
         content:
@@ -741,13 +870,16 @@ components:
     Release:
       type: object
       description: Owner and staff view.
-      required: [id, owner_id, title, releaseDate, state, tracks, createdAt, updatedAt]
+      required: [id, owner_id, title, releaseDate, state, hasCover, tracks, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         owner_id: { type: string, format: uuid }
         title: { type: string }
         releaseDate: { type: string, format: date }
         state: { $ref: "#/components/schemas/ReleaseState" }
+        hasCover:
+          type: boolean
+          description: True when a cover is confirmed. Read it with `getCover`.
         failureReason:
           type: string
           description: Plain words. Only when `state` is `failed`.
@@ -763,7 +895,7 @@ components:
     PublicRelease:
       type: object
       description: Public view. No `owner_id`, rights or review details. Only `live` releases.
-      required: [id, artistId, title, releaseDate, tracks]
+      required: [id, artistId, title, releaseDate, hasCover, tracks]
       properties:
         id: { type: string, format: uuid }
         artistId:
@@ -772,6 +904,9 @@ components:
           description: The artist profile id, not the owner's account id.
         title: { type: string }
         releaseDate: { type: string, format: date }
+        hasCover:
+          type: boolean
+          description: True when a cover exists. Read it with `getCover`.
         tracks:
           type: array
           items:
@@ -792,6 +927,93 @@ components:
           type: string
           description: Set when `decision` is `needs_changes`.
         decidedAt: { type: string, format: date-time }
+    UpdateReleaseRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        releaseDate: { type: string, format: date }
+        tracks:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: Every track exactly once, in the new order.
+          items:
+            type: object
+            required: [id]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string, minLength: 1, maxLength: 200 }
+    ReleaseSummary:
+      type: object
+      required: [id, owner_id, title, releaseDate, state, trackCount, hasCover, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string, format: uuid }
+        title: { type: string }
+        releaseDate: { type: string, format: date }
+        state: { $ref: "#/components/schemas/ReleaseState" }
+        trackCount: { type: integer, minimum: 0 }
+        hasCover: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+    ReleasePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReleaseSummary" }
+        nextCursor:
+          type: string
+          description: Send it back as `cursor` for the next page. Absent on the last page.
+    StartCoverUploadRequest:
+      type: object
+      required: [format, sizeBytes]
+      properties:
+        format:
+          type: string
+          enum: [jpeg, png]
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 20971520
+          description: Up to 20 MiB.
+    CoverGrant:
+      description: |
+        How to read the cover. A tagged union by `method`, tied to the signed-in account and
+        short-lived, like `PlaybackGrant`.
+      oneOf:
+        - $ref: "#/components/schemas/SignedUrlCoverGrant"
+        - $ref: "#/components/schemas/CloudFrontCookiesCoverGrant"
+      discriminator:
+        propertyName: method
+        mapping:
+          signed_url: "#/components/schemas/SignedUrlCoverGrant"
+          cloudfront_cookies: "#/components/schemas/CloudFrontCookiesCoverGrant"
+    SignedUrlCoverGrant:
+      type: object
+      required: [method, releaseId, url, expiresAt]
+      properties:
+        method: { type: string, const: signed_url }
+        releaseId: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+    CloudFrontCookiesCoverGrant:
+      type: object
+      required: [method, releaseId, streamUrl, cookies, expiresAt]
+      properties:
+        method: { type: string, const: cloudfront_cookies }
+        releaseId: { type: string, format: uuid }
+        streamUrl: { type: string, format: uri }
+        cookies:
+          type: array
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: { type: string }
+              value: { type: string }
+        expiresAt: { type: string, format: date-time }
     StartUploadRequest:
       type: object
       required: [format, sizeBytes]
@@ -816,11 +1038,17 @@ components:
           s3_multipart: "#/components/schemas/S3MultipartUploadSession"
     TusUploadSession:
       type: object
-      required: [method, uploadId, trackId, objectKey, sizeBytes, endpoint, offset, expiresAt]
+      required: [method, uploadId, kind, objectKey, sizeBytes, endpoint, offset, expiresAt]
       properties:
         method: { type: string, const: tus }
         uploadId: { type: string, format: uuid }
-        trackId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [master, cover]
+        trackId:
+          type: string
+          format: uuid
+          description: Set when `kind` is `master`.
         objectKey:
           type: string
           examples: ["masters/{artist}/{release}/{track}/original"]
@@ -844,11 +1072,17 @@ components:
         expiresAt: { type: string, format: date-time }
     S3MultipartUploadSession:
       type: object
-      required: [method, uploadId, trackId, objectKey, sizeBytes, partSize, partCount, parts, completedParts, expiresAt]
+      required: [method, uploadId, kind, objectKey, sizeBytes, partSize, partCount, parts, completedParts, expiresAt]
       properties:
         method: { type: string, const: s3_multipart }
         uploadId: { type: string, format: uuid }
-        trackId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [master, cover]
+        trackId:
+          type: string
+          format: uuid
+          description: Set when `kind` is `master`.
         objectKey:
           type: string
           examples: ["masters/{artist}/{release}/{track}/original"]
@@ -902,10 +1136,16 @@ components:
               etag: { type: string }
     ConfirmUploadResponse:
       type: object
-      required: [uploadId, trackId, releaseState]
+      required: [uploadId, kind, releaseState]
       properties:
         uploadId: { type: string, format: uuid }
-        trackId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [master, cover]
+        trackId:
+          type: string
+          format: uuid
+          description: Set when `kind` is `master`.
         releaseState: { $ref: "#/components/schemas/ReleaseState" }
     Party:
       type: object
