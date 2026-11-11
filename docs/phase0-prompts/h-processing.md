@@ -19,7 +19,7 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 2. Where derived files live: a key layout for streaming copies (the master stays at `masters/{artist}/{release}/{track}/original`). Recommended: `streams/{artist}/{release}/{track}/...`, so takedown can delete one prefix per kind, and playback only ever signs a streaming copy, never a master.
 3. What makes a master bad: recommended checks are the declared format matches the file, the whole file decodes, it is not empty or silent, and the duration and sample rate are readable. Failures become plain words for the artist (for example, "This file is not a valid FLAC. Export it again and upload it.").
 4. The SHA-256 check: sessions E and F could not check the client's whole-file SHA-256 cheaply in their own functions (their pull requests say how they left it). Recommended: the worker streams the master once, hashes it as it goes, and compares. Confirm.
-5. Sonic analysis (tempo, energy, brightness, dynamics): in or out for Phase 0? Recommended: out; the slice does not need it and fingerprinting is out of scope.
+5. Sonic analysis (tempo, energy, brightness, dynamics) and smaller sizes of the cover art: in or out for Phase 0? Recommended: both out; the slice does not need them and fingerprinting is out of scope. Covers stay as the uploaded original.
 6. The interface gap below.
 
 ### Interface gap (needs K Marcus's approval)

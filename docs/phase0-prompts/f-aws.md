@@ -2,7 +2,7 @@ You are session F of Phase 0 of Milk Crate, a music streaming service and market
 
 Sessions A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "F: AWS deployment")
-2. `api/openapi.yaml` (the contract, 17 operations; the table of release state moves is at the top)
+2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for AWS)
 4. `db/` (session B's migrations, tests and README)
 
@@ -15,6 +15,7 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
   - Progress and resume: list the parts already stored so an interrupted upload picks up where it stopped. Sign more parts on request (they expire).
   - Confirm: complete the multipart upload with the client's part ETags, and check the checksums. S3 uploads carry CRC64NVME (full-object) and the client also sends a SHA-256 of the file. A multipart SHA-256 in S3 is a checksum of the parts, so it cannot equal a whole-file SHA-256. Do not pretend it does. Say plainly in the pull request how you check the SHA-256 (for example, the worker reads the object and hashes it) and what it costs for 5 GiB. List it as an open point.
   - Sign a read: playback method `cloudfront_cookies`, CloudFront signed cookies for that listener plus the stream address. Keep them short-lived.
+  - Cover art: the same `s3_multipart` session for a `jpeg` or `png` up to 20 MiB at `art/{artist}/{release}/cover/original`; a read for the cover uses the same `signRead` as playback.
   - Delete everything under a prefix (used by takedown).
 - Jobs: queue a job and report its result. The worker runs on Fargate. Build the queue, the worker skeleton (picks up a `process_release` job, reports success or a plain-words failure) and the result path. What processing actually does to a master is not decided; don't invent it. List it as an open point.
 - Schedules: run a SQL function at a time, with EventBridge Scheduler calling the RDS Data API (one-time schedules that delete themselves after running; setting the same name again replaces it).

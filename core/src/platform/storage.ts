@@ -1,9 +1,10 @@
 import type { AudioFormat, ObjectKey } from "./types";
-import type { PlaybackGrant } from "./playback";
+import type { ReadGrantBody } from "./playback";
 
 export interface StartUploadInput {
   key: ObjectKey;
-  format: AudioFormat;
+  /** Audio for masters, `jpeg` or `png` for cover art. */
+  format: AudioFormat | "jpeg" | "png";
   sizeBytes: number;
 }
 
@@ -63,10 +64,8 @@ export interface ObjectStorage {
   /** More presigned parts (s3_multipart only). */
   signParts(key: ObjectKey, providerUploadId: string, partNumbers: number[]): Promise<SignedPart[]>;
   confirmUpload(input: ConfirmUploadInput): Promise<ConfirmUploadResult>;
-  /** The core adds the trackId. */
-  signRead(input: SignReadInput): Promise<DistributiveOmit<PlaybackGrant, "trackId">>;
+  /** The core adds the track or release id. */
+  signRead(input: SignReadInput): Promise<ReadGrantBody>;
   /** Delete every object whose key starts with the prefix. */
   delete(prefix: ObjectKey): Promise<void>;
 }
-
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

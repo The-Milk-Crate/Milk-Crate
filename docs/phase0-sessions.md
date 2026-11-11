@@ -30,7 +30,7 @@ prompt for your session from `docs/phase0-prompts/` (index below).
   Then stop. K Marcus and a separate review agent review it.
 
 ## What exists
-- Contract: `api/openapi.yaml` (17 operations). Lint: `cd milk-crate && npm run api:lint`.
+- Contract: `api/openapi.yaml` (21 operations). Lint: `cd milk-crate && npm run api:lint`.
   The table of release state moves is at the top of the file.
 - Interfaces: `core/src/platform/` (the seven modules: identity, storage, jobs, schedules,
   server functions, secrets and email, infrastructure; an eighth, `Database`; plus
@@ -91,6 +91,9 @@ Branch `phase0/b-database`.
   `public.admins` row means `administrator`. Session C writes the claim hook and read rules.
 - Play events: a batch with the same idempotency key counts once. The server decides what
   is a qualified stream (30 seconds or more). The client never sends counts.
+- Cover art (`art/{artist}/{release}/cover/original`), `kind` on uploads, editable states for a
+  release's details and track order, and a list query (summaries, newest first, state filter,
+  keyset cursor paging).
 - Master keys follow `masters/{artist}/{release}/{track}/original`. Store keys, never public URLs.
 - SQL functions the schedules and handlers call, such as "make this release live on its date".
 - Audit rows for takedown, listing what was removed.
@@ -135,6 +138,8 @@ Branch `phase0/c-read-rules`.
   endpoints refuse them. Test both cases.
 - The claim is read when the token is issued, so a role change shows after the token refreshes.
   Say so in your tests and notes.
+- Listing and covers: an artist lists only their own releases; staff list all; a cover reads like
+  playback (owner and staff any state, everyone else only when `live`).
 - The invitee path: don't open the tables to invitees. Allow only B's narrow invitation function
   (and the write that records a reply). Test a valid code, a wrong code and an expired code.
 - Tests that sign in as each account type and check what each can read.
@@ -218,7 +223,7 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
 - Per track: read the master as a stream, check it, hash it (the client's SHA-256), make the
   streaming copy, and record what playback needs. The master is never altered. Safe to run twice.
 - Before building, ask K Marcus: streaming format and bitrate, derived-file key layout, what makes
-  a master bad, the SHA-256 check, sonic analysis in or out, and the storage interface addition.
+  a master bad, the SHA-256 check, sonic analysis and cover sizes in or out, and the storage interface addition.
 - `ObjectStorage` has no read or write for a worker. With K Marcus's approval only, add the
   smallest addition in `core/` and in the storage modules of E and F.
 
