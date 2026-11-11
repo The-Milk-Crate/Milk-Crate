@@ -57,6 +57,7 @@ E, F and G stage 1 merged.
 ## Kickoff prompts
 | Session | Prompt |
 |---|---|
+| A (done) | `docs/phase0-prompts/a-contract.md`. The original brief, as first given. The contract has changed since: see `api/openapi.yaml`. |
 | B | `docs/phase0-prompts/b-database.md` |
 | C | `docs/phase0-prompts/c-read-rules.md` |
 | D | `docs/phase0-prompts/d-ci.md` |
@@ -82,6 +83,9 @@ Branch `phase0/b-database`.
   the hash and expiry, so the old code stops working. Count sends per party per day. Never
   store or return the code itself. Also count wrong code
   attempts per party (for `getInvitation` and `respondToSplit` rate limits). Session G checks all three in one transaction.
+- The invitation read: a narrow SQL function for `getInvitation` that takes the release id, the
+  party id and the code's hash and returns only the contract's `Invitation` fields, without
+  using up the code and without exposing other parties, emails or `owner_id`.
 - The staff table `(user_id, account_type)` for `internal`, `internal_accounting` and
   `third_party`, with the staff and `artist` exclusion enforced in the database. Every
   `public.admins` row means `administrator`. Session C writes the claim hook and read rules.
@@ -131,6 +135,8 @@ Branch `phase0/c-read-rules`.
   endpoints refuse them. Test both cases.
 - The claim is read when the token is issued, so a role change shows after the token refreshes.
   Say so in your tests and notes.
+- The invitee path: don't open the tables to invitees. Allow only B's narrow invitation function
+  (and the write that records a reply). Test a valid code, a wrong code and an expired code.
 - Tests that sign in as each account type and check what each can read.
 
 Done when: tests prove each account type reads only what the contract allows, on both
