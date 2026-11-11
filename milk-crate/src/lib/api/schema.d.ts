@@ -198,6 +198,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/releases/{releaseId}/rights/parties/{partyId}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept or decline a split invitation
+         * @description Called by the invited person. The server checks that the signed-in account is the
+         *     one invited (the verified email matches the invitation). Moves the party's
+         *     `state` from `invited` to `accepted` or `declined`. No release state changes;
+         *     `submitRelease` checks the parties.
+         *     Returns 409 if the party already replied or the release is `taken_down`.
+         */
+        post: operations["respondToSplit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/releases/{releaseId}/submit": {
         parameters: {
             query?: never;
@@ -282,7 +309,8 @@ export interface paths {
         put?: never;
         /**
          * Take a release down
-         * @description The server removes listener access and deletes the files, and writes an audit row.
+         * @description The server removes listener access and deletes every file of the release (masters,
+         *     streaming copies and art), and writes an audit row that lists what was removed.
          *     Calling it again on a taken-down release returns 409.
          */
         post: operations["takedownRelease"];
@@ -935,6 +963,41 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    respondToSplit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    response: "accept" | "decline";
+                };
+            };
+        };
+        responses: {
+            /** @description Updated rights. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rights"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     submitRelease: {

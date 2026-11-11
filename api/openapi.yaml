@@ -290,6 +290,48 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/rights/parties/{partyId}/respond:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+      - name: partyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Releases]
+      operationId: respondToSplit
+      summary: Accept or decline a split invitation
+      x-account-types: [end_user, artist, third_party]
+      x-state-moves: []
+      description: |
+        Called by the invited person. The server checks that the signed-in account is the
+        one invited (the verified email matches the invitation). Moves the party's
+        `state` from `invited` to `accepted` or `declined`. No release state changes;
+        `submitRelease` checks the parties.
+        Returns 409 if the party already replied or the release is `taken_down`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response:
+                  type: string
+                  enum: [accept, decline]
+      responses:
+        "200":
+          description: Updated rights.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rights"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/releases/{releaseId}/submit:
     parameters:
       - $ref: "#/components/parameters/ReleaseId"
@@ -384,7 +426,8 @@ paths:
       x-account-types: [administrator]
       x-state-moves: ["any state except taken_down → taken_down"]
       description: |
-        The server removes listener access and deletes the files, and writes an audit row.
+        The server removes listener access and deletes every file of the release (masters,
+        streaming copies and art), and writes an audit row that lists what was removed.
         Calling it again on a taken-down release returns 409.
       requestBody:
         required: true
