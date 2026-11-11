@@ -56,7 +56,7 @@ export interface SignReadInput {
   userId: string;
 }
 
-/** Start an upload, confirm it, sign a read, delete. */
+/** Start an upload, confirm it, read its first bytes, sign a read, delete. */
 export interface ObjectStorage {
   startUpload(input: StartUploadInput): Promise<StorageUpload>;
   /** Progress of an upload that was interrupted. */
@@ -64,7 +64,15 @@ export interface ObjectStorage {
   /** More presigned parts (s3_multipart only). */
   signParts(key: ObjectKey, providerUploadId: string, partNumbers: number[]): Promise<SignedPart[]>;
   confirmUpload(input: ConfirmUploadInput): Promise<ConfirmUploadResult>;
-  /** The core adds the track or release id. */
+  /**
+   * The first bytes of a stored object, at most `maxBytes` (a ranged read). Used to read a
+   * cover's width and height from its PNG or JPEG header. Not for masters or large reads.
+   */
+  readHead(key: ObjectKey, maxBytes: number): Promise<Uint8Array>;
+  /**
+   * The core adds the track or release id. Playback signs only a streaming copy under
+   * `streams/{artist}/{release}/{track}/`, never a master.
+   */
   signRead(input: SignReadInput): Promise<ReadGrantBody>;
   /** Delete every object whose key starts with the prefix. */
   delete(prefix: ObjectKey): Promise<void>;

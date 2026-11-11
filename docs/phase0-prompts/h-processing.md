@@ -16,20 +16,20 @@ Today the worker skeletons (Fly Machines on Supabase, Fargate on AWS) pick up a 
 ### Before you build anything: ask K Marcus
 Don't guess these. Ask them in this session, one round, with the recommended answer first, and write the answers in your pull request.
 1. Streaming copies: which format and bitrate? Recommended for Phase 0: one rendition, matching what the desktop app does today (320 kbps MP3), so listeners hear no change. Roadmap options (Opus or AAC at several bitrates) can wait.
-2. Where derived files live: a key layout for streaming copies (the master stays at `masters/{artist}/{release}/{track}/original`). Recommended: `streams/{artist}/{release}/{track}/...`, so takedown can delete one prefix per kind, and playback only ever signs a streaming copy, never a master.
+2. Where derived files live (settled): streaming copies go under `streams/{artist}/{release}/{track}/`; you only choose the file names inside. Playback signs only there, and takedown deletes that prefix. Just confirm the file names.
 3. What makes a master bad: recommended checks are the declared format matches the file, the whole file decodes, it is not empty or silent, and the duration and sample rate are readable. Failures become plain words for the artist (for example, "This file is not a valid FLAC. Export it again and upload it.").
-4. The SHA-256 check: sessions E and F could not check the client's whole-file SHA-256 cheaply in their own functions (their pull requests say how they left it). Recommended: the worker streams the master once, hashes it as it goes, and compares. Confirm.
+4. The SHA-256 check (settled): the worker streams the master once, hashes it as it goes, and compares with the SHA-256 recorded at confirm. A mismatch fails the release with plain words; the artist replaces the master (`failed` → `uploading`). Nothing to ask.
 5. Sonic analysis (tempo, energy, brightness, dynamics) and smaller sizes of the cover art: in or out for Phase 0? Recommended: both out; the slice does not need them and fingerprinting is out of scope. Covers stay as the uploaded original.
 6. The interface gap below.
 
 ### Interface gap (needs K Marcus's approval)
-`ObjectStorage` has no way for a worker to read a master or write a streaming copy. Propose the smallest addition (for example `read(key)` returning a stream, and `put(key, stream)`). If K Marcus approves it, you may make exactly that addition in `core/src/platform/storage.ts` and the matching minimal implementations in the storage modules of `deploy/supabase/` and `deploy/aws/`, and nothing else in those folders. If not approved, stop and write what is blocked.
+`ObjectStorage` has only `readHead` (small ranged reads, for cover headers), no way for a worker to stream a master or write a streaming copy. Propose the smallest addition (for example `read(key)` returning a stream, and `put(key, stream)`). If K Marcus approves it, you may make exactly that addition in `core/src/platform/storage.ts` and the matching minimal implementations in the storage modules of `deploy/supabase/` and `deploy/aws/`, and nothing else in those folders. If not approved, stop and write what is blocked.
 
 ### Build (after the answers)
 - The processing piece: given a `process_release` job, for each track of the release:
   - Read the master as a stream (never load a 5 GiB file into memory), check it, hash it, compare the SHA-256 to what the client sent, and make the streaming copy.
   - Write the streaming copy under the agreed key. The master is never altered.
-  - Record what is needed to play and show it (duration, sample rate, rendition key) through `Database`, with parameters.
+  - Record what is needed to play and show it (duration, sample rate, streaming copy key) in session B's track columns through `Database`, with parameters. Session G's `getPlayback` signs that key.
 - The release result: success when every track passes; failure with one plain-words reason for the artist when any track fails. Report it through the job result path so the release moves to `awaiting_splits` or `failed` (session G's function applies it; don't move states yourself).
 - Safe to run twice: a retried job gives the same result, never leaves half-written derived files behind (clean up on failure), and never touches the master.
 - The container: one `Dockerfile` for the worker (Node 22 plus ffmpeg), and the thin entry point each platform's worker skeleton calls. Don't change the platforms' worker skeletons beyond calling your function.
@@ -60,5 +60,5 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 - Every track of a release is checked, hashed and turned into a streaming copy by one shared piece, and the release result reaches `awaiting_splits` or `failed` through the existing job result path.
 - The tests pass, including the failure cases and cleanup; `core/` and `milk-crate/` type-check and `cd milk-crate && npm test` still passes.
 - The `Dockerfile` and entry point are ready for both platforms' workers to use.
-- The pull request description lists: K Marcus's answers to the six questions, what you built, what you ran and its result, what you could not run (at least the image build), any change made to another session's folders, the open points for K Marcus, and anything you assumed.
+- The pull request description lists: K Marcus's answers to the open questions (1, 3, 5 and 6) and the file names chosen under `streams/`, what you built, what you ran and its result, what you could not run (at least the image build), any change made to another session's folders, the open points for K Marcus, and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

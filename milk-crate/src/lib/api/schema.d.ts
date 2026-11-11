@@ -108,6 +108,8 @@ export interface paths {
          *     The master is stored at `masters/{artist}/{release}/{track}/original` and is
          *     never altered. Responses carry keys, never public URLs.
          *     Starting a new upload for a track that already has a master replaces that master.
+         *     Allowed in `draft`, `uploading`, `needs_changes` and `failed`; any other state returns 409.
+         *     From `failed` it clears `failureReason`.
          */
         post: operations["startUpload"];
         delete?: never;
@@ -231,8 +233,11 @@ export interface paths {
         /**
          * Confirm an upload
          * @description The client sends the SHA-256 of the file. S3 uploads also send CRC64NVME.
-         *     The server checks them against the stored object. On a mismatch it returns 422 and
-         *     the upload stays open so the client can retry.
+         *     Here the server checks what storage can check cheaply: the stored size, and on S3 the
+         *     CRC64NVME. On a mismatch it returns 422 and the upload stays open so the client can retry.
+         *     The SHA-256 is recorded here and checked by processing, which streams the master. A
+         *     SHA-256 mismatch there moves the release to `failed` with a plain reason, and the artist
+         *     replaces the master with `startUpload`.
          *     When every track of the release is confirmed, the server queues processing.
          *     For a cover (`kind` is `cover`) it also checks the image is a readable, square JPEG or
          *     PNG (422 if not) and does not queue processing or change the release state.
@@ -310,7 +315,8 @@ export interface paths {
         put?: never;
         /**
          * See what a split invitation is for, before replying
-         * @description For the invited person, signed in with any account. It is a POST so the `inviteCode` goes
+         * @description For the invited person, signed in with any non-staff account (`end_user`, `artist` or
+         *     `third_party`). It is a POST so the `inviteCode` goes
          *     in the body and stays out of URLs and logs. It does not use up the code.
          *     Returns only the release basics and this one party's own share. Other parties' names,
          *     emails and shares are never included, and neither is `owner_id`.
@@ -338,13 +344,15 @@ export interface paths {
         put?: never;
         /**
          * Accept or decline a split invitation
-         * @description Called by the invited person, signed in with any account. The invitation email carries
+         * @description Called by the invited person, signed in with any non-staff account (`end_user`, `artist`
+         *     or `third_party`). The invitation email carries
          *     a single-use `inviteCode` that expires. The code is never returned by any endpoint.
          *     A valid code links the signed-in account to the party and moves the party's `state`
          *     from `invited` to `accepted` or `declined`. The invited email address does not have to
          *     match the account. No release state changes; `submitRelease` checks the parties.
-         *     Returns 403 for a wrong or expired code, and 409 if the party already replied or the
-         *     release is `taken_down`.
+         *     Returns 403 for a wrong or expired code, 409 if the party already replied or the
+         *     release is `taken_down`, and 429 after too many wrong codes. Wrong codes count
+         *     together with `getInvitation`'s, per party.
          */
         post: operations["respondToSplit"];
         delete?: never;
@@ -438,7 +446,8 @@ export interface paths {
         /**
          * Take a release down
          * @description The server removes listener access and deletes every file of the release (masters,
-         *     streaming copies and art), and writes an audit row that lists what was removed.
+         *     streaming copies and art: the `masters/`, `streams/` and `art/` prefixes of the release),
+         *     and writes an audit row that lists what was removed.
          *     Calling it again on a taken-down release returns 409.
          */
         post: operations["takedownRelease"];
@@ -464,6 +473,8 @@ export interface paths {
          *     `cloudfront_cookies` (AWS: signed cookies plus the stream address).
          *     Do not assume a URL format. Returns 404 unless the track's release is `live`
          *     (or the caller is its owner or a reviewer).
+         *     The grant is for the track's streaming copy under `streams/{artist}/{release}/{track}/`,
+         *     never for a master. Returns 404 when the track has no streaming copy yet.
          */
         get: operations["getPlayback"];
         put?: never;
@@ -1412,6 +1423,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     submitRelease: {
