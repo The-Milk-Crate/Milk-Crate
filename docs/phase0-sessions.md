@@ -183,7 +183,8 @@ Branch `phase0/d-ci`. The only session that may edit `.github/workflows/`.
 - New workflow files only. Don't edit `build.yml` or `pages.yml`.
 - On pull requests: lint the contract, type-check `core/` and `milk-crate/`, run
   `cd milk-crate && npm test`, regenerate the client and fail if `schema.d.ts` is stale.
-- Later: run B's migration tests against a Postgres service, and E's and F's tests.
+- Run B's database test, `bash db/test/run.sh` (it starts its own throwaway PostgreSQL 16
+  cluster; no Postgres service). Later, E's and F's tests.
 - No secrets in workflows for this phase. Deploy jobs wait for K Marcus.
 
 Done when: a pull request that breaks the contract, the types or the tests goes red, and a

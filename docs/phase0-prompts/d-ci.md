@@ -1,10 +1,10 @@
 You are session D of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Session A is merged. Read these first, in this order:
+Sessions A and B are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "D: CI")
 2. `.github/workflows/build.yml` and `.github/workflows/pages.yml` (read only; you must not edit them)
 3. `api/README.md`, then the scripts in `milk-crate/package.json` (`api:lint`, `api:client`, `api:core`, `test`)
-4. `core/package.json` and `db/` if it exists (session B's migrations and test)
+4. `core/package.json` and `db/` (session B's migrations, test and README)
 
 Your job: continuous integration for pull requests. Today nothing checks a pull request: both existing workflows run only on pushes to `main`. You are the only session that may add files under `.github/workflows/`.
 
@@ -15,7 +15,12 @@ Your job: continuous integration for pull requests. Today nothing checks a pull 
   - `client-fresh`: regenerate the client (`npm run api:client`) and fail if `milk-crate/src/lib/api/schema.d.ts` differs from what is committed (`git diff --exit-code`).
   - `types`: type-check `core/` (`npm run api:core`) and `milk-crate/` (`npx tsc --noEmit`).
   - `desktop-tests`: `cd milk-crate && npm test`.
-  - `database`: run session B's migration test exactly as `db/README.md` documents. Add this job only if `db/test/` is already merged. If it is not, don't guess; list it as an open point. If the script does not work on the GitHub runner, do not edit `db/`; describe the failure in the pull request for session B and K Marcus.
+  - `database`: run session B's test exactly as `db/README.md` documents: `bash db/test/run.sh` from the repository root.
+    - It starts its own throwaway PostgreSQL cluster, so don't add a Postgres service container.
+    - It needs PostgreSQL 16 server binaries. It looks in `/usr/lib/postgresql/16/bin`, then `pg_config --bindir`, then `PATH`, and `PG_BIN` overrides that. Pin `runs-on: ubuntu-24.04`, whose image ships PostgreSQL 16; if the binaries are missing, install `postgresql-16` with apt in the job.
+    - The script runs as the normal runner user. Session B checked it as a non-root user.
+    - Run it when `db/**` or the workflow file changes. Session C's tests will sit beside it in `db/test/` later.
+    - If the script fails on the runner, do not edit `db/`. Describe the failure in the pull request for K Marcus.
 - Use `npm ci` (not `npm install`) in each package, with the npm cache keyed on the lockfiles. Use Node 22.
 - Pin every third-party action to a full commit SHA with the version in a comment. Use the minimum permissions (`contents: read`), set a timeout on every job, and cancel older runs of the same pull request (`concurrency`).
 - Paths: run only when something relevant changed (`api/**`, `core/**`, `db/**`, `milk-crate/**`, and the workflow file itself). A docs-only change should not need the heavy jobs.
