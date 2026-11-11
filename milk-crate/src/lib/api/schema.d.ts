@@ -212,11 +212,13 @@ export interface paths {
         put?: never;
         /**
          * Accept or decline a split invitation
-         * @description Called by the invited person. The server checks that the signed-in account is the
-         *     one invited (the verified email matches the invitation). Moves the party's
-         *     `state` from `invited` to `accepted` or `declined`. No release state changes;
-         *     `submitRelease` checks the parties.
-         *     Returns 409 if the party already replied or the release is `taken_down`.
+         * @description Called by the invited person, signed in with any account. The invitation email carries
+         *     a single-use `inviteCode` that expires. The code is never returned by any endpoint.
+         *     A valid code links the signed-in account to the party and moves the party's `state`
+         *     from `invited` to `accepted` or `declined`. The invited email address does not have to
+         *     match the account. No release state changes; `submitRelease` checks the parties.
+         *     Returns 403 for a wrong or expired code, and 409 if the party already replied or the
+         *     release is `taken_down`.
          */
         post: operations["respondToSplit"];
         delete?: never;
@@ -980,6 +982,8 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     response: "accept" | "decline";
+                    /** @description From the invitation email. Single use. */
+                    inviteCode: string;
                 };
             };
         };

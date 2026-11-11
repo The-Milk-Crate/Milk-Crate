@@ -160,6 +160,11 @@ the cross-cloud scenario runs against both deployments' code.
 
 - **More than one role.** Not allowed. As written in session C above.
 
+- **Who is "the invited person".** An invite code. The invitation email carries a single-use,
+  expiring code (`inviteCode`). The invitee signs in with any account and sends the code to
+  `respondToSplit`; the account that replies is linked to the party. The invited email does
+  not have to match. Store only a hash of the code. Never return the code from any endpoint.
+  Session B holds the hash, expiry and used-at; session G checks them in one transaction.
+
 ## Open before work starts
-1. **Who is "the invited person".** `respondToSplit` assumes the verified email matches the
-   invitation (sessions C and G).
+None.
