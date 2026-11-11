@@ -31,8 +31,9 @@ Paste the shared rules and your own section into your session.
 ## What exists
 - Contract: `api/openapi.yaml` (15 operations). Lint: `cd milk-crate && npm run api:lint`.
   The table of release state moves is at the top of the file.
-- Interfaces: `core/src/platform/` (identity, storage, jobs, schedules, server functions,
-  secrets and email, infrastructure, plus `PlaybackGrant` and shared types).
+- Interfaces: `core/src/platform/` (the seven modules: identity, storage, jobs, schedules,
+  server functions, secrets and email, infrastructure; an eighth, `Database`; plus
+  `PlaybackGrant` and shared types).
   Check: `cd milk-crate && npm run api:core`.
 - Generated client: `milk-crate/src/lib/api/`. Regenerate: `cd milk-crate && npm run api:client`.
 
@@ -61,6 +62,8 @@ Branch `phase0/b-database`.
 - Master keys follow `masters/{artist}/{release}/{track}/original`. Store keys, never public URLs.
 - Migrations as plain SQL files, safe to run twice, with a test that applies them to an empty
   Postgres and checks the state rules.
+- Write SQL that works through `Database` on both sides: parameters as `$1`, `$2`, no
+  Postgres-only client features. Keep each call's result small (RDS Data API: 1 MB, 45 seconds).
 - Don't write read rules (session C) or handlers (session G).
 
 Done when: the migrations apply cleanly to an empty Postgres, the tests pass, and every table
@@ -96,7 +99,8 @@ Branch `phase0/e-supabase`.
 - Implement each platform interface on Supabase: identity from the token, storage (TUS
   resumable uploads and signed links unique to the listener), jobs (worker on Fly Machines),
   schedules (pg_cron), server functions (Edge Functions on Deno), secrets and email,
-  infrastructure (stand up, confirm, tear down).
+  infrastructure (stand up, confirm, tear down), and `Database` over a Postgres connection
+  (pooled, with transactions).
 - Upload session method `tus`; playback method `signed_url`.
 - Don't create real projects or use real keys. Provide the code, config and a script K Marcus
   runs. Tests use local Supabase or mocks.
@@ -111,7 +115,8 @@ Branch `phase0/f-aws`.
   multipart with CRC64NVME, CloudFront signed cookies plus the stream address), jobs (worker
   on Fargate), schedules (EventBridge Scheduler calling the RDS Data API), server functions
   (API Gateway and Lambda on Node 22), secrets and email, infrastructure (stand up, confirm,
-  tear down).
+  tear down), and `Database` over the RDS Data API (parameters, transactions through its
+  transaction id, results paged under its 1 MB limit).
 - Upload session method `s3_multipart`; playback method `cloudfront_cookies`.
 - Don't create real resources or use real keys. Provide the code, infrastructure definition
   and a script K Marcus runs. Tests use mocks or local emulators.
@@ -123,7 +128,8 @@ ready for K Marcus to run.
 ## G: Shared core handlers and the cross-cloud check
 Branch `phase0/g-core`.
 - One handler per operation in `core/`, using `Request`, `Response` and the modules from
-  `Modules`. Errors use the one `Error` shape. Enforce the account types and state moves in
+  `Modules`. Reach the database only through `Database`, with parameters and a
+  transaction wherever more than one write must go together. Errors use the one `Error` shape. Enforce the account types and state moves in
   the contract.
 - Unit tests with fake modules. The same handler code runs on Deno and Node.
 - After E and F: a test suite that runs the same scenario against both deployments (create a
@@ -133,10 +139,11 @@ Branch `phase0/g-core`.
 Done when: every operation has a handler and tests, the suite passes with fake modules, and
 the cross-cloud scenario runs against both deployments' code.
 
+## Settled before work starts
+- **Database access.** An eighth interface, `Database` (`query` and `transaction`), in
+  `core/src/platform/database.ts`. Supabase uses a Postgres connection; AWS uses the RDS Data API.
+
 ## Open before work starts
-1. **Database access.** The seven modules have no database module, but the handlers need one
-   (Supabase client or RDS Data API). K Marcus to decide how `core/` reaches the database
-   before B and G start. Session A did not decide this.
-2. **Reviewer claim mapping.** How `admins` maps to `administrator` (session C).
-3. **Who is "the invited person".** `respondToSplit` assumes the verified email matches the
+1. **Reviewer claim mapping.** How `admins` maps to `administrator` (session C).
+2. **Who is "the invited person".** `respondToSplit` assumes the verified email matches the
    invitation (sessions C and G).
