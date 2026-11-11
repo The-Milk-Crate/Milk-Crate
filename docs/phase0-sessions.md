@@ -59,6 +59,9 @@ Branch `phase0/b-database`.
 - SQL functions the schedules and handlers call, such as "make this release live on its date".
 - Play events: a batch with the same idempotency key counts once. The server decides what
   is a qualified stream (30 seconds or more). The client never sends counts.
+- Split invite codes (settled): store only a hash of the code, with `expires_at` set to 14 days
+  after the invitation is sent, plus `used_at`. A code works once. Session G checks all three
+  in one transaction.
 - Master keys follow `masters/{artist}/{release}/{track}/original`. Store keys, never public URLs.
 - Migrations as plain SQL files, safe to run twice, with a test that applies them to an empty
   Postgres and checks the state rules.
@@ -164,7 +167,9 @@ the cross-cloud scenario runs against both deployments' code.
   expiring code (`inviteCode`). The invitee signs in with any account and sends the code to
   `respondToSplit`; the account that replies is linked to the party. The invited email does
   not have to match. Store only a hash of the code. Never return the code from any endpoint.
-  Session B holds the hash, expiry and used-at; session G checks them in one transaction.
+  Session B holds the hash, expiry (14 days) and used-at; session G checks them in one transaction.
 
 ## Open before work starts
-None.
+1. **Resending an invitation.** A code that expires, or an email that is lost, needs a new code.
+   The contract has no call for it. Decide whether `putRights` issues a new code when a party
+   is still `invited`, or whether to add a resend endpoint.
