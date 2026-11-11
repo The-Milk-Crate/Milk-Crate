@@ -1,0 +1,47 @@
+You are session F of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
+
+Sessions A and B are merged. Read these first, in this order:
+1. `docs/phase0-sessions.md` (shared rules and your section, "F: AWS deployment")
+2. `api/openapi.yaml` (the contract, 16 operations; the table of release state moves is at the top)
+3. `core/src/platform/` (the eight interfaces; you implement all of them for AWS)
+4. `db/` (session B's migrations, tests and README)
+
+Your job: the AWS deployment. Implement each platform interface on AWS, and the entry point wiring for Lambda. Session E does the same for Supabase, and session G writes the shared handlers. Don't write handlers.
+
+### Build (each one a module that implements its interface in `core/src/platform/`)
+- Identity: who is calling, from the Cognito token (verify it against the pool's published keys). The `account_type` claim comes from Cognito groups whose names are exactly the `AccountType` values (session C defines the source; you read the groups and map them to the claim). Return null for no valid token.
+- Object storage:
+  - Upload session method `s3_multipart`: S3 presigned multipart. Masters are WAV, AIFF or FLAC, up to 5 GiB, stored at `masters/{artist}/{release}/{track}/original` and never altered. Store keys, never public URLs.
+  - Progress and resume: list the parts already stored so an interrupted upload picks up where it stopped. Sign more parts on request (they expire).
+  - Confirm: complete the multipart upload with the client's part ETags, and check the checksums. S3 uploads carry CRC64NVME (full-object) and the client also sends a SHA-256 of the file. A multipart SHA-256 in S3 is a checksum of the parts, so it cannot equal a whole-file SHA-256. Do not pretend it does. Say plainly in the pull request how you check the SHA-256 (for example, the worker reads the object and hashes it) and what it costs for 5 GiB. List it as an open point.
+  - Sign a read: playback method `cloudfront_cookies`, CloudFront signed cookies for that listener plus the stream address. Keep them short-lived.
+  - Delete everything under a prefix (used by takedown).
+- Jobs: queue a job and report its result. The worker runs on Fargate. Build the queue, the worker skeleton (picks up a `process_release` job, reports success or a plain-words failure) and the result path. What processing actually does to a master is not decided; don't invent it. List it as an open point.
+- Schedules: run a SQL function at a time, with EventBridge Scheduler calling the RDS Data API (one-time schedules that delete themselves after running; setting the same name again replaces it).
+- Server functions: a generic Lambda adapter on Node 22, behind API Gateway, that turns the request event into a web-standard `Request`, calls a shared handler with the modules, and turns the `Response` back. Keep it small. The one-entry-point-per-operation files wait until session G's handlers exist; don't guess their path. List it as an open point.
+- Secrets and email: get a secret by name (Secrets Manager or Parameter Store; pick the simpler one and say why) and send the templates named in `secrets-email.ts` through SES.
+- Database: the RDS Data API behind the `Database` interface. Translate `$1`, `$2` parameters into the Data API's form, carry transactions through its transaction id, and handle its limits (1 MB per response, 45 seconds per call). Never build SQL by joining values into text.
+- Infrastructure: stand up, confirm, tear down, as an infrastructure definition plus a script K Marcus runs (Aurora PostgreSQL with the Data API on, Cognito pool and groups, S3 bucket with the checksum setting, CloudFront with a key group, API Gateway, Lambda, SQS or equivalent, Fargate, EventBridge Scheduler, SES, IAM). Propose the simplest definition tool that fits (CDK, Terraform, SAM or plain CloudFormation), say why, and list the choice as an open point. You write it; you do not run it against anything real.
+
+### Constraints
+- No real AWS account, no real resources, no keys. Code, infrastructure definition and a script are the deliverable. Tests use mocks.
+- This environment has PostgreSQL 16 (no Docker daemon, no AWS access). The Data API has no local emulator, so test the parameter translation, transaction handling and result mapping with mocks, and rely on session B's tests for the SQL itself. Mock S3, CloudFront, SQS, ECS, EventBridge and SES at their SDK edges and check each with a test. Say what you could not run.
+- Put your code under a new top-level folder, `deploy/aws/`. No platform SDK imports in `core/`; the AWS SDK lives only in your folder.
+- Upload session shape and playback shape are the contract's: `s3_multipart` and `cloudfront_cookies`. Don't change them.
+- Don't change the app's existing tables, policies, screens or Supabase calls.
+- Don't write handlers (session G), read rules or the claim source (session C), CI (session D), or Supabase code (session E).
+
+### Rules (all apply)
+- Work on a new branch from `milk-crate-backend-poc` named `phase0/f-aws`. Push only that branch. Open one draft pull request into `milk-crate-backend-poc`.
+- Never push to `main` or `milk-crate-backend-poc`, never push or create tags, never merge any pull request (including your own), never change repository settings, rulesets, environments or secrets.
+- Don't touch `.github/workflows/` (session D owns CI). `build.yml` publishes a desktop release on every push to `main`, so nothing here may need a change to it.
+- You get no keys, tokens or passwords. Never print or commit a secret. Where a real credential is needed, write what is needed and stop.
+- The contract is fixed. If it needs to change, don't edit it; write the change and the reason in your pull request as an open point for K Marcus.
+- Ask before deciding anything this brief doesn't cover. List open points in the pull request description, not as guesses in the code.
+- Plain, short wording in comments and descriptions.
+
+### Done when
+- Every interface has an AWS implementation with tests that pass against mocks (`core/` and `milk-crate/` type-check, and `cd milk-crate && npm test` still passes).
+- The infrastructure definition, stand-up script and tear-down are ready for K Marcus to run, and nothing in them needs a secret in the repository.
+- The pull request description lists: what you built, what you ran and its result, what you could not run here, the open points for K Marcus (at least: the SHA-256 check and its cost, processing work, entry points waiting on session G, the infrastructure tool), and anything you assumed.
+Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

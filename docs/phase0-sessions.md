@@ -5,7 +5,8 @@ Session A wrote the contract (`api/openapi.yaml`) and the platform interfaces
 concept for release publishing and plays, on two deployments from one codebase:
 **Supabase** and **AWS**. Anything that runs on one must run on the other.
 
-Paste the shared rules and your own section into your session.
+Paste the shared rules and your own section into your session, or paste the ready-made kickoff
+prompt for your session from `docs/phase0-prompts/` (index below).
 
 ## Shared rules (every session)
 - Work on a new branch from `milk-crate-backend-poc` named `phase0/<letter>-<topic>`.
@@ -38,8 +39,10 @@ Paste the shared rules and your own section into your session.
 - Generated client: `milk-crate/src/lib/api/`. Regenerate: `cd milk-crate && npm run api:client`.
 
 ## Order
-B first. C and D can start with B. E, F and G start when B's pull request is merged. G's
-cross-cloud check runs last, after E and F.
+B first. D can start with B. C starts when B's pull request is merged, because its read rules
+protect B's tables. E, F and G (stage 1) start when B's pull request is merged. H and G's
+stage 2 (the cross-cloud check) run last: H needs E, F and G stage 1 merged, and G stage 2 needs
+E, F and G stage 1 merged.
 
 | Session | Owns |
 |---|---|
@@ -48,7 +51,22 @@ cross-cloud check runs last, after E and F.
 | D | CI |
 | E | Supabase deployment |
 | F | AWS deployment |
-| G | Shared core handlers and the cross-cloud check |
+| G | Shared core handlers (stage 1) and the cross-cloud check (stage 2) |
+| H | Processing work: what happens to a master while a release is `processing` |
+
+## Kickoff prompts
+| Session | Prompt |
+|---|---|
+| B | `docs/phase0-prompts/b-database.md` |
+| C | `docs/phase0-prompts/c-read-rules.md` |
+| D | `docs/phase0-prompts/d-ci.md` |
+| E | `docs/phase0-prompts/e-supabase.md` |
+| F | `docs/phase0-prompts/f-aws.md` |
+| G stage 1 | `docs/phase0-prompts/g1-core.md` |
+| G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md` |
+| H | `docs/phase0-prompts/h-processing.md` |
+
+If a prompt and a section below disagree, the prompt is newer; tell K Marcus.
 
 ## B: Database
 Branch `phase0/b-database`.
@@ -97,8 +115,8 @@ Branch `phase0/c-read-rules`.
 - Read rules (row level security on Supabase; the equivalent checks on Aurora) for the tables
   from B. Listeners see only `live` releases. Public views hide `owner_id`. An artist sees
   only their own. Reviewers see what the contract says they see.
-- Source of the claim (settled): every `public.admins` row maps to `administrator`. A new
-  staff table `(user_id, account_type)` holds `internal`, `internal_accounting` and
+- Source of the claim (settled): every `public.admins` row maps to `administrator`. Session B's
+  staff table `(user_id, account_type)` (use it; do not create it) holds `internal`, `internal_accounting` and
   `third_party`. An account with an approved artist profile (what `is_approved_artist()` checks
   today) gets `artist`. Everyone else is `end_user`. Pending and declined applicants stay
   `end_user` until a reviewer approves them. The Supabase hook and the AWS Cognito groups
@@ -136,6 +154,8 @@ Branch `phase0/e-supabase`.
   infrastructure (stand up, confirm, tear down), and `Database` over a Postgres connection
   (pooled, with transactions).
 - Upload session method `tus`; playback method `signed_url`.
+- Supabase Storage keeps no SHA-256 of an object and an Edge Function cannot hash 5 GiB. Say
+  plainly how the client's SHA-256 is checked and what it costs (open point; see session H).
 - Don't create real projects or use real keys. Provide the code, config and a script K Marcus
   runs. Tests use local Supabase or mocks.
 - Edge Function entry points call G's handlers and only do wiring.
@@ -152,6 +172,10 @@ Branch `phase0/f-aws`.
   tear down), and `Database` over the RDS Data API (parameters, transactions through its
   transaction id, results paged under its 1 MB limit).
 - Upload session method `s3_multipart`; playback method `cloudfront_cookies`.
+- An S3 multipart SHA-256 is a checksum of the parts, so it cannot equal the client's whole-file
+  SHA-256. Say plainly how it is checked and what it costs (open point; see session H).
+- Propose the simplest infrastructure definition tool (CDK, Terraform, SAM or CloudFormation)
+  and list the choice as an open point.
 - Don't create real resources or use real keys. Provide the code, infrastructure definition
   and a script K Marcus runs. Tests use mocks or local emulators.
 - Lambda entry points call G's handlers and only do wiring.
@@ -160,18 +184,39 @@ Done when: the interface tests pass against mocks or emulators, and the stand-up
 ready for K Marcus to run.
 
 ## G: Shared core handlers and the cross-cloud check
-Branch `phase0/g-core`.
-- One handler per operation in `core/`, using `Request`, `Response` and the modules from
-  `Modules`. Reach the database only through `Database`, with parameters and a
-  transaction wherever more than one write must go together. Errors use the one `Error` shape. Enforce the account types and state moves in
-  the contract.
-- Unit tests with fake modules. The same handler code runs on Deno and Node.
-- After E and F: a test suite that runs the same scenario against both deployments (create a
-  release, upload a master, add splits, submit, review, publish, play, take down) and checks
-  they behave the same.
+Branch `phase0/g-core` (stage 1) and `phase0/g-cross-cloud` (stage 2).
 
-Done when: every operation has a handler and tests, the suite passes with fake modules, and
-the cross-cloud scenario runs against both deployments' code.
+Stage 1:
+- One handler per operation in `core/`, using `Request`, `Response` and the modules from
+  `Modules`. Reach the database only through `Database`, with parameters and a transaction
+  wherever more than one write must go together. Errors use the one `Error` shape. Enforce the
+  account types and state moves in the contract.
+- A small router, and a function that applies a worker's job result (the contract has no HTTP
+  operation for it). State the handlers' path at the top of the pull request: E and F wait on it.
+- Unit tests with fake modules, and session B's throwaway Postgres for paths that run SQL. The
+  same handler code runs on Deno and Node.
+
+Stage 2 (after E, F and G stage 1 are merged):
+- A suite that runs the same scenario against both deployments' module sets (create a release,
+  upload a master, resume it, add splits, submit, review, publish, play, take down) and checks
+  they behave the same, plus a script K Marcus can run against real deployments with
+  environment variables. Differences are reported as findings, not fixed.
+
+Done when: every operation has a handler and tests (stage 1); the scenario passes on both
+module sets, or every difference is listed (stage 2).
+
+## H: Processing work
+Branch `phase0/h-processing`. Not in the original plan; added because processing was left open.
+- One shared worker and one container image for Fly Machines and Fargate.
+- Per track: read the master as a stream, check it, hash it (the client's SHA-256), make the
+  streaming copy, and record what playback needs. The master is never altered. Safe to run twice.
+- Before building, ask K Marcus: streaming format and bitrate, derived-file key layout, what makes
+  a master bad, the SHA-256 check, sonic analysis in or out, and the storage interface addition.
+- `ObjectStorage` has no read or write for a worker. With K Marcus's approval only, add the
+  smallest addition in `core/` and in the storage modules of E and F.
+
+Done when: every track is checked, hashed and turned into a streaming copy by one shared piece,
+and the release reaches `awaiting_splits` or `failed` through the job result path.
 
 ## Settled before work starts
 - **Database access.** An eighth interface, `Database` (`query` and `transaction`), in
