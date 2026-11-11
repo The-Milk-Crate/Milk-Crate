@@ -92,7 +92,8 @@ Branch `phase0/b-database`.
   `public.accounts`), with `user_id` (the identity's user id: the Supabase user id or the
   Cognito `sub`; primary key), `account_type` (any `AccountType` but `end_user`), `email`, and
   `artist_id` and `artist_name` (set only for `artist`). One row per account, so one role per
-  account; no row means `end_user`. A row cannot change between `artist` and a staff type.
+  account; no row means `end_user`. A row cannot change to or from `artist`. An account with
+  history is suspended (`suspended`), never deleted.
   Both claims read this table. B's SQL never references `auth.*`, `public.admins`,
   `public.artists` or any other app table, so it runs on Aurora and plain Postgres. Session C
   fills it on Supabase from the app's tables; session F fills it on AWS.
@@ -154,14 +155,20 @@ Branch `phase0/c-read-rules`.
   each Cognito user in the group of the same name. Don't change the app's existing tables or
   policies; add alongside them.
 - One role per account (settled). Staff types and `artist` are mutually exclusive: one
-  `api_accounts` row per account. C's sync refuses an approval or an admins row that would give
-  an account a second role. A staff member who makes music uses a second account. This also
+  `api_accounts` row per account, and B refuses changing a row to or from `artist`. C's sync
+  refuses an approval or an admins row that would give an account a second role. A staff member who makes music uses a second account. This also
   means nobody reviews their own release. If the app's tables ever hold both anyway, the sync
   takes the higher-privilege type (`administrator`, `internal`, `internal_accounting`,
   `third_party`, `artist`, `end_user`, in that order) and the artist endpoints refuse them.
   Test both cases.
+- Removing a role: an account with releases, reviews or takedowns is suspended, not deleted (B
+  refuses the delete). C decides which claim a suspended account gets (suggested: `end_user`).
 - The claim is read when the token is issued, so a role change shows after the token refreshes.
   Say so in your tests and notes.
+- From B (merged): on Supabase, B's `api_` tables and functions get the default grants to `anon`
+  and `authenticated`. Turn on row level security on every `api_` table and revoke those grants,
+  then grant back only what is needed. `api_respond_to_invite` takes a user id, so clients get
+  only a wrapper that passes `auth.uid()`. Details in `docs/phase0-prompts/c-read-rules.md`.
 - Listing and covers: an artist lists only their own releases; staff list all; a cover reads like
   playback (owner and staff any state, everyone else only when `live`).
 - The invitee path: don't open the tables to invitees. Allow only B's narrow invitation function
@@ -213,7 +220,12 @@ Branch `phase0/f-aws`.
   ranged GET.
 - The account source on AWS: a Cognito post-confirmation trigger writes the user's email to
   `api_accounts` where a row exists, and a small sync puts each user in the Cognito group named
-  by their `api_accounts.account_type` (no group means `end_user`).
+  by their `api_accounts.account_type` (no group means `end_user`). A suspended account goes in
+  no group until C decides its claim.
+- From B (merged): the Data API runs one statement per call and B's migration files hold several,
+  with `$$` bodies, so the stand-up applies each file whole with `psql` or with a tested splitter.
+  `Database` surfaces B's SQLSTATEs (`MC403`, `MC404`, `MC409`, `MC422`). Details in
+  `docs/phase0-prompts/f-aws.md`.
 - `Jobs.reportResult` passes the result to G's job-result function (wire it once G states the path).
 - An S3 multipart SHA-256 is a checksum of the parts, so it cannot equal the client's whole-file
   SHA-256. Say plainly how it is checked and what it costs (open point; see session H).
@@ -291,6 +303,15 @@ file added.
 - **Reviewer claim mapping.** As written in session C above.
 
 - **More than one role.** Not allowed. As written in session C above.
+
+- **Settled with session B.**
+  - `third_party` is not staff, and an `artist` row never changes type.
+  - The release owner's own party (`is_owner`) is accepted at once, with no code. Every other
+    party replies only by using up a code.
+  - After 10 wrong codes in an hour, a party's invitation is locked inside the database.
+  - Accounts with history are suspended, never deleted.
+  - Release dates are UTC dates.
+  - The qualified-stream rule stays as built for Phase 0.
 
 - **Who is "the invited person".** An invite code. The invitation email carries a single-use,
   expiring code (`inviteCode`). The invitee signs in with any non-staff account (`end_user`,
