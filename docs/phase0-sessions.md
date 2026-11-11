@@ -82,6 +82,13 @@ Branch `phase0/c-read-rules`.
   today) gets `artist`. Everyone else is `end_user`. Pending and declined applicants stay
   `end_user` until a reviewer approves them. The Supabase hook and the AWS Cognito groups
   read the same source. Don't change the app's existing tables or policies; add alongside them.
+- One role per account (settled). Staff types and `artist` are mutually exclusive, enforced in the
+  database: a staff row cannot be added for an account with an approved artist profile, and
+  an artist cannot be approved for an account with a staff row. A staff member who makes music
+  uses a second account. This also means nobody reviews their own release. If both ever exist
+  anyway, the claim takes the higher-privilege type (`administrator`, `internal`,
+  `internal_accounting`, `third_party`, `artist`, `end_user`, in that order) and the artist
+  endpoints refuse them. Test both cases.
 - The claim is read when the token is issued, so a role change shows after the token refreshes.
   Say so in your tests and notes.
 - Tests that sign in as each account type and check what each can read.
@@ -151,8 +158,8 @@ the cross-cloud scenario runs against both deployments' code.
 
 - **Reviewer claim mapping.** As written in session C above.
 
+- **More than one role.** Not allowed. As written in session C above.
+
 ## Open before work starts
-1. **More than one role.** The claim holds one value. If an account is both staff and an
-   approved artist, which wins? Session C proposes a rule in its pull request; K Marcus decides.
-2. **Who is "the invited person".** `respondToSplit` assumes the verified email matches the
+1. **Who is "the invited person".** `respondToSplit` assumes the verified email matches the
    invitation (sessions C and G).
