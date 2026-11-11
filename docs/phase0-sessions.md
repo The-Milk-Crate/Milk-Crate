@@ -29,7 +29,7 @@ Paste the shared rules and your own section into your session.
   Then stop. K Marcus and a separate review agent review it.
 
 ## What exists
-- Contract: `api/openapi.yaml` (15 operations). Lint: `cd milk-crate && npm run api:lint`.
+- Contract: `api/openapi.yaml` (16 operations). Lint: `cd milk-crate && npm run api:lint`.
   The table of release state moves is at the top of the file.
 - Interfaces: `core/src/platform/` (the seven modules: identity, storage, jobs, schedules,
   server functions, secrets and email, infrastructure; an eighth, `Database`; plus
@@ -60,7 +60,8 @@ Branch `phase0/b-database`.
 - Play events: a batch with the same idempotency key counts once. The server decides what
   is a qualified stream (30 seconds or more). The client never sends counts.
 - Split invite codes (settled): store only a hash of the code, with `expires_at` set to 14 days
-  after the invitation is sent, plus `used_at`. A code works once. Session G checks all three
+  after the invitation is sent, plus `used_at`. A code works once. `resendInvitation` replaces
+  the hash and expiry, so the old code stops working. Count sends per party per day. Session G checks all three
   in one transaction.
 - Master keys follow `masters/{artist}/{release}/{track}/original`. Store keys, never public URLs.
 - Migrations as plain SQL files, safe to run twice, with a test that applies them to an empty
@@ -169,7 +170,8 @@ the cross-cloud scenario runs against both deployments' code.
   not have to match. Store only a hash of the code. Never return the code from any endpoint.
   Session B holds the hash, expiry (14 days) and used-at; session G checks them in one transaction.
 
+- **Resending an invitation.** A new endpoint, `resendInvitation`: release owner only, party
+  must be `invited`, issues a new 14-day code and voids the old one, limited per party per day.
+
 ## Open before work starts
-1. **Resending an invitation.** A code that expires, or an email that is lost, needs a new code.
-   The contract has no call for it. Decide whether `putRights` issues a new code when a party
-   is still `invited`, or whether to add a resend endpoint.
+None.

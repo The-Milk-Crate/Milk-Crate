@@ -16,7 +16,7 @@ AWS uses Cognito groups with the same names.
 ## Who may call what
 | Operation | Account types |
 |---|---|
-| `createRelease`, `startUpload`, `getUpload`, `signUploadParts`, `confirmUpload`, `putRights`, `submitRelease`, `publishRelease` | `artist` (owner only) |
+| `createRelease`, `resendInvitation`, `startUpload`, `getUpload`, `signUploadParts`, `confirmUpload`, `putRights`, `submitRelease`, `publishRelease` | `artist` (owner only) |
 | `respondToSplit` | `end_user`, `artist`, `third_party` (only the invited person) |
 | `getRelease` | `artist` (own), `administrator`, `internal` |
 | `getPublicRelease`, `getPlayback`, `recordPlays` | every signed-in account |

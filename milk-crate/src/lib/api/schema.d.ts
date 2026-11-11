@@ -198,6 +198,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/releases/{releaseId}/rights/parties/{partyId}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a split invitation
+         * @description Issues a new invite code, valid for 14 days, and emails it to the party.
+         *     The old code stops working. Only for a party whose `state` is `invited`
+         *     (409 otherwise), and only by the release owner. Limited to a few sends
+         *     per party per day (429).
+         */
+        post: operations["resendInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/releases/{releaseId}/rights/parties/{partyId}/respond": {
         parameters: {
             query?: never;
@@ -965,6 +991,32 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    resendInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                releaseId: components["parameters"]["ReleaseId"];
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new invitation was sent. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     respondToSplit: {

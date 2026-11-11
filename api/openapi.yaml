@@ -290,6 +290,32 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/rights/parties/{partyId}/resend:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+      - name: partyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Releases]
+      operationId: resendInvitation
+      summary: Resend a split invitation
+      x-account-types: [artist]
+      x-state-moves: []
+      description: |
+        Issues a new invite code, valid for 14 days, and emails it to the party.
+        The old code stops working. Only for a party whose `state` is `invited`
+        (409 otherwise), and only by the release owner. Limited to a few sends
+        per party per day (429).
+      responses:
+        "204":
+          description: A new invitation was sent.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /v1/releases/{releaseId}/rights/parties/{partyId}/respond:
     parameters:
       - $ref: "#/components/parameters/ReleaseId"
