@@ -1,0 +1,915 @@
+openapi: 3.1.0
+info:
+  title: Milk Crate API (Phase 0 slice)
+  version: 0.1.0
+  summary: Release publishing and plays.
+  description: |
+    The contract for the first slice only: release publishing and plays.
+    One contract, two deployments (Supabase and AWS). Anything here must run on both.
+
+    **Account type.** Every call carries a bearer token with one claim, `account_type`.
+    Supabase puts it in the token with a custom access token hook.
+    AWS uses Cognito groups with the same names. Values are in `AccountType`.
+
+    **Release states.** Only the server moves a release between states.
+    Each operation lists the move it causes in `x-state-moves`.
+    Who may call it is in `x-account-types`.
+
+    | Move | Caused by |
+    |---|---|
+    | (new) → `draft` | `createRelease` |
+    | `draft` → `uploading` | `startUpload` (first track) |
+    | `uploading` → `processing` | `confirmUpload` (last track confirmed) |
+    | `processing` → `awaiting_splits` | worker reports success |
+    | `processing` → `failed` | worker reports an error |
+    | `awaiting_splits` → `awaiting_review` | `submitRelease` |
+    | `awaiting_review` → `needs_changes` | `reviewRelease` (needs changes) |
+    | `needs_changes` → `uploading` or `awaiting_splits` | artist edits (start a new upload, or save rights) |
+    | `awaiting_review` → `scheduled` or `live` | `publishRelease` (after approval) |
+    | `scheduled` → `live` | schedule fires on the release date |
+    | any but `taken_down` → `taken_down` | `takedownRelease` |
+
+    Approve does not change the state. It records the decision on the release, and
+    the artist then calls `publishRelease`.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.example.invalid
+    description: Placeholder. Each deployment sets its own base address.
+security:
+  - bearerAuth: []
+tags:
+  - name: Releases
+    description: Create, edit and read releases.
+  - name: Uploads
+    description: Master uploads for tracks.
+  - name: Review
+    description: Review, publish and takedown.
+  - name: Playback
+    description: Playback access and play events.
+paths:
+  /v1/releases:
+    post:
+      tags: [Releases]
+      operationId: createRelease
+      summary: Create a draft release
+      x-account-types: [artist]
+      x-state-moves: ["(new) → draft"]
+      description: |
+        Creates a release and its tracks. The server sets `owner_id` from the token.
+        The server returns the track ids to use in later calls.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReleaseRequest"
+      responses:
+        "201":
+          description: Draft created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/releases/{releaseId}:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    get:
+      tags: [Releases]
+      operationId: getRelease
+      summary: Read a release (owner and staff view)
+      x-account-types: [artist, administrator, internal]
+      x-state-moves: []
+      description: |
+        An artist sees only their own releases, in any state.
+        Administrator and Internal non-admin see any release.
+        Listeners use `getPublicRelease`.
+      responses:
+        "200":
+          description: The release.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/public/releases/{releaseId}:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    get:
+      tags: [Releases]
+      operationId: getPublicRelease
+      summary: Read a release (public view)
+      x-account-types: [end_user, artist, third_party, administrator, internal, internal_accounting]
+      x-state-moves: []
+      description: |
+        Hides `owner_id`, rights and review details.
+        Returns 404 for any release that is not `live`, so a hidden release is
+        indistinguishable from one that does not exist.
+      responses:
+        "200":
+          description: The live release.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicRelease"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/releases/{releaseId}/tracks/{trackId}/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+      - $ref: "#/components/parameters/TrackId"
+    post:
+      tags: [Uploads]
+      operationId: startUpload
+      summary: Start a master upload for a track
+      x-account-types: [artist]
+      x-state-moves: ["draft → uploading", "needs_changes → uploading"]
+      description: |
+        Returns an upload session. The `method` field says how to upload:
+        `tus` (resumable, Supabase) or `s3_multipart` (presigned parts, AWS).
+        The master is stored at `masters/{artist}/{release}/{track}/original` and is
+        never altered. Responses carry keys, never public URLs.
+        Starting a new upload for a track that already has a master replaces that master.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartUploadRequest"
+      responses:
+        "201":
+          description: Upload session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/uploads/{uploadId}:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    get:
+      tags: [Uploads]
+      operationId: getUpload
+      summary: Read an upload session, to resume it
+      x-account-types: [artist]
+      x-state-moves: []
+      description: |
+        After an interruption, call this to learn what was stored, then continue from there.
+        For `tus` the client resumes from `offset`. For `s3_multipart` it re-sends the
+        parts not listed in `completedParts`.
+      responses:
+        "200":
+          description: Upload session with progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSession"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/uploads/{uploadId}/parts:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    post:
+      tags: [Uploads]
+      operationId: signUploadParts
+      summary: Get presigned URLs for more parts (s3_multipart only)
+      x-account-types: [artist]
+      x-state-moves: []
+      description: |
+        Presigned part URLs expire. Ask again for the parts still missing.
+        Returns 409 for a `tus` session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partNumbers]
+              properties:
+                partNumbers:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items: { type: integer, minimum: 1, maximum: 10000 }
+      responses:
+        "200":
+          description: Signed parts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [parts]
+                properties:
+                  parts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SignedPart"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/uploads/{uploadId}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    post:
+      tags: [Uploads]
+      operationId: confirmUpload
+      summary: Confirm an upload
+      x-account-types: [artist]
+      x-state-moves: ["uploading → processing (when every track is confirmed)"]
+      description: |
+        The client sends the SHA-256 of the file. S3 uploads also send CRC64NVME.
+        The server checks them against the stored object. On a mismatch it returns 422 and
+        the upload stays open so the client can retry.
+        When every track of the release is confirmed, the server queues processing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmUploadRequest"
+      responses:
+        "200":
+          description: Upload confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmUploadResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/rights:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    put:
+      tags: [Releases]
+      operationId: putRights
+      summary: Set rights and splits
+      x-account-types: [artist]
+      x-state-moves: ["needs_changes → awaiting_splits (once processing is done)"]
+      description: |
+        Replaces the full list of parties and shares.
+        Allowed in `draft`, `uploading`, `processing`, `awaiting_splits` and `needs_changes`.
+        Shares for each side (`recording`, `composition`) must add up to 100.
+        The server sets each invitee's `state`; the client cannot. A party whose details
+        did not change keeps its state. New parties start as `invited`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RightsRequest"
+      responses:
+        "200":
+          description: Saved rights.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rights"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/submit:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Review]
+      operationId: submitRelease
+      summary: Submit for review
+      x-account-types: [artist]
+      x-state-moves: ["awaiting_splits → awaiting_review"]
+      description: |
+        Needs all masters processed, shares at 100 for each side, and no declined party.
+        Clears any earlier review decision.
+      responses:
+        "200":
+          description: Release now `awaiting_review`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/review:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Review]
+      operationId: reviewRelease
+      summary: Review decision
+      x-account-types: [administrator, internal]
+      x-state-moves:
+        - "approve: no state change (decision recorded)"
+        - "needs_changes: awaiting_review → needs_changes"
+      description: |
+        `approve` records the decision. The release stays `awaiting_review` and the artist
+        then calls `publishRelease`.
+        `needs_changes` needs a `reason` and sends the release back to the artist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequest"
+      responses:
+        "200":
+          description: Decision recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/releases/{releaseId}/publish:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Review]
+      operationId: publishRelease
+      summary: Publish
+      x-account-types: [artist]
+      x-state-moves:
+        - "awaiting_review → scheduled (release date is in the future)"
+        - "awaiting_review → live (release date is today or past)"
+      description: |
+        Only after a reviewer approved. Otherwise 409.
+        The server picks `scheduled` or `live` from the release date. A scheduled release
+        goes `live` on its date through a schedule.
+      responses:
+        "200":
+          description: Release now `scheduled` or `live`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/releases/{releaseId}/takedown:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Review]
+      operationId: takedownRelease
+      summary: Take a release down
+      x-account-types: [administrator]
+      x-state-moves: ["any state except taken_down → taken_down"]
+      description: |
+        The server removes listener access and deletes the files, and writes an audit row.
+        Calling it again on a taken-down release returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        "200":
+          description: Taken down.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [release, auditId]
+                properties:
+                  release: { $ref: "#/components/schemas/Release" }
+                  auditId: { type: string, format: uuid }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/tracks/{trackId}/playback:
+    parameters:
+      - $ref: "#/components/parameters/TrackId"
+    get:
+      tags: [Playback]
+      operationId: getPlayback
+      summary: How to play a track, for the signed-in listener
+      x-account-types: [end_user, artist, third_party, administrator, internal, internal_accounting]
+      x-state-moves: []
+      description: |
+        An entitlement check. It answers how to play, and the answer is a tagged union:
+        `signed_url` (Supabase: a link unique to this listener) or
+        `cloudfront_cookies` (AWS: signed cookies plus the stream address).
+        Do not assume a URL format. Returns 404 unless the track's release is `live`
+        (or the caller is its owner or a reviewer).
+      responses:
+        "200":
+          description: Playback grant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackGrant"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/plays:
+    post:
+      tags: [Playback]
+      operationId: recordPlays
+      summary: Record a batch of play events
+      x-account-types: [end_user, artist, third_party, administrator, internal, internal_accounting]
+      x-state-moves: []
+      description: |
+        Send `start`, `progress` (every 15 to 30 seconds) and `end` events in batches.
+        Each batch has an `Idempotency-Key`. Sending the same key twice counts once and
+        returns the first result with `duplicate: true`.
+        The client never sends counts. The server decides what is a qualified stream
+        (30 seconds or more).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique per batch. A UUID is fine. Keep it the same on a retry.
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayBatch"
+      responses:
+        "202":
+          description: Batch accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [duplicate]
+                properties:
+                  duplicate:
+                    type: boolean
+                    description: True when this key was already processed.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A token from the deployment's identity module. It carries the `account_type` claim.
+  parameters:
+    ReleaseId:
+      name: releaseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TrackId:
+      name: trackId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: No valid token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The account type or owner may not do this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found, or hidden from this caller.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The release or upload is in the wrong state for this call.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: The request is well formed but not acceptable (for example a checksum mismatch).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Slow down.
+      headers:
+        Retry-After:
+          description: Seconds to wait.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      description: The one error shape used by every endpoint.
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          description: Stable machine name, such as `wrong_state` or `checksum_mismatch`.
+        message:
+          type: string
+          description: Plain words for a person.
+        requestId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    AccountType:
+      type: string
+      description: |
+        The `account_type` claim. Same values on both deployments.
+        `end_user` is a listener. `artist` manages only their own profile and releases.
+      enum:
+        - end_user
+        - artist
+        - third_party
+        - administrator
+        - internal
+        - internal_accounting
+    ReleaseState:
+      type: string
+      enum:
+        - draft
+        - uploading
+        - processing
+        - awaiting_splits
+        - awaiting_review
+        - needs_changes
+        - scheduled
+        - live
+        - failed
+        - taken_down
+    AudioFormat:
+      type: string
+      enum: [wav, aiff, flac]
+    Sha256:
+      type: string
+      pattern: "^[0-9a-f]{64}$"
+      description: Lowercase hex.
+    CreateReleaseRequest:
+      type: object
+      required: [title, releaseDate, tracks]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        releaseDate: { type: string, format: date }
+        tracks:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [title]
+            properties:
+              title: { type: string, minLength: 1, maxLength: 200 }
+    Track:
+      type: object
+      required: [id, position, title]
+      properties:
+        id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        title: { type: string }
+        masterConfirmed:
+          type: boolean
+          description: Owner view only.
+    Release:
+      type: object
+      description: Owner and staff view.
+      required: [id, owner_id, title, releaseDate, state, tracks, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string, format: uuid }
+        title: { type: string }
+        releaseDate: { type: string, format: date }
+        state: { $ref: "#/components/schemas/ReleaseState" }
+        failureReason:
+          type: string
+          description: Plain words. Only when `state` is `failed`.
+        review:
+          $ref: "#/components/schemas/ReviewStatus"
+        tracks:
+          type: array
+          items: { $ref: "#/components/schemas/Track" }
+        rights:
+          $ref: "#/components/schemas/Rights"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PublicRelease:
+      type: object
+      description: Public view. No `owner_id`, rights or review details. Only `live` releases.
+      required: [id, artistId, title, releaseDate, tracks]
+      properties:
+        id: { type: string, format: uuid }
+        artistId:
+          type: string
+          format: uuid
+          description: The artist profile id, not the owner's account id.
+        title: { type: string }
+        releaseDate: { type: string, format: date }
+        tracks:
+          type: array
+          items:
+            type: object
+            required: [id, position, title]
+            properties:
+              id: { type: string, format: uuid }
+              position: { type: integer, minimum: 1 }
+              title: { type: string }
+    ReviewStatus:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [none, approved, needs_changes]
+        reason:
+          type: string
+          description: Set when `decision` is `needs_changes`.
+        decidedAt: { type: string, format: date-time }
+    StartUploadRequest:
+      type: object
+      required: [format, sizeBytes]
+      properties:
+        format: { $ref: "#/components/schemas/AudioFormat" }
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 5368709120
+          description: Up to 5 GiB.
+    UploadSession:
+      description: |
+        A tagged union by `method`. Both shapes carry `uploadId`, `objectKey` and progress.
+        `objectKey` is a key, never a public URL.
+      oneOf:
+        - $ref: "#/components/schemas/TusUploadSession"
+        - $ref: "#/components/schemas/S3MultipartUploadSession"
+      discriminator:
+        propertyName: method
+        mapping:
+          tus: "#/components/schemas/TusUploadSession"
+          s3_multipart: "#/components/schemas/S3MultipartUploadSession"
+    TusUploadSession:
+      type: object
+      required: [method, uploadId, trackId, objectKey, sizeBytes, endpoint, offset, expiresAt]
+      properties:
+        method: { type: string, const: tus }
+        uploadId: { type: string, format: uuid }
+        trackId: { type: string, format: uuid }
+        objectKey:
+          type: string
+          examples: ["masters/{artist}/{release}/{track}/original"]
+        sizeBytes: { type: integer }
+        endpoint:
+          type: string
+          format: uri
+          description: The TUS endpoint to send the file to.
+        headers:
+          type: object
+          description: Headers to send with every TUS request.
+          additionalProperties: { type: string }
+        metadata:
+          type: object
+          description: TUS metadata to send when creating the upload.
+          additionalProperties: { type: string }
+        offset:
+          type: integer
+          minimum: 0
+          description: Bytes already stored. Resume from here.
+        expiresAt: { type: string, format: date-time }
+    S3MultipartUploadSession:
+      type: object
+      required: [method, uploadId, trackId, objectKey, sizeBytes, partSize, partCount, parts, completedParts, expiresAt]
+      properties:
+        method: { type: string, const: s3_multipart }
+        uploadId: { type: string, format: uuid }
+        trackId: { type: string, format: uuid }
+        objectKey:
+          type: string
+          examples: ["masters/{artist}/{release}/{track}/original"]
+        sizeBytes: { type: integer }
+        partSize:
+          type: integer
+          description: Bytes per part. The last part may be smaller.
+        partCount: { type: integer, minimum: 1 }
+        parts:
+          type: array
+          description: Presigned URLs for the first parts. Ask for more with `signUploadParts`.
+          items: { $ref: "#/components/schemas/SignedPart" }
+        completedParts:
+          type: array
+          description: Parts already stored.
+          items:
+            type: object
+            required: [partNumber, sizeBytes]
+            properties:
+              partNumber: { type: integer, minimum: 1 }
+              sizeBytes: { type: integer }
+        expiresAt: { type: string, format: date-time }
+    SignedPart:
+      type: object
+      required: [partNumber, url, expiresAt]
+      properties:
+        partNumber: { type: integer, minimum: 1, maximum: 10000 }
+        url: { type: string, format: uri }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        expiresAt: { type: string, format: date-time }
+    ConfirmUploadRequest:
+      type: object
+      required: [sha256]
+      properties:
+        sha256: { $ref: "#/components/schemas/Sha256" }
+        crc64nvme:
+          type: string
+          description: |
+            Base64 CRC64NVME of the whole file. Required for `s3_multipart` uploads,
+            ignored for `tus`.
+        parts:
+          type: array
+          description: Required for `s3_multipart`. Part numbers with the ETag each returned.
+          items:
+            type: object
+            required: [partNumber, etag]
+            properties:
+              partNumber: { type: integer, minimum: 1 }
+              etag: { type: string }
+    ConfirmUploadResponse:
+      type: object
+      required: [uploadId, trackId, releaseState]
+      properties:
+        uploadId: { type: string, format: uuid }
+        trackId: { type: string, format: uuid }
+        releaseState: { $ref: "#/components/schemas/ReleaseState" }
+    Party:
+      type: object
+      required: [side, role, name, percent]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Send it back to keep an existing party. Leave out for a new one.
+        side:
+          type: string
+          enum: [recording, composition]
+        role:
+          type: string
+          description: For example `artist`, `producer`, `songwriter`, `publisher`.
+        name: { type: string, minLength: 1, maxLength: 200 }
+        email:
+          type: string
+          format: email
+          description: Where the invitation goes. Not needed for the owner.
+        percent:
+          type: number
+          minimum: 0
+          maximum: 100
+          multipleOf: 0.01
+    RightsRequest:
+      type: object
+      required: [parties]
+      properties:
+        parties:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/Party" }
+    Rights:
+      type: object
+      required: [parties]
+      properties:
+        parties:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/Party"
+              - type: object
+                required: [id, state]
+                properties:
+                  state:
+                    type: string
+                    enum: [invited, accepted, declined]
+    ReviewRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approve, needs_changes]
+        reason:
+          type: string
+          maxLength: 2000
+          description: Required when `decision` is `needs_changes`.
+    PlaybackGrant:
+      description: |
+        How to play. A tagged union by `method`.
+        The grant is tied to the signed-in listener and expires.
+      oneOf:
+        - $ref: "#/components/schemas/SignedUrlGrant"
+        - $ref: "#/components/schemas/CloudFrontCookiesGrant"
+      discriminator:
+        propertyName: method
+        mapping:
+          signed_url: "#/components/schemas/SignedUrlGrant"
+          cloudfront_cookies: "#/components/schemas/CloudFrontCookiesGrant"
+    SignedUrlGrant:
+      type: object
+      required: [method, trackId, url, expiresAt]
+      properties:
+        method: { type: string, const: signed_url }
+        trackId: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+    CloudFrontCookiesGrant:
+      type: object
+      required: [method, trackId, streamUrl, cookies, expiresAt]
+      properties:
+        method: { type: string, const: cloudfront_cookies }
+        trackId: { type: string, format: uuid }
+        streamUrl: { type: string, format: uri }
+        cookies:
+          type: array
+          description: Set these on requests to the stream address.
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: { type: string }
+              value: { type: string }
+        expiresAt: { type: string, format: date-time }
+    PlayBatch:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/PlayEvent" }
+    PlayEvent:
+      type: object
+      description: |
+        No counts. The server works out qualified streams (30 seconds or more) from the
+        positions and times.
+      required: [type, trackId, playId, positionMs, occurredAt]
+      properties:
+        type:
+          type: string
+          enum: [start, progress, end]
+        trackId: { type: string, format: uuid }
+        playId:
+          type: string
+          format: uuid
+          description: One per play of a track. Same value for its start, progress and end.
+        positionMs:
+          type: integer
+          minimum: 0
+          description: Where in the track the listener is, in milliseconds.
+        occurredAt:
+          type: string
+          format: date-time
+          description: Device time. The server also records its own receive time.

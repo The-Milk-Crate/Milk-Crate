@@ -1,0 +1,6 @@
+extends:
+  - recommended
+rules:
+  # AccountType describes the token claim. No request or response carries it,
+  # but the generated client should still export the type.
+  no-unused-components: off
