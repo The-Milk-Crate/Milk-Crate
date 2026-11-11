@@ -8,7 +8,7 @@ Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules, the decisions that were settled, and each session's section)
 2. `api/openapi.yaml` (the contract; every operation lists `x-account-types` and `x-state-moves`) and `api/README.md`
 3. `core/` (the interfaces in `core/src/platform/` and session G's handlers, router and tests)
-4. `db/` (session B's migrations, SQL functions and tests) and session C's read rules, claim hook and tests
+4. `db/` (session B's migrations, SQL functions and tests in `db/migrations/` and `db/test/`, and session C's Supabase-only read rules, claim hook and sync in `db/supabase/`), and session F's Cognito account sync in `deploy/aws/`
 5. `deploy/supabase/` (session E), `deploy/aws/` (session F) and `worker/` (session H)
 6. `.github/workflows/` (session D's checks, and the existing `build.yml` and `pages.yml`)
 
@@ -17,7 +17,7 @@ For each area, read the code, trace a realistic attack, and decide whether it wo
 
 1. Authentication. How tokens are verified on each side: signature and key source, algorithm, expiry, audience and issuer, and what happens with a missing, expired, malformed or foreign token. Edge Functions: is JWT verification left on?
 2. Authorization against the contract. Build the table of every operation against every account type from `x-account-types`, and check that the handlers and the read rules both enforce it. Ownership checks: can an artist reach another artist's release, upload, track, party, invitation or cover by changing an id (IDOR)? Does a listener or an invitee reach any table directly?
-3. The account-type claim. The staff and `artist` exclusion: can concurrent requests defeat it? Stale tokens after a role change. The both-roles fallback order. Can anyone grant themselves a role?
+3. The account-type claim. The one-role rule in `api_accounts` and C's sync from the app's tables: can concurrent requests defeat it? Stale tokens after a role change. The both-roles fallback order. Can anyone grant themselves a role?
 4. The release state machine. Can any call, replay, race or direct database write move a release to a state the contract forbids (for example publishing without approval, editing a submitted release, or reviving a `taken_down` release)? Is "only the server moves a state" true in the database, or only in the handlers?
 5. Invitations. Invite code strength, hashing, constant-time comparison, single use under concurrency, expiry, resend voiding the old code, wrong-code limits, and whether a code can reach logs, error messages, URLs, the email provider's logs or any response.
 6. Uploads and keys. Can user input shape an object key (path traversal, a different artist's prefix, `masters/` versus `art/` mix-ups)? Size, format and content checks; checksum checks; the square-cover check on hostile images; confirming an upload that is incomplete or belongs to someone else; presigned URL scope, expiry and bound headers; multipart abuse.

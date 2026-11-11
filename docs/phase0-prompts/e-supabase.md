@@ -13,17 +13,19 @@ Your job: the Supabase deployment. Implement each platform interface on Supabase
 - Identity: who is calling, from the Supabase token. Read the `account_type` claim (session C writes the hook; you only read the claim). Return null for no valid token.
 - Object storage:
   - Upload session method `tus`: resumable uploads through Supabase Storage. An interrupted upload resumes from the stored offset. Masters are WAV, AIFF or FLAC, up to 5 GiB, stored at `masters/{artist}/{release}/{track}/original` and never altered. Store keys, never public URLs.
-  - Confirm: the client sends a SHA-256 of the file. Supabase Storage does not keep a SHA-256 of a stored object, and an Edge Function cannot read and hash 5 GiB within its time and memory limits. Do not pretend it can. Say plainly in the pull request how you check the SHA-256 (for example, the worker streams the object and hashes it, and confirm also checks the stored size) and what it costs for 5 GiB. List it as an open point.
+  - Confirm: check the stored size (a mismatch is `checksum_mismatch`, and the upload stays open). Supabase Storage keeps no SHA-256 of an object and an Edge Function cannot hash 5 GiB, so the SHA-256 is checked by the worker while it streams the master (settled; session H builds it). Say what that costs for 5 GiB in the pull request.
   - Sign a read: playback method `signed_url`, a link made for that listener, short-lived, per request. If Supabase cannot bind a link to one listener, say so plainly in the pull request as an open point; don't pretend.
   - Cover art: the same `tus` session for a `jpeg` or `png` up to 20 MiB at `art/{artist}/{release}/cover/original`; a signed read for the cover uses the same `signRead` as playback.
+  - `readHead`: the first bytes of an object, as a ranged read (session G reads a cover's width and height with it).
+  - Playback signs only streaming copies under `streams/{artist}/{release}/{track}/`, never `masters/`.
   - Delete everything under a prefix (used by takedown).
   - Storage limits: the app's README says the free plan caps a file at 50 MB. Record the file size limit and plan that 5 GiB needs in the stand-up script and the pull request.
-- Jobs: queue a job and report its result. The worker runs on Fly Machines. Build the queue, the worker skeleton (picks up a `process_release` job, reports success or a plain-words failure) and the result path. What processing actually does to a master is not decided; don't invent it. List it as an open point.
+- Jobs: queue a job and report its result. The worker runs on Fly Machines. Build the queue, the worker skeleton (picks up a `process_release` job, reports success or a plain-words failure) and the result path. Jobs are rows in session B's jobs table. `reportResult` passes the result to session G's job-result function, which moves the release state; wire it once G states the path, and list it as an open point until then. What processing actually does to a master is not decided; don't invent it. List it as an open point.
 - Schedules: run a SQL function at a time, using pg_cron (one-time runs; remove the job after it runs; setting the same name again replaces it).
 - Server functions: a generic Edge Function adapter on Deno that turns a web-standard `Request` into a call of a shared handler with the modules, and returns its `Response`. Keep it small. The one-entry-point-per-operation files wait until session G's handlers exist; don't guess their path. List it as an open point.
 - Secrets and email: get a secret by name (Edge Function secrets) and send the templates named in `secrets-email.ts`. Choose the simplest email path that works without a paid add-on; if none does, say so.
 - Database: a pooled Postgres connection with transactions, with parameters (`$1`, `$2`). Never build SQL by joining values into text.
-- Infrastructure: stand up, confirm, tear down, as a script and config K Marcus runs (`supabase/config.toml`, migration push, function deploy, storage buckets and limits, the Fly app config). You write them; you do not run them against anything real.
+- Infrastructure: stand up, confirm, tear down, as a script and config K Marcus runs (`deploy/supabase/supabase/config.toml`, migration push of `db/migrations/` and then `db/supabase/`, in that order, function deploy, storage buckets and limits, the Fly app config). You write them; you do not run them against anything real.
 
 ### Constraints
 - No real projects, no real keys. You have no Supabase or Fly account access. Code, config and a script are the deliverable, and tests use mocks or a local Postgres.
@@ -45,5 +47,5 @@ Your job: the Supabase deployment. Implement each platform interface on Supabase
 ### Done when
 - Every interface has a Supabase implementation with tests that pass against mocks or a local Postgres (`core/` and `milk-crate/` type-check, and `cd milk-crate && npm test` still passes).
 - The stand-up script, config and tear-down are ready for K Marcus to run, and nothing in them needs a secret in the repository.
-- The pull request description lists: what you built, what you ran and its result, what you could not run here, the open points for K Marcus (at least: the SHA-256 check and its cost, processing work, entry points waiting on session G, whether a link can be bound to one listener, the 5 GiB storage limit and plan), and anything you assumed.
+- The pull request description lists: what you built, what you ran and its result, what you could not run here, the open points for K Marcus (at least: the cost of the worker's SHA-256 check, processing work, entry points waiting on session G, whether a link can be bound to one listener, the 5 GiB storage limit and plan), and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

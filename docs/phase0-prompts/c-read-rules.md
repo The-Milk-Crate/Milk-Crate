@@ -15,12 +15,13 @@ Your job: the account-type claim and the read rules. Both deployments must give 
   - Supabase: a custom access token hook that puts it in the token.
   - AWS: Cognito groups with the same names.
   - Both read the same source (below).
-- Source of the claim (settled):
-  - Every `public.admins` row means `administrator`.
-  - Session B's staff table `(user_id, account_type)` holds `internal`, `internal_accounting` and `third_party`. Use it; don't create it.
-  - An account with an approved artist profile (what `is_approved_artist()` checks today) gets `artist`.
-  - Everyone else is `end_user`. Pending and declined applicants stay `end_user` until a reviewer approves them.
-- One role per account (settled). Staff types and `artist` are mutually exclusive. Session B enforces that in the database; you test it. If both ever exist anyway, the claim takes the higher-privilege type (`administrator`, `internal`, `internal_accounting`, `third_party`, `artist`, `end_user`, in that order) and the artist endpoints refuse them.
+- Source of the claim (settled): session B's `api_accounts` table (one row per account; no row means `end_user`). Use it; don't create it. The hook reads it. On Supabase you keep it in step with the app's tables, with triggers that add alongside them:
+  - Every `public.admins` row means an `administrator` row.
+  - An account with an approved artist profile (what `is_approved_artist()` checks today) gets an `artist` row with the profile's id and name, and the account's email.
+  - `internal`, `internal_accounting` and `third_party` rows are written directly into `api_accounts`.
+  - Pending and declined applicants have no row, so they stay `end_user` until a reviewer approves them.
+  - On AWS, session F fills `api_accounts` and the Cognito groups. You define the group names.
+- One role per account (settled). Staff types and `artist` are mutually exclusive: one `api_accounts` row per account, and B refuses changing a row between them. Your sync refuses an artist approval for an account with a staff row, and an admins row for an approved artist. If the app's tables ever hold both anyway, the sync takes the higher-privilege type (`administrator`, `internal`, `internal_accounting`, `third_party`, `artist`, `end_user`, in that order) and the artist endpoints refuse them.
 - The claim is read when the token is issued, so a role change shows after the token refreshes. Say so in your tests and notes.
 - Read rules for session B's tables:
   - Listeners see only `live` releases.
@@ -31,14 +32,15 @@ Your job: the account-type claim and the read rules. Both deployments must give 
   - Playback and play events follow the contract (owner and reviewers may get a grant for a release that is not live; everyone else gets 404).
 - List and cover: `listReleases` shows an artist only their own releases and `administrator` and `internal` all of them. `getCover` follows the playback rule (owner, `administrator` and `internal` in any state; everyone else only when `live`). Test both for each account type.
 - The invitee path: `getInvitation` and `respondToSplit` are called by accounts that have no rights to the release rows. Don't open the tables to them. Allow only session B's narrow invitation function (and the one write that records a reply) on both sides. Test that an invitee with a valid code sees only the `Invitation` fields and nothing else, and that a wrong or expired code sees nothing.
-- Supabase: row level security policies and the hook, as migrations added alongside the app's existing ones.
-- AWS: the equivalent checks on Aurora. Aurora through the RDS Data API uses one shared database login, so row level security by caller does not work the same way there. Propose how the checks work on that side (for example, views or functions that take the caller's id and account type as arguments, so every query through `Database` carries them). Write your proposal in the pull request as an open point for K Marcus, and build the part that doesn't depend on the answer.
-- Tests that sign in as each account type and check what each can read: one set for the Supabase rules, one for the Aurora-side checks, with the same expected results in both.
+- Where it goes (settled): the hook, the sync triggers and the row level security policies are Supabase-only, so they go in `db/supabase/` as numbered migrations (`0001_...sql`), applied after `db/migrations/` on Supabase only. Never in `db/migrations/` (it runs on Aurora too) or `milk-crate/supabase/` (the app's own SQL).
+- Who enforces reads (settled): on both deployments, session G's handlers enforce access in every query, passing the caller. On Supabase your row level security also guards direct table access, because the app talks to Supabase directly. Aurora uses one shared login, so it has no per-caller rules; there is nothing to build on that side.
+- The expected-results table: write, as a shared test fixture (for example `db/test/access-expected.json`), each account type against what it may read (own, other artist's, live, not live, invitee with code). Your Supabase tests use it, and session G's handler tests will use it too.
+- Tests that sign in as each account type and check what each can read under the Supabase rules, against that fixture. On the plain test cluster, a minimal test-only `auth` stand-in (an `auth.users` table and an `auth.uid()` that reads a setting) is fine so the app's SQL and your migrations load; keep it in `db/test/`, never in a migration.
 
 ### Constraints
 - Reuse session B's test approach in `db/test/` (a throwaway local PostgreSQL 16, no Docker). Put your tests beside it, and keep them free of anything specific to this machine, because session D runs them in CI.
 - Don't change the app's existing tables, policies, functions, screens or Supabase calls. Add alongside them.
-- Don't write the staff table or the exclusion rule (session B), handlers (session G), or deployment code (sessions E and F). The hook's wiring into a real Supabase project and a real Cognito pool is for E and F; you write the hook function, the group names and the tests.
+- Don't write `api_accounts` or its one-row rule (session B), the AWS sync (session F), handlers (session G), or deployment code (sessions E and F). The hook's wiring into a real Supabase project and a real Cognito pool is for E and F; you write the hook function, the group names and the tests.
 - SQL must work through the `Database` interface on both sides where handlers use it: parameters as `$1`, `$2`, small results.
 
 ### Rules (all apply)
@@ -51,8 +53,8 @@ Your job: the account-type claim and the read rules. Both deployments must give 
 - Plain, short wording in comments and descriptions.
 
 ### Done when
-- Tests prove each account type reads only what the contract allows, with the same results on the Supabase rules and the Aurora-side checks.
+- Tests prove each account type reads only what the contract allows under the Supabase rules, and the expected-results fixture is ready for session G.
 - Tests cover: the claim for each source (admins row, staff row, approved artist, pending and declined applicants, everyone else), the both-roles fallback order, and a role change that only shows after refresh.
 - Nothing existing in the app's tables, policies or screens changed, and `cd milk-crate && npm test` still passes.
-- The pull request description lists: what you built, what you ran and its result, the open points for K Marcus (including how the Aurora checks work), and anything you assumed.
+- The pull request description lists: what you built, what you ran and its result, the open points for K Marcus, and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

@@ -9,7 +9,8 @@ Supabase and AWS. Platform interfaces are in `../core/src/platform/`.
 
 ## Account type
 One claim in the token: `account_type`. Supabase sets it with a custom access token hook.
-AWS uses Cognito groups with the same names.
+AWS uses Cognito groups with the same names. Both read one source: session B's `api_accounts`
+table (one row, so one type, per account; no row means `end_user`).
 
 `end_user` · `artist` · `third_party` · `administrator` · `internal` (internal non-admin) · `internal_accounting`
 
@@ -17,7 +18,7 @@ AWS uses Cognito groups with the same names.
 | Operation | Account types |
 |---|---|
 | `createRelease`, `updateRelease`, `startCoverUpload`, `resendInvitation`, `startUpload`, `getUpload`, `signUploadParts`, `confirmUpload`, `putRights`, `submitRelease`, `publishRelease` | `artist` (owner only) |
-| `getInvitation`, `respondToSplit` | `end_user`, `artist`, `third_party` (only the invited person) |
+| `getInvitation`, `respondToSplit` | `end_user`, `artist`, `third_party` (only the invited person, with the code; staff accounts cannot) |
 | `getRelease`, `listReleases` | `artist` (own), `administrator`, `internal` |
 | `getPublicRelease`, `getPlayback`, `getCover`, `recordPlays` | every signed-in account |
 | `reviewRelease` | `administrator`, `internal` |
@@ -25,6 +26,6 @@ AWS uses Cognito groups with the same names.
 
 ## Release states
 `draft → uploading → processing → awaiting_splits → awaiting_review → scheduled → live`,
-plus `needs_changes`, `failed`, `taken_down`. Only the server moves a release.
+plus `needs_changes`, `failed` (left by replacing a master) and `taken_down`. Only the server moves a release.
 The full table of moves is in the description at the top of `openapi.yaml`, and each
 operation lists its own in `x-state-moves`.
