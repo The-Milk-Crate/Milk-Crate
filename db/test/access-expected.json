@@ -1,0 +1,379 @@
+{
+  "about": "Expected read results, by account type. Shared by session C's Supabase tests (db/test/supabase-checks.sql) and session G's handler tests. Each cell maps an outcome (an HTTP status, or the word given in 'about') to the release states that give it; every state appears exactly once per cell. 'own' means the caller owns the release (only an artist can); 'other' means another artist's release. A suspended account's claim is end_user, so it reads as end_user.",
+  "claim": "db/account-claim.json",
+  "accountTypes": ["end_user", "artist", "third_party", "administrator", "internal", "internal_accounting"],
+  "states": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"],
+  "settled": {
+    "staffRowCheck": "Settled by K Marcus: on staff endpoints and staff reads (reviewRelease, takedownRelease, and the administrator and internal rows of getRelease, listReleases, getPlayback and getCover), the handler checks the caller's api_accounts row as well as the token. The row must exist, have the token's account_type and not be suspended; otherwise the caller is treated as end_user (so 403 on the staff-only calls). A new role still waits for the token refresh; a removed or suspended staff role stops at once.",
+    "otherArtistRelease": "Settled by K Marcus: an artist asking for another artist's release gets 404 (hidden), not 403. 403 is for an account type that may not call the operation.",
+    "recordPlaysHiddenTrack": "Settled by K Marcus: recordPlays accepts events for a track whose release is not live (202, kept, never qualified), the same for every account type. Only an unknown track id is refused (422)."
+  },
+  "operations": {
+    "getRelease": {
+      "about": "Owner and staff view (Release). 403: the account type may not call it. 404: hidden from this caller (another artist's release; settled).",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          },
+          "other": {
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        }
+      }
+    },
+    "listReleases": {
+      "about": "listed: the release is in the caller's list. not_listed: the call works but leaves it out. 403: the account type may not call it.",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "listed": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          },
+          "other": {
+            "not_listed": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "listed": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "listed": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        }
+      }
+    },
+    "getPublicRelease": {
+      "about": "Public view (PublicRelease): no owner_id, rights or review details. 404 for anything not live, for everyone, the owner too.",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          },
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        }
+      }
+    },
+    "getPlayback": {
+      "about": "PlaybackGrant for a track. The owner, administrator and internal in any state; everyone else only live. taken_down is 404 for everyone because takedown deletes the files. Assumes the file exists (a streaming copy, or a cover); without one the answer is 404 for everyone.",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "404": ["taken_down"]
+          },
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "404": ["taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "404": ["taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        }
+      }
+    },
+    "getCover": {
+      "about": "CoverGrant for a release. The owner, administrator and internal in any state; everyone else only live. taken_down is 404 for everyone because takedown deletes the files. Assumes the file exists (a streaming copy, or a cover); without one the answer is 404 for everyone.",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "404": ["taken_down"]
+          },
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "404": ["taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "404": ["taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "200": ["live"],
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        }
+      }
+    },
+    "getUpload": {
+      "about": "An upload session. The release owner only; staff do not read uploads. 403: the account type may not call it. 404: not the owner's.",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          },
+          "other": {
+            "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "403": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+          }
+        }
+      }
+    },
+    "recordPlays": {
+      "about": "Every signed-in account may send play events for any track (202). qualifies: a play of 30 seconds or more counts as a qualified stream. kept: the events are kept but never count. Play rows are never readable by clients.",
+      "byAccountType": {
+        "end_user": {
+          "other": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "artist": {
+          "own": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          },
+          "other": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "third_party": {
+          "other": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "administrator": {
+          "other": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "internal": {
+          "other": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        },
+        "internal_accounting": {
+          "other": {
+            "qualifies": ["live"],
+            "kept": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "failed", "taken_down"]
+          }
+        }
+      }
+    }
+  },
+  "invitation": {
+    "about": "getInvitation and respondToSplit. The invitee has no rights to the release rows; only the invite code lets them in. The caller is not the owner, and no staff account may use it.",
+    "callers": {
+      "end_user": "allowed",
+      "artist": "allowed",
+      "third_party": "allowed",
+      "administrator": 403,
+      "internal": 403,
+      "internal_accounting": 403
+    },
+    "cases": {
+      "valid": {
+        "status": "ok",
+        "getInvitation": 200,
+        "respondToSplit": 200
+      },
+      "wrong_code": {
+        "status": "wrong_code",
+        "getInvitation": 403,
+        "respondToSplit": 403
+      },
+      "expired": {
+        "status": "expired",
+        "getInvitation": 403,
+        "respondToSplit": 403
+      },
+      "replied": {
+        "status": "replied",
+        "getInvitation": 409,
+        "respondToSplit": 409
+      },
+      "taken_down": {
+        "status": "taken_down",
+        "getInvitation": 409,
+        "respondToSplit": 409
+      },
+      "rate_limited": {
+        "status": "rate_limited",
+        "getInvitation": 429,
+        "respondToSplit": 429
+      },
+      "not_found": {
+        "status": "not_found",
+        "getInvitation": 404,
+        "respondToSplit": 404
+      }
+    },
+    "invitationFields": ["releaseTitle", "artistName", "releaseDate", "trackTitles", "party.side", "party.role", "party.percent", "party.state"],
+    "neverIncluded": ["owner_id", "other parties", "any email", "the invite code or its hash", "review details", "keys"],
+    "onlyOkHasFields": true,
+    "respondLinks": "the signed-in account, never an account named by the caller",
+    "inviteeDirectReads": "An invitee reads nothing of the release beyond the Invitation fields: the release, tracks, rights and uploads stay hidden unless the release is live, and then only through the public view."
+  },
+  "supabaseOnly": {
+    "about": "Direct access on Supabase (PostgREST). Not for the handlers. Settled: clients read the new slice only through the API, so anon gets nothing and authenticated gets only the two invitee wrappers. backstopReadsLike says what the row level security policies show if a read grant comes back by mistake; the Supabase tests grant it inside a rolled-back transaction to prove it.",
+    "granted": {
+      "api_client_get_invitation(release, party, code)": "getInvitation",
+      "api_client_respond_to_invite(release, party, code, response)": "respondToSplit"
+    },
+    "backstopReadsLike": {
+      "api_releases": "getRelease 200",
+      "api_tracks": "getRelease 200 (columns id, release_id, position, title, master_confirmed_at, created_at, updated_at)",
+      "api_parties": "getRelease 200 (no invite code hash, invite times or responder)",
+      "api_covers": "getRelease 200 (columns release_id, confirmed_at)",
+      "api_uploads": "getUpload 200 (no provider_upload_id or checksums)",
+      "api_public_releases": "getPublicRelease 200",
+      "api_public_tracks": "getPublicRelease 200",
+      "api_can_play_track(track)": "getPlayback 200",
+      "api_can_read_cover(release)": "getCover 200"
+    },
+    "neverReadable": ["api_accounts", "api_review_decisions", "api_invite_sends", "api_invite_wrong_codes", "api_jobs", "api_play_batches", "api_play_events", "api_qualified_streams", "api_audit_log"]
+  }
+}
