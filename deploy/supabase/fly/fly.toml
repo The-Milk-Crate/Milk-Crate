@@ -1,0 +1,14 @@
+# The worker on Fly Machines. Run from deploy/supabase: flyctl deploy --config fly/fly.toml ...
+# The stand-up only builds and pushes the image (--build-only --push --image-label phase0).
+# No service and no always-on machine: Jobs.enqueue starts one machine per job through the
+# Machines API, and an hourly scheduled machine runs the sweep. Secrets are Fly app secrets
+# (scripts/fly-secrets.env.example), set with `flyctl secrets import --stage`.
+
+app = "mc-phase0-worker" # replaced by --app "$MC_FLY_APP"
+primary_region = "iad"
+
+[build]
+  dockerfile = "../worker/Dockerfile"
+
+[env]
+  NODE_ENV = "production"

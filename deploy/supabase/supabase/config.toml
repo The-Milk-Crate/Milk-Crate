@@ -1,0 +1,56 @@
+# Supabase CLI settings for the Phase 0 deployment. `supabase config push` (run by
+# scripts/stand-up.sh) sends the auth and storage parts to the linked project.
+#
+# Pushing replaces the project's auth settings with these, so point it only at the Phase 0
+# project, never at the app's live project. Settled by K Marcus: Phase 0 runs on its own,
+# separate Supabase project. Values that differ per
+# project come from the environment with env(...); nothing secret is in this file.
+
+project_id = "milk-crate-phase0"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 17
+
+[storage]
+enabled = true
+# The project's limit per file, from MC_FILE_SIZE_LIMIT (scripts/stand-up.sh sets 5GiB if it is
+# unset). The Phase 0 project is a free project (settled), so set MC_FILE_SIZE_LIMIT=50MiB: the
+# Free plan caps a file at 50 MiB. 5 GiB masters need the Pro plan or higher. Each bucket's own
+# limit is set in deploy/supabase/sql/0002_buckets.sql from the same setting.
+file_size_limit = "env(MC_FILE_SIZE_LIMIT)"
+
+[auth]
+enabled = true
+site_url = "env(MC_SITE_URL)"
+additional_redirect_urls = []
+# Token life in seconds. Supabase's default (1 hour), kept as is: a role change shows in the
+# token's account_type only after it refreshes (session C).
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+enable_signup = true
+# Only signed-in accounts: Identity refuses anonymous sign-ins anyway.
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+# Session C's hook puts account_type at the top level of every token. Only
+# supabase_auth_admin may run it (db/supabase/0006_grants.sql grants that).
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/api_access_token_hook"
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+deno_version = 2
+
+# One [functions.<name>] block per entry point, with verify_jwt = false (Identity checks the
+# token), is added with the entry points once session G's handlers exist.

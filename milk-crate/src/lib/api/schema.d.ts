@@ -469,7 +469,7 @@ export interface paths {
         /**
          * How to play a track, for the signed-in listener
          * @description An entitlement check. It answers how to play, and the answer is a tagged union:
-         *     `signed_url` (Supabase: a link unique to this listener) or
+         *     `signed_url` (Supabase: a short-lived link made per request for a signed-in listener) or
          *     `cloudfront_cookies` (AWS: signed cookies plus the stream address).
          *     Do not assume a URL format. Returns 404 unless the track's release is `live`
          *     (or the caller is its owner or a reviewer).
@@ -640,8 +640,8 @@ export interface components {
             sizeBytes: number;
         };
         /**
-         * @description How to read the cover. A tagged union by `method`, tied to the signed-in account and
-         *     short-lived, like `PlaybackGrant`.
+         * @description How to read the cover. A tagged union by `method`, made per request for a signed-in
+         *     account and short-lived, like `PlaybackGrant`.
          */
         CoverGrant: components["schemas"]["SignedUrlCoverGrant"] | components["schemas"]["CloudFrontCookiesCoverGrant"];
         SignedUrlCoverGrant: {
@@ -837,7 +837,8 @@ export interface components {
         };
         /**
          * @description How to play. A tagged union by `method`.
-         *     The grant is tied to the signed-in listener and expires.
+         *     The grant is made per request for a signed-in listener and is short-lived. Whoever
+         *     holds it can use it until it expires; after that, ask again.
          */
         PlaybackGrant: components["schemas"]["SignedUrlGrant"] | components["schemas"]["CloudFrontCookiesGrant"];
         SignedUrlGrant: {

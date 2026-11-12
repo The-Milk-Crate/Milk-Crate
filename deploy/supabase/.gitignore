@@ -1,0 +1,6 @@
+node_modules
+# Real secrets for the stand-up. Never commit them.
+*.secrets.env
+.env
+supabase/.temp
+supabase/.branches

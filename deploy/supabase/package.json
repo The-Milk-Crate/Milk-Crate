@@ -1,0 +1,21 @@
+{
+  "name": "@milk-crate/deploy-supabase",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 0: the platform modules on Supabase, the Fly worker skeleton and the stand-up scripts.",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "test": "bash test/run.sh"
+  },
+  "dependencies": {
+    "jose": "6.2.3",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "5.9.3"
+  }
+}
