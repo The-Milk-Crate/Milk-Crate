@@ -5,7 +5,7 @@
 #   bash deploy/supabase/scripts/tear-down.sh --delete-project  # also deletes the whole project
 #
 # 1. Deletes the Edge Functions this folder deploys.
-# 2. Removes the pending pg_cron runs (api_schedules and their mc_schedule:* jobs).
+# 2. Removes the pending pg_cron runs (api_schedules, their mc_schedule:* jobs and the daily sweep).
 # 3. Empties and deletes the three Phase 0 buckets (mc-masters, mc-streams, mc-art). The app's
 #    buckets are not touched.
 # 4. Destroys the Fly app (its machines, image and secrets).
@@ -48,7 +48,7 @@ done
 
 echo "== 2. pending schedules"
 psql "$MC_DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction <<'SQL'
-select cron.unschedule(jobname) from cron.job where jobname like 'mc\_schedule:%';
+select cron.unschedule(jobname) from cron.job where jobname like 'mc\_schedule:%' or jobname = 'mc_schedule_sweep';
 delete from public.api_schedules;
 SQL
 

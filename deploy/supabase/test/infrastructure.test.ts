@@ -52,6 +52,15 @@ describe("Infrastructure.confirm (local Postgres after the stand-up SQL, APIs mo
     ]);
   });
 
+  test("finds the daily schedule sweep missing", async () => {
+    await db.query("update cron.job set active = false where jobname = 'mc_schedule_sweep'");
+    try {
+      assert.deepEqual((await run(apis(goodAuth, goodStorage))).problems, ["the daily schedule sweep (pg_cron job mc_schedule_sweep) is missing"]);
+    } finally {
+      await db.query("update cron.job set active = true where jobname = 'mc_schedule_sweep'");
+    }
+  });
+
   test("finds a client grant that came back, and a public bucket", async () => {
     await db.query("grant select on public.api_jobs to anon");
     await db.query("grant execute on function public.api_takedown_release(uuid, uuid, text) to authenticated");

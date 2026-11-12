@@ -4,7 +4,8 @@
 -- schedules a pg_cron job named 'mc_schedule:<name>' for that minute (UTC). The job calls
 -- api_schedule_fire, which runs the function once with named arguments, deletes the row and
 -- removes the pg_cron job. The same name again replaces the earlier run (pg_cron replaces a
--- job of the same name).
+-- job of the same name). A daily sweep (mc_schedule_sweep, 00:30 UTC) runs any due run whose
+-- own minute was missed.
 --
 -- The release date: session G schedules api_release_go_live with p_release_id. It moves only
 -- scheduled to live and does nothing otherwise, so a run after a takedown is harmless.
@@ -166,6 +167,33 @@ begin
 end
 $$;
 
+-- The daily sweep: runs every run that is due and was never fired, for when its own minute was
+-- missed (the database was down then, say). Without it, a missed minute waits a year, because
+-- pg_cron has no year. A run that failed (fired_at set) is not tried again. Returns how many it
+-- ran or tried.
+create or replace function public.api_schedule_sweep()
+returns integer
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_name text;
+  v_count integer := 0;
+begin
+  for v_name in
+    select s.name from public.api_schedules s
+    where s.fired_at is null and s.run_at <= now() order by s.run_at, s.name
+  loop
+    if public.api_schedule_fire(v_name) in ('ran', 'failed') then v_count := v_count + 1; end if;
+  end loop;
+  return v_count;
+end
+$$;
+
+-- Every day at 00:30 UTC, half an hour after release dates begin. Scheduling the same name
+-- again replaces it, so this is safe to run twice.
+do $$ begin perform cron.schedule('mc_schedule_sweep', '30 0 * * *', 'select public.api_schedule_sweep()'); end $$;
+
 -- Server only. Supabase's default grants on new objects in public are taken back here, because
 -- this file runs after db/supabase/0006 (which locks down api_ objects and grants back only
 -- the invitee wrappers). Running db/supabase again later also covers these, as they are api_.
@@ -174,3 +202,4 @@ revoke all on public.api_schedules from anon, authenticated, public;
 revoke all on function public.api_schedule_call_sql(text, jsonb) from anon, authenticated, public;
 revoke all on function public.api_schedule_set(text, text, jsonb, timestamptz) from anon, authenticated, public;
 revoke all on function public.api_schedule_fire(text) from anon, authenticated, public;
+revoke all on function public.api_schedule_sweep() from anon, authenticated, public;

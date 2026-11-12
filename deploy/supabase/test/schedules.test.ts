@@ -101,13 +101,42 @@ describe("Schedules (pg_cron, local Postgres with a pg_cron stand-in)", { skip: 
     await assert.rejects(s.runSqlFunctionAt({ name: "bad name'", fn: "api_release_go_live", at }), /bad schedule name/);
   });
 
+  test("the daily sweep runs a due run whose own minute was missed, once", async () => {
+    const r = await scheduledRelease(db);
+    const name = `missed:${r.releaseId}`;
+    const s = supabaseSchedules(db);
+    await s.runSqlFunctionAt({ name, fn: "api_release_go_live", args: { p_release_id: r.releaseId }, at: new Date(Date.UTC(2031, 5, 1)) });
+    // Its minute passed while the database was down: the job never ran.
+    await db.query("update public.api_schedules set run_at = now() - interval '6 hours' where name = $1::text", [name]);
+    const later = await scheduledRelease(db);
+    await s.runSqlFunctionAt({ name: `later:${later.releaseId}`, fn: "api_release_go_live", args: { p_release_id: later.releaseId }, at: new Date(Date.UTC(2031, 5, 1)) });
+
+    const [{ n }] = await db.query<{ n: number }>("select public.api_schedule_sweep() as n");
+    assert.ok(n >= 1);
+    assert.equal((await releaseState(db, r.releaseId)).state, "live");
+    assert.equal(await job(name), undefined, "its pg_cron job is removed");
+    assert.equal((await db.query("select 1 from public.api_schedules where name = $1::text", [name])).length, 0);
+    // Not due yet: left alone. A failed run is not tried again.
+    assert.equal((await releaseState(db, later.releaseId)).state, "scheduled");
+    assert.ok(await job(`later:${later.releaseId}`));
+    assert.equal((await db.query("select 1 from public.api_schedules where name = 'fails' and fired_at is not null")).length, 1);
+    const [{ again }] = await db.query<{ again: number }>("select public.api_schedule_sweep() as again");
+    assert.equal(again, 0);
+  });
+
+  test("the sweep itself is a daily pg_cron job at 00:30 UTC", async () => {
+    const [j] = await db.query<{ schedule: string; command: string }>("select schedule, command from cron.job where jobname = 'mc_schedule_sweep'");
+    assert.deepEqual(j, { schedule: "30 0 * * *", command: "select public.api_schedule_sweep()" });
+  });
+
   test("clients cannot reach the schedule table or functions", async () => {
     const [row] = await db.query<Record<string, boolean>>(
       `select has_table_privilege('authenticated', 'public.api_schedules', 'select, insert') as t,
               has_function_privilege('authenticated', 'public.api_schedule_set(text, text, jsonb, timestamptz)', 'execute') as s,
               has_function_privilege('anon', 'public.api_schedule_fire(text)', 'execute') as f,
+              has_function_privilege('authenticated', 'public.api_schedule_sweep()', 'execute') as w,
               (select relrowsecurity from pg_class where oid = 'public.api_schedules'::regclass) as rls`,
     );
-    assert.deepEqual(row, { t: false, s: false, f: false, rls: true });
+    assert.deepEqual(row, { t: false, s: false, f: false, w: false, rls: true });
   });
 });

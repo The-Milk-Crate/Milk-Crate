@@ -88,7 +88,12 @@ machine named `job-<id>` (so a second start is a no-op) with `MC_JOB_ID`, `auto_
 no restart. If Fly cannot be reached the row stays `queued`, enqueue still returns the id, and
 the hourly sweep machine runs it. The worker claims a job with `api_job_started` (false means
 someone else has it, and it stops), runs the processing step, and reports. A crash is reported
-as a plain-words failure, never a stack. `reportResult` hands the result to session G's
+as a plain-words failure, never a stack.
+**Stuck jobs.** A job may run for `MC_JOB_TIME_LIMIT_MINUTES` (default 240). Past that the
+worker stops waiting and reports "Processing took too long and was stopped ...", and the hourly
+sweep does the same for any job still `running` past the limit (its machine died). The release
+moves to `failed` and the artist uploads again. A late report from the old machine changes
+nothing, because a finished job is left alone. `reportResult` hands the result to session G's
 job-result function, which is not wired yet (`worker/wiring.ts`).
 
 **Processing.** Not decided (session H). The skeleton's step touches no file and reports a
@@ -99,7 +104,9 @@ schedules a pg_cron job `mc_schedule:<name>` for that minute in UTC (rounded up;
 runs at the next minute). The job calls `api_schedule_fire`: if due, it runs the function once
 with named arguments (cast to each argument's type from the catalog; values never in the SQL
 text), deletes the row and removes the pg_cron job. A failed run keeps its row with the error.
-The same name again replaces the run. Only existing `public.api_*` functions. Session G
+The same name again replaces the run. A daily pg_cron job, `mc_schedule_sweep` at 00:30
+UTC, runs every due run that was never fired, in case its own minute was missed (pg_cron has
+no year, so a missed minute would otherwise wait a year). A failed run is not tried again. Only existing `public.api_*` functions. Session G
 schedules `api_release_go_live` with `p_release_id`; it moves only `scheduled` to `live`, so a
 run after a takedown is harmless.
 

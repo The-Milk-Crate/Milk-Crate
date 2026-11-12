@@ -18,11 +18,17 @@ export const processingNotBuilt: ProcessRelease = async () => ({
 });
 
 const CRASHED = "Processing stopped before it finished. Please upload the masters again, or contact us if it keeps happening.";
+const TOO_LONG = "Processing took too long and was stopped. Please upload the masters again, or contact us if it keeps happening.";
+
+/** How long one job may run before it counts as stuck. Default 4 hours (MC_JOB_TIME_LIMIT_MINUTES). */
+export const DEFAULT_JOB_TIME_LIMIT_MS = 4 * 60 * 60 * 1000;
 
 export interface WorkerDeps {
   database: Database;
   jobs: Jobs;
   process: ProcessRelease;
+  /** A job running longer than this is stopped and reported as failed. */
+  timeLimitMs?: number;
   log?: (message: string) => void;
 }
 
@@ -60,11 +66,23 @@ export async function runOneJob(deps: WorkerDeps, jobId?: string): Promise<strin
   }
 
   let result: JobResult;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = deps.timeLimitMs ?? DEFAULT_JOB_TIME_LIMIT_MS;
+  const tooLong = new Promise<"too_long">((resolve) => { timer = setTimeout(() => resolve("too_long"), limit); });
   try {
-    result = await deps.process({ jobId: job.id, releaseId: job.release_id });
+    const outcome = await Promise.race([deps.process({ jobId: job.id, releaseId: job.release_id }), tooLong]);
+    if (outcome === "too_long") {
+      // The processing step may still be running; the caller exits the machine after this.
+      log(`job ${job.id} passed its time limit of ${limit} ms`);
+      result = { ok: false, message: TOO_LONG };
+    } else {
+      result = outcome;
+    }
   } catch (error) {
     log(`job ${job.id} threw: ${(error as Error)?.stack ?? String(error)}`);
     result = { ok: false, message: CRASHED };
+  } finally {
+    clearTimeout(timer);
   }
   if (!result.ok && !result.message.trim()) result = { ok: false, message: CRASHED };
   await deps.jobs.reportResult(job.id, result);
@@ -72,8 +90,34 @@ export async function runOneJob(deps: WorkerDeps, jobId?: string): Promise<strin
   return job.id;
 }
 
-/** The sweep: runs queued jobs until none is left (or `max`), for jobs whose machine never started. */
+/**
+ * Jobs still `running` past the time limit: their machine died or hung. Each is reported as a
+ * plain-words failure through the normal result path, so the release moves to `failed` and the
+ * artist can upload again. If the machine reports later, api_apply_job_result ignores it (a
+ * finished job is left alone). Returns the job ids it failed.
+ */
+export async function failStuckJobs(deps: WorkerDeps): Promise<string[]> {
+  const log = deps.log ?? ((m: string) => console.log(m));
+  const limit = deps.timeLimitMs ?? DEFAULT_JOB_TIME_LIMIT_MS;
+  const stuck = await deps.database.query<{ id: string }>(
+    `select id from public.api_jobs
+     where state = 'running' and started_at < now() - make_interval(secs => $1::double precision)
+     order by seq limit 50`,
+    [limit / 1000],
+  );
+  for (const { id } of stuck) {
+    await deps.jobs.reportResult(id, { ok: false, message: TOO_LONG });
+    log(`job ${id} was still running after ${limit} ms; reported it as failed`);
+  }
+  return stuck.map((j) => j.id);
+}
+
+/**
+ * The hourly sweep: first fails stuck jobs, then runs queued jobs until none is left (or
+ * `max`), for jobs whose machine never started. Returns how many it ran.
+ */
 export async function sweep(deps: WorkerDeps, max = 50): Promise<number> {
+  await failStuckJobs(deps);
   let ran = 0;
   while (ran < max && (await runOneJob(deps))) ran++;
   return ran;

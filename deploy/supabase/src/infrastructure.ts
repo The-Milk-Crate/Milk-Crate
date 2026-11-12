@@ -78,6 +78,10 @@ export async function confirmDeployment(options: ConfirmOptions): Promise<{ ok: 
     if (objects.cron) {
       const [tz] = await db.query<{ tz: string | null }>("select current_setting('cron.timezone', true) as tz");
       if (tz.tz && !["GMT", "UTC", "Etc/UTC"].includes(tz.tz)) problems.push(`cron.timezone is ${tz.tz}, not UTC`);
+      const [sweep] = await db.query<{ ok: boolean }>(
+        "select exists (select 1 from cron.job where jobname = 'mc_schedule_sweep' and active) as ok",
+      );
+      if (!sweep.ok) problems.push("the daily schedule sweep (pg_cron job mc_schedule_sweep) is missing");
     }
 
     const buckets = await db.query<{ id: string; public: boolean; file_size_limit: string | null }>(

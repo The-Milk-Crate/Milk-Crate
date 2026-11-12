@@ -4,7 +4,7 @@ import type { ClosableDatabase } from "../src/database.ts";
 import type { Database, JobResult } from "../src/core.ts";
 import { flyMachines } from "../src/fly.ts";
 import { supabaseJobs, type ApplyJobResult } from "../src/jobs.ts";
-import { processingNotBuilt, runOneJob, sweep } from "../worker/run.ts";
+import { failStuckJobs, processingNotBuilt, runOneJob, sweep } from "../worker/run.ts";
 import { fakeFetch, NEEDS_DB, newRelease, processingRelease, releaseState, testDb } from "./helpers.ts";
 
 const fly = (status = 201, body = "{}") =>
@@ -132,6 +132,40 @@ describe("Jobs and the worker skeleton (local Postgres)", { skip: NEEDS_DB }, ()
     const { jobId } = await jobs.enqueue({ kind: "process_release", releaseId: r.releaseId });
     await runOneJob({ database: db, jobs, process: processingNotBuilt, log: () => {} }, jobId);
     assert.match((await releaseState(db, r.releaseId)).failure_reason!, /^Processing is not set up yet/);
+  });
+
+  test("a job that runs past its time limit is stopped and reported in plain words", async () => {
+    const r = await processingRelease(db);
+    const jobs = supabaseJobs({ database: db, applyResult });
+    const { jobId } = await jobs.enqueue({ kind: "process_release", releaseId: r.releaseId });
+    const hangs = () => new Promise<never>(() => {});
+    await runOneJob({ database: db, jobs, process: hangs, timeLimitMs: 50, log: () => {} }, jobId);
+    assert.equal((await jobState(jobId)).state, "failed");
+    const s = await releaseState(db, r.releaseId);
+    assert.equal(s.state, "failed");
+    assert.match(s.failure_reason!, /^Processing took too long and was stopped\./);
+  });
+
+  test("the sweep fails jobs left running past the limit (a dead machine), and leaves fresh ones", async () => {
+    const stuck = await processingRelease(db);
+    const fresh = await processingRelease(db);
+    const jobs = supabaseJobs({ database: db, applyResult });
+    const a = (await jobs.enqueue({ kind: "process_release", releaseId: stuck.releaseId })).jobId;
+    const b = (await jobs.enqueue({ kind: "process_release", releaseId: fresh.releaseId })).jobId;
+    await db.query("select public.api_job_started($1::uuid), public.api_job_started($2::uuid)", [a, b]);
+    await db.query("update public.api_jobs set started_at = now() - interval '5 hours' where id = $1::uuid", [a]);
+
+    const failed = await failStuckJobs({ database: db, jobs, process: processingNotBuilt, log: () => {} });
+    assert.deepEqual(failed, [a]);
+    assert.match((await releaseState(db, stuck.releaseId)).failure_reason!, /^Processing took too long/);
+    assert.equal((await jobState(b)).state, "running");
+    assert.equal((await releaseState(db, fresh.releaseId)).state, "processing");
+
+    // The dead machine wakes up and reports success late: it changes nothing.
+    await applyResult(a, { ok: true });
+    assert.equal((await releaseState(db, stuck.releaseId)).state, "failed");
+    await db.query("update public.api_jobs set started_at = now() - interval '5 hours' where id = $1::uuid", [b]);
+    await failStuckJobs({ database: db, jobs, process: processingNotBuilt, log: () => {} });
   });
 
   test("the sweep runs queued jobs whose machine never started", async () => {

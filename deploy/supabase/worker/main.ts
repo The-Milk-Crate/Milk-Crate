@@ -1,5 +1,6 @@
 // The worker on Fly Machines. One machine per job (MC_JOB_ID), started by Jobs.enqueue, or
-// the hourly sweep (MC_WORKER_MODE=sweep) for jobs whose machine never started.
+// the hourly sweep (MC_WORKER_MODE=sweep): it fails jobs running past the time limit
+// (MC_JOB_TIME_LIMIT_MINUTES, default 240), then runs jobs whose machine never started.
 //
 //   node worker/main.ts
 //
@@ -11,7 +12,13 @@ import { applyJobResult } from "./wiring.ts";
 
 const env = (name: string) => process.env[name];
 const modules = createSupabaseModules(env, { applyJobResult, poolSize: 2 });
-const deps = { database: modules.database, jobs: modules.jobs, process: processingNotBuilt };
+const minutes = Number(env("MC_JOB_TIME_LIMIT_MINUTES") || 0);
+const deps = {
+  database: modules.database,
+  jobs: modules.jobs,
+  process: processingNotBuilt,
+  timeLimitMs: minutes > 0 ? minutes * 60_000 : undefined,
+};
 
 try {
   if (env("MC_WORKER_MODE") === "sweep") {
@@ -24,4 +31,6 @@ try {
   process.exitCode = 1;
 } finally {
   await modules.database.close();
+  // A job stopped at its time limit may still have work in flight: end the machine anyway.
+  process.exit();
 }
