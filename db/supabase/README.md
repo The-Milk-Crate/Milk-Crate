@@ -34,8 +34,8 @@ then this folder twice, and runs `db/test/supabase-checks.sql` against the share
   refreshes (Supabase's default token life is an hour). The backstop policies and the invitee
   wrappers also compare the token's claim with `api_account_claim()` and treat a mismatch as
   `end_user`, so a new role waits for the refresh but a removed or suspended role stops at once
-  there. Handlers that trust the token alone keep the old role until the refresh; B's functions
-  check the row.
+  there. Settled: G's handlers do the same on staff endpoints (they check the row too), and B's
+  functions check the row.
 
 ## The sync
 

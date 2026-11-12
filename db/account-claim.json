@@ -6,6 +6,7 @@
   "noRow": "end_user",
   "suspended": "end_user",
   "readWhen": "When the token is issued. A role change shows after the token refreshes.",
+  "staffRowCheck": "Settled: staff endpoints check the api_accounts row too (exists, same type, not suspended), so a removed or suspended staff role stops at once rather than at the token refresh. See db/test/access-expected.json, settled.staffRowCheck.",
   "precedence": ["administrator", "internal", "internal_accounting", "third_party", "artist", "end_user"],
   "precedenceUse": "Only if an account somehow holds two roles: take the first in this list. The artist endpoints then refuse the account, because its claim is not artist.",
   "cognitoGroups": [

@@ -3,9 +3,13 @@
   "claim": "db/account-claim.json",
   "accountTypes": ["end_user", "artist", "third_party", "administrator", "internal", "internal_accounting"],
   "states": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"],
+  "settled": {
+    "staffRowCheck": "Settled by K Marcus: on staff endpoints and staff reads (reviewRelease, takedownRelease, and the administrator and internal rows of getRelease, listReleases, getPlayback and getCover), the handler checks the caller's api_accounts row as well as the token. The row must exist, have the token's account_type and not be suspended; otherwise the caller is treated as end_user (so 403 on the staff-only calls). A new role still waits for the token refresh; a removed or suspended staff role stops at once.",
+    "otherArtistRelease": "Settled by K Marcus: an artist asking for another artist's release gets 404 (hidden), not 403. 403 is for an account type that may not call the operation."
+  },
   "operations": {
     "getRelease": {
-      "about": "Owner and staff view (Release). 403: the account type may not call it. 404: hidden from this caller.",
+      "about": "Owner and staff view (Release). 403: the account type may not call it. 404: hidden from this caller (another artist's release; settled).",
       "byAccountType": {
         "end_user": {
           "other": {
