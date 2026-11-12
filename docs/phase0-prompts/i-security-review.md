@@ -9,7 +9,7 @@ Read these first, in this order:
 2. `api/openapi.yaml` (the contract; every operation lists `x-account-types` and `x-state-moves`) and `api/README.md`
 3. `core/` (the interfaces in `core/src/platform/` and session G's handlers, router and tests)
 4. `db/` (session B's migrations, SQL functions and tests in `db/migrations/` and `db/test/`, and session C's Supabase-only read rules, claim hook and sync in `db/supabase/`), and session F's Cognito account sync in `deploy/aws/`
-5. `deploy/supabase/` (session E), `deploy/aws/` (session F) and `worker/` (session H)
+5. `deploy/supabase/` (session E, with its open points in The-Milk-Crate/Milk-Crate#19), `deploy/aws/` (session F) and `worker/` (session H)
 6. `.github/workflows/` (session D's checks, and the existing `build.yml` and `pages.yml`)
 
 ### Settled decisions to check against (session C)
@@ -18,6 +18,13 @@ Read these first, in this order:
 - Staff endpoints check the `api_accounts` row as well as the token, so a removed staff role stops at once.
 - Another artist's release is 404. `recordPlays` accepts events for a track that is not live and never counts them.
 - One role per account; the sync's both-roles fallback order is in `db/account-claim.json`.
+
+### Settled decisions to check against (session E)
+Check that the code does what was decided. If you think a decision itself is unsafe, report that as a finding, with the decision named.
+- Playback and cover grants are short-lived (600 seconds on Supabase) and made per request for a signed-in listener. They are not bound to one listener: whoever holds a Supabase signed link or CloudFront cookies can use them until they expire. The contract says so. Check their lifetime and scope (one object, never a `masters/` key), not binding.
+- Phase 0 runs on a separate, free Supabase project, never the app's live project, with files capped at 50 MiB (`MC_FILE_SIZE_LIMIT`). The stand-up pushes `config.toml`, which replaces that project's auth settings, and turns on session C's access token hook.
+- The server's database connection is the `postgres` owner role, through the pooler. Clients upload only with a signed upload token for one object and never get the secret key.
+- A stuck job is failed after 4 hours, and a daily pg_cron sweep runs schedules whose minute was missed.
 
 ### What to check
 For each area, read the code, trace a realistic attack, and decide whether it works. Write down what you checked even when you found nothing.

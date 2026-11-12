@@ -1,12 +1,13 @@
 You are session F of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A to D are merged. Read these first, in this order:
+Sessions A to E are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "F: AWS deployment")
 2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for AWS)
 4. `db/` (session B's migrations, tests and README) and `db/account-claim.json` (session C: the claim, the Cognito group names and precedence)
+5. `deploy/supabase/README.md` and the open points in session E's pull request (The-Milk-Crate/Milk-Crate#19): the Supabase side you must match. Read its modules in `deploy/supabase/src/` where the notes below point to them.
 
-Your job: the AWS deployment. Implement each platform interface on AWS, and the entry point wiring for Lambda. Session E does the same for Supabase, and session G writes the shared handlers. Don't write handlers.
+Your job: the AWS deployment. Implement each platform interface on AWS, and the entry point wiring for Lambda. Session E did the same for Supabase (merged), and session G writes the shared handlers. Don't write handlers.
 
 ### Build (each one a module that implements its interface in `core/src/platform/`)
 - Identity: who is calling, from the Cognito token (verify it against the pool's published keys). The `account_type` claim comes from Cognito groups named in `db/account-claim.json` (session C): `administrator`, `internal`, `internal_accounting`, `third_party` and `artist`, with Cognito precedence 1 to 5 in that order. There is no `end_user` group; no group means `end_user`. If a user is ever in more than one group, take the one with the lowest precedence number. Return null for no valid token.
@@ -15,7 +16,7 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
   - Upload session method `s3_multipart`: S3 presigned multipart. Masters are WAV, AIFF or FLAC, up to 5 GiB, stored at `masters/{artist}/{release}/{track}/original` and never altered. Store keys, never public URLs.
   - Progress and resume: list the parts already stored so an interrupted upload picks up where it stopped. Sign more parts on request (they expire).
   - Confirm: complete the multipart upload with the client's part ETags, and check the full-object CRC64NVME and the stored size (a mismatch is `checksum_mismatch`, and the upload stays open). A multipart SHA-256 in S3 is a checksum of the parts, so it cannot equal the client's whole-file SHA-256; the worker checks that while it streams the master (settled; session H builds it). Say what that costs for 5 GiB in the pull request.
-  - Sign a read: playback method `cloudfront_cookies`, CloudFront signed cookies for that listener plus the stream address. Keep them short-lived.
+  - Sign a read: playback method `cloudfront_cookies`, CloudFront signed cookies plus the stream address, made per request for a signed-in listener and short-lived. Settled: a grant is not bound to one listener (cookies work for whoever holds them until they expire, as Supabase's signed links do), and the contract now says so (`getPlayback`, `PlaybackGrant`, `CoverGrant`). Make them last 600 seconds, as on Supabase.
   - Cover art: the same `s3_multipart` session for a `jpeg` or `png` up to 20 MiB at `art/{artist}/{release}/cover/original`; a read for the cover uses the same `signRead` as playback.
   - `readHead`: the first bytes of an object, as a ranged GET (session G reads a cover's width and height with it).
   - Playback signs only streaming copies under `streams/{artist}/{release}/{track}/`, never `masters/`; scope the cookies to one track's prefix.
@@ -55,12 +56,33 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
 - **Supabase-only SQL.** `db/supabase/` never runs on Aurora. Aurora has one shared login, so G's handlers are the only read check there.
 - **Staff rows (settled).** G's handlers check the caller's `api_accounts` row on staff endpoints as well as the token, so a removed staff role stops at once even before the Cognito token expires. Still remove the user from the group when the row changes.
 
+### From session E (merged; match these)
+Anything that runs on one deployment must run on the other, so where the interfaces leave room, do what session E did. See `deploy/supabase/README.md`.
+- **Database errors.** E throws a `DatabaseError` whose `code` is the SQLSTATE (such as `MC409`) and whose `message` is exactly as Postgres raised it (`deploy/supabase/src/database.ts`). Throw the same shape (name `DatabaseError`, fields `code` and `message`), so session G maps errors one way on both deployments.
+- **Database results.** E returns `date` and `timestamptz` as text (keeping microseconds, for the list cursor), `numeric` and `bigint` as text, and `json` and `jsonb` parsed. Return the same from the Data API, and test a few of B's functions for matching shapes.
+- **Read grants.** 600 seconds; a fresh grant per call; never a `masters/` key (E throws if asked); covers through the same `signRead`.
+- **Storage errors.** E throws a `StorageError` with an HTTP-like `status`, for example 413 when an upload is larger than the deployment's limit and 404 when `readHead` finds no object. Use the same shape for the same cases. S3 needs no file size setting: 5 GiB masters fit, while the free Supabase project for Phase 0 caps files at 50 MiB (settled).
+- **Jobs.**
+  - If the worker cannot be started, `enqueue` still returns the job id, the row stays `queued`, and an hourly sweep runs it.
+  - A job may run for `MC_JOB_TIME_LIMIT_MINUTES` (default 240). Past that, the worker stops waiting and reports "Processing took too long and was stopped. Please upload the masters again, or contact us if it keeps happening." The hourly sweep reports the same for any job still `running` past the limit (its task died).
+  - A crash is reported as "Processing stopped before it finished. Please upload the masters again, or contact us if it keeps happening.", never a stack.
+  - Until session H, the skeleton's processing step touches no file and reports "Processing is not set up yet, so this release cannot move on. Nothing is wrong with your files."
+
+  Use the same rules and the same words. `deploy/supabase/worker/run.ts` shows them; session H later replaces both skeletons with one shared worker.
+- **Schedules.** On E, a run that raises keeps its record with the error and is not tried again, and a daily sweep catches a run whose minute was missed. EventBridge Scheduler has no missed-minute gap, but make a failed run visible the same way (for example a dead-letter queue, or recording the error). Say which in your pull request.
+- **Email.** Use the template `data` fields E's templates need (`deploy/supabase/src/email-templates.ts`), so session G sends the same data to both:
+  - `split_invitation`: `releaseTitle`, `artistName`, `inviteCode`, `expiresAt`
+  - `review_needs_changes` and `release_taken_down`: `releaseTitle`, `reason`
+
+  Escape values in HTML, keep subjects on one line, and refuse a missing field.
+- **Infrastructure.** E's `confirm` returns every problem in plain words, and its stand-up asks K Marcus to type the target again before changing anything. Do the same for the AWS account and region. Keep real values in files outside the repository, as E's `scripts/*.env.example` show.
+
 ### From session D (merged; CI)
 - Every pull request into `milk-crate-backend-poc` runs "Phase 0 checks" (`.github/workflows/phase0-checks.yml`). Six checks must pass before it can merge: `changes`, `contract`, `client-fresh`, `types`, `desktop-tests` and `database`.
 - Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
 - `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
 - `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
-- The checks start only for changes under `api/`, `core/`, `db/` and `milk-crate/`. A change only under `deploy/aws/` skips them (a skipped check counts as passed), and nothing runs your tests in CI until their job is added.
+- The checks start only for changes under `api/`, `core/`, `db/` and `milk-crate/`. A change only under `deploy/aws/` skips them (a skipped check counts as passed), and nothing runs your tests in CI until their job is added. Session E's tests get their job from a session D follow-up (`docs/phase0-prompts/d2-ci-supabase-tests.md`); yours need one too.
 - Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
 
 ### Constraints
@@ -83,5 +105,5 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
 ### Done when
 - Every interface has an AWS implementation with tests that pass against mocks (`core/` and `milk-crate/` type-check, and `cd milk-crate && npm test` still passes).
 - The infrastructure definition, stand-up script and tear-down are ready for K Marcus to run, and nothing in them needs a secret in the repository.
-- The pull request description lists: what you built, what you ran and its result, what you could not run here, the open points for K Marcus (at least: the cost of the worker's SHA-256 check, processing work, entry points waiting on session G, the infrastructure tool), and anything you assumed.
+- The pull request description lists: what you built, what you ran and its result, what you could not run here, the open points for K Marcus (at least: the cost of the worker's SHA-256 check, processing work, entry points waiting on session G, the infrastructure tool, how a failed schedule run is made visible, and anything where you could not match session E), and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

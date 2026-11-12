@@ -6,12 +6,25 @@ Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules, and the sections for B, E, F and G)
 2. `api/openapi.yaml` (the contract; find the release state table at the top: `uploading` → `processing` → `awaiting_splits` or `failed`)
 3. `core/src/platform/` (the eight interfaces; read `jobs.ts` and `storage.ts` closely) and session G's handlers, especially the function that applies a job result
-4. `deploy/supabase/` and `deploy/aws/` (the job queues and worker skeletons that sessions E and F built, and the open points in their pull requests)
+4. `deploy/supabase/` and `deploy/aws/` (the job queues and worker skeletons that sessions E and F built, and the open points in their pull requests; session E's is The-Milk-Crate/Milk-Crate#19)
 5. `db/` (session B's tables, SQL functions and tests)
 
 Your job: the processing work, as one shared piece that both workers call.
 
 Today the worker skeletons (Fly Machines on Supabase, Fargate on AWS) pick up a `process_release` job and report success or a failure in plain words. Nothing yet happens in between. You build what happens in between. Fly Machines and Fargate both run containers, so build one worker and one container image that run on both, not two.
+
+### What session E left for you (Supabase side)
+- **The skeleton.** `deploy/supabase/worker/run.ts` takes a `ProcessRelease` step, `(job: { jobId, releaseId }) => Promise<JobResult>`. Today that step is `processingNotBuilt`, which touches no file and reports "Processing is not set up yet, so this release cannot move on. Nothing is wrong with your files." `deploy/supabase/worker/main.ts` passes it in. Your function replaces it there.
+- **Already handled around your step:**
+  - Claiming the job with `api_job_started`, so don't call it a second time on Supabase.
+  - A time limit, `MC_JOB_TIME_LIMIT_MINUTES` (default 240). Past it the worker reports "Processing took too long and was stopped…", and the hourly sweep does the same for a job left `running` by a dead machine. Check 4 hours is enough for your largest release and say so.
+  - A crash in your step is reported in plain words, never as a stack.
+  - Reporting the result through session G's job-result function.
+
+  Session F's skeleton should behave the same; check it does.
+- **The image.** E's worker image is `deploy/supabase/worker/Dockerfile` (Node 22), which `deploy/supabase/fly/fly.toml` builds. Your shared image replaces it on Fly.
+- **Storage on Supabase.** E's storage module talks to Supabase Storage over HTTP with the secret key (`deploy/supabase/src/storage.ts`). There are three private buckets, one per top folder: `mc-masters`, `mc-streams` (no type or size limit yet, waiting on your format) and `mc-art`. A stream read of a master is a plain `GET` of the object; for writing a streaming copy, Supabase advises TUS (6 MB chunks) above about 6 MB.
+- **File sizes.** The free Supabase project for Phase 0 caps files at 50 MiB (settled), so masters there are at most 50 MiB. Your opt-in 2 GB test still runs locally against fake storage.
 
 ### Before you build anything: ask K Marcus
 Don't guess these. Ask them in this session, one round, with the recommended answer first, and write the answers in your pull request.
@@ -21,9 +34,15 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 4. The SHA-256 check (settled): the worker streams the master once, hashes it as it goes, and compares with the SHA-256 recorded at confirm. A mismatch fails the release with plain words; the artist replaces the master (`failed` → `uploading`). Nothing to ask.
 5. Sonic analysis (tempo, energy, brightness, dynamics) and smaller sizes of the cover art: in or out for Phase 0? Recommended: both out; the slice does not need them and fingerprinting is out of scope. Covers stay as the uploaded original.
 6. The interface gap below.
+7. The `mc-streams` bucket's limits on Supabase, once the format is chosen: the file type, and a size limit. Recommended: the format's MIME type, and no size limit beyond the project's.
 
 ### Interface gap (needs K Marcus's approval)
-`ObjectStorage` has only `readHead` (small ranged reads, for cover headers), no way for a worker to stream a master or write a streaming copy. Propose the smallest addition (for example `read(key)` returning a stream, and `put(key, stream)`). If K Marcus approves it, you may make exactly that addition in `core/src/platform/storage.ts` and the matching minimal implementations in the storage modules of `deploy/supabase/` and `deploy/aws/`, and nothing else in those folders. If not approved, stop and write what is blocked.
+`ObjectStorage` has only `readHead` (small ranged reads, for cover headers), no way for a worker to stream a master or write a streaming copy. Propose the smallest addition (for example `read(key)` returning a stream, and `put(key, stream)`). If K Marcus approves it, you may make exactly that addition in `core/src/platform/storage.ts` and the matching minimal implementations in the storage modules of `deploy/supabase/` and `deploy/aws/`, with tests next to theirs (`deploy/supabase/test/fake-storage.ts` is E's fake Supabase Storage; extend it for the new routes). Beyond that, in those folders you may only:
+- pass your function to each worker skeleton in place of the placeholder (`deploy/supabase/worker/main.ts` on Supabase);
+- point each platform's image build at your `Dockerfile` (`deploy/supabase/fly/fly.toml` on Fly);
+- set the `mc-streams` limits K Marcus approves (`deploy/supabase/sql/0002_buckets.sql`).
+
+Nothing else there. `bash deploy/supabase/test/run.sh` must still pass. If not approved, stop and write what is blocked.
 
 ### Build (after the answers)
 - The processing piece: given a `process_release` job, for each track of the release:
@@ -33,7 +52,7 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
   - When the worker picks a job up, it calls `api_job_started(job)`.
 - The release result: success when every track passes; failure with one plain-words reason for the artist when any track fails. Report it through the job result path so the release moves to `awaiting_splits` or `failed` (session G's function applies it; don't move states yourself).
 - Safe to run twice: a retried job gives the same result, never leaves half-written derived files behind (clean up on failure), and never touches the master.
-- The container: one `Dockerfile` for the worker (Node 22 plus ffmpeg), and the thin entry point each platform's worker skeleton calls. Don't change the platforms' worker skeletons beyond calling your function.
+- The container: one `Dockerfile` for the worker (Node 22 plus ffmpeg), and the thin entry point each platform's worker skeleton calls. Don't change the platforms' worker skeletons beyond calling your function (see the list above).
 - If the data you need to record has no home in session B's tables, add an additive migration in `db/migrations/` (new numbered file, safe to run twice, existing tables unchanged) and say so in the pull request.
 
 ### Tests
@@ -69,5 +88,5 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 - Every track of a release is checked, hashed and turned into a streaming copy by one shared piece, and the release result reaches `awaiting_splits` or `failed` through the existing job result path.
 - The tests pass, including the failure cases and cleanup; `core/` and `milk-crate/` type-check and `cd milk-crate && npm test` still passes.
 - The `Dockerfile` and entry point are ready for both platforms' workers to use.
-- The pull request description lists: K Marcus's answers to the open questions (1, 3, 5 and 6) and the file names chosen under `streams/`, what you built, what you ran and its result, what you could not run (at least the image build), any change made to another session's folders, the open points for K Marcus, and anything you assumed.
+- The pull request description lists: K Marcus's answers to the open questions (1, 3, 5 and 6) and the file names chosen under `streams/`, what you built, what you ran and its result, what you could not run (at least the image build), any change made to another session's folders (and that `bash deploy/supabase/test/run.sh` still passes), the open points for K Marcus, and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

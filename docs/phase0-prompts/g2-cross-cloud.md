@@ -32,6 +32,17 @@ Your job: a test suite that runs the same scenario against both deployments' mod
 - A script for real deployments, `tests/cross-cloud/run-live.*`, that runs the same scenario against a base address and tokens read from environment variables (one base address and one token for each account type). It never contains or prints a secret, refuses to run when a variable is missing, and does nothing destructive outside the releases it creates. You write it and test it only against the mocks; you do not run it against anything real.
 - One documented command from a clean checkout runs the suite and leaves no cluster or temp files behind. Keep it free of anything specific to one machine, because session D will run it in CI.
 
+### From session E (merged; what its side gives you)
+- **Mocks.** Session E's tests have the pieces for the Supabase module set:
+  - `deploy/supabase/test/fake-storage.ts`: an in-memory Supabase Storage at its HTTP edge, with `tusSend`, a TUS client that sends part of a file then resumes;
+  - `deploy/supabase/test/cron-standin.sql`: a pg_cron stand-in. Fire a schedule by running its `cron.job` command;
+  - `deploy/supabase/test/run.sh`: how the stand-up SQL is applied on a throwaway cluster (`scripts/apply-sql.sh`).
+
+  Reuse them; don't copy them.
+- **Signed links.** Supabase's `signed_url` and AWS's `cloudfront_cookies` are both short-lived and made per request, and neither is bound to one listener. The contract says so (settled); don't report it as a difference.
+- **File size.** The free Supabase project for Phase 0 caps files at 50 MiB (settled; `MC_FILE_SIZE_LIMIT=50MiB`). The live script must use masters of 50 MiB or less on both sides, so the cap is not reported as a difference. A free project also pauses after about a week without use: the live script should say so plainly when the project does not answer.
+- **Jobs.** E reports a stuck job (past 4 hours) or a crash as a plain-words failure, and the skeleton before session H fails every release plainly. Session H's shared worker replaces that. If H is not merged, use a fake processing step on both sides.
+
 ### When the two sides differ
 Don't fix sessions B, E or F's code, and don't change the handlers to hide a difference. Report each difference as a finding in the pull request: the step, what each deployment returned, which side looks wrong and why. K Marcus routes the fixes. If a difference is caused by the contract, say that instead.
 
