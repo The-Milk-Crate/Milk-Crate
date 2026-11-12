@@ -4,7 +4,7 @@
 #   bash deploy/supabase/scripts/confirm.sh
 #
 # Reads SUPABASE_ACCESS_TOKEN, MC_SUPABASE_PROJECT_REF, MC_DB_URL with PGPASSWORD,
-# FLY_API_TOKEN and MC_FLY_APP from your shell. Read only: it changes nothing.
+# FLY_API_TOKEN, MC_FLY_APP and MC_FILE_SIZE_LIMIT (default 5GiB) from your shell. Read only: it changes nothing.
 set -euo pipefail
 pkg="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$pkg"

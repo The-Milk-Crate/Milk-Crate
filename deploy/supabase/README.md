@@ -128,11 +128,12 @@ cannot open SMTP ports 25 or 587, and Supabase Auth's email only sends auth emai
 K Marcus runs these; they hold no secrets. Every setting comes from the shell or from two
 secrets files kept outside the repository (`scripts/*.env.example` show what goes in them).
 
-**Which project (settled).** A separate Supabase project for Phase 0, never the app's live
-project: pushing `config.toml` replaces the project's auth settings. Create the project first
-(on the Pro plan, see below); the stand-up loads the app's tables into it, then the Phase 0
-SQL. It starts with no accounts, so create test artists and admins in it. Standing the slice up
-on the live project is a later, separate step (Phase 1).
+**Which project (settled).** A separate, free Supabase project for Phase 0 (the account's
+second free project), never the app's live project: pushing `config.toml` replaces the
+project's auth settings, and the access token hook runs on every sign-in. The stand-up loads
+the app's tables into it, then the Phase 0 SQL. It starts with no accounts, so create test
+artists and admins in it. Standing the slice up on the live project is a later, separate step
+(Phase 1).
 
 ```bash
 bash deploy/supabase/scripts/stand-up.sh
@@ -153,9 +154,12 @@ tables; read, never changed), then `db/migrations/`, `db/supabase/` (its `0006` 
 `sql/` here. The default grants on B's tables are never left open, and a failure changes
 nothing.
 
-**Plan and file size.** 5 GiB masters need the project's file size limit at 5 GiB
-(`config.toml`, `[storage] file_size_limit`), and only the Pro plan or higher allows that: the
-Free plan caps a file at 50 MB. `confirm.sh` reports the limit if it is lower.
+**Plan and file size.** `MC_FILE_SIZE_LIMIT` sets the project's file size limit
+(`config.toml`), the masters bucket's limit and the largest upload `startUpload` accepts. On the
+free Phase 0 project set it to `50MiB`, the Free plan's cap, in your shell and in the secrets
+file: the proof of concept then uses test masters up to 50 MiB, and a larger upload is refused
+in plain words. 5 GiB masters (the contract's largest, and the default) need the Pro plan or
+higher. `confirm.sh` checks the project's limit against the setting.
 
 **Tokens.** Token life stays at Supabase's default, 3600 seconds (`jwt_expiry`). A role change
 shows after the token refreshes.

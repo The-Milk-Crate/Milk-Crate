@@ -116,6 +116,15 @@ describe("ObjectStorage on Supabase Storage (mocked at the HTTP edge)", () => {
     assert.equal(cover.method, "tus");
   });
 
+  test("on a free project (MC_FILE_SIZE_LIMIT=50MiB) a larger master is refused in plain words", async () => {
+    const fake = fakeStorage({ "mc-masters": { max: 52428800, mimes: null }, "mc-streams": { max: null, mimes: null }, "mc-art": { max: 20971520, mimes: null } });
+    const storage = supabaseStorage({ supabaseUrl: BASE, serviceKey: SERVICE_KEY, fileSizeLimitBytes: 52428800, fetch: fake.fetch });
+    await assert.rejects(storage.startUpload({ key: MASTER, format: "wav", sizeBytes: 52428801 }), (e: { status?: number; message: string }) =>
+      e.status === 413 && /takes files up to 52428800 bytes/.test(e.message));
+    assert.equal(fake.requests.length, 0, "nothing is opened in storage");
+    assert.equal((await storage.startUpload({ key: MASTER, format: "wav", sizeBytes: 52428800 })).method, "tus");
+  });
+
   test("signParts is only for s3_multipart", async () => {
     await assert.rejects(setup().storage.signParts(MASTER, "x", [1]), /s3_multipart/);
   });

@@ -7,6 +7,7 @@ import { supabaseJobs, type ApplyJobResult } from "./jobs.ts";
 import { flyMachines } from "./fly.ts";
 import { supabaseSchedules } from "./schedules.ts";
 import { supabaseSecretsAndEmail } from "./secrets-email.ts";
+import { parseFileSize } from "./size.ts";
 
 /**
  * Settings, all from the environment (Edge Function secrets, or Fly secrets for the worker).
@@ -53,6 +54,7 @@ export function createSupabaseModules(
       serviceKey,
       publishableKey: env("MC_PUBLISHABLE_KEY") || undefined,
       readTtlSeconds: Number.isFinite(ttl) && ttl > 0 ? ttl : 600,
+      fileSizeLimitBytes: parseFileSize(env("MC_FILE_SIZE_LIMIT")),
       fetch: extra.fetch,
     }),
     jobs: supabaseJobs({ database, worker, applyResult: extra.applyJobResult }),

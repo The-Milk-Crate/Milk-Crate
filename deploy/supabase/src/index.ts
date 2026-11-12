@@ -9,3 +9,4 @@ export { edgeFunctions } from "./functions.ts";
 export { supabaseSecretsAndEmail } from "./secrets-email.ts";
 export { supabaseInfrastructure, confirmDeployment } from "./infrastructure.ts";
 export { createSupabaseModules } from "./modules.ts";
+export { parseFileSize, CONTRACT_MASTER_MAX_BYTES } from "./size.ts";

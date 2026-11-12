@@ -1,4 +1,5 @@
 import { serviceHeaders } from "./env.ts";
+import { CONTRACT_MASTER_MAX_BYTES } from "./size.ts";
 import type {
   ConfirmUploadInput,
   ConfirmUploadResult,
@@ -19,7 +20,7 @@ const STREAM_KEY = new RegExp(`^streams/${ID}/${ID}/${ID}/[A-Za-z0-9._-]+(/[A-Za
 // Delete takes a release folder or deeper, never a whole bucket or artist.
 const DELETE_PREFIX = new RegExp(`^(masters|streams|art)/${ID}/${ID}/([A-Za-z0-9._-]+/)*$`);
 
-export const MASTER_MAX_BYTES = 5 * 1024 ** 3; // 5 GiB
+export const MASTER_MAX_BYTES = CONTRACT_MASTER_MAX_BYTES; // 5 GiB
 export const COVER_MAX_BYTES = 20 * 1024 ** 2; // 20 MiB
 const READ_HEAD_MAX_BYTES = 1024 ** 2;
 
@@ -55,6 +56,11 @@ export interface SupabaseStorageOptions {
   /** The publishable (anon) key, sent to clients as `apikey` with their TUS requests. Public. */
   publishableKey?: string;
   buckets?: Buckets;
+  /**
+   * The project's file size limit in bytes (MC_FILE_SIZE_LIMIT). Default 5 GiB; a Free-plan
+   * project caps files at 50 MiB, so masters above it are refused in plain words.
+   */
+  fileSizeLimitBytes?: number;
   /** Life of a signed read in seconds. Default 600. */
   readTtlSeconds?: number;
   fetch?: typeof fetch;
@@ -124,6 +130,7 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
   const now = options.now ?? Date.now;
   const ttl = options.readTtlSeconds ?? 600;
   const auth = serviceHeaders(options.serviceKey);
+  const masterMax = Math.min(options.fileSizeLimitBytes ?? MASTER_MAX_BYTES, MASTER_MAX_BYTES);
 
   function bucketOf(key: string): string {
     const top = key.split("/")[0];
@@ -214,10 +221,16 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
         if (!Number.isInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > MASTER_MAX_BYTES) {
           throw new Error("a master is 1 byte to 5 GiB");
         }
+        if (sizeBytes > masterMax) {
+          throw new StorageError(413, `this deployment takes files up to ${masterMax} bytes (its plan's file size limit)`);
+        }
       } else if (isCover) {
         if (!["jpeg", "png"].includes(format)) throw new Error("a cover is JPEG or PNG");
         if (!Number.isInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > COVER_MAX_BYTES) {
           throw new Error("a cover is 1 byte to 20 MiB");
+        }
+        if (sizeBytes > masterMax) {
+          throw new StorageError(413, `this deployment takes files up to ${masterMax} bytes (its plan's file size limit)`);
         }
       } else {
         throw new Error(`uploads go only to a master or cover key, not ${key}`);

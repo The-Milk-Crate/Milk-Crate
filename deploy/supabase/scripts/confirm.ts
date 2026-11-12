@@ -2,6 +2,7 @@
 import { required } from "../src/env.ts";
 import { postgresDatabase } from "../src/database.ts";
 import { confirmDeployment } from "../src/infrastructure.ts";
+import { parseFileSize } from "../src/size.ts";
 
 const env = (name: string) => process.env[name];
 const database = postgresDatabase({ url: required(env, "MC_DB_URL"), max: 1 });
@@ -12,6 +13,7 @@ try {
     accessToken: required(env, "SUPABASE_ACCESS_TOKEN"),
     flyApp: required(env, "MC_FLY_APP"),
     flyToken: required(env, "FLY_API_TOKEN"),
+    fileSizeLimitBytes: parseFileSize(env("MC_FILE_SIZE_LIMIT")),
   });
   if (result.ok) {
     console.log("ok - the Phase 0 Supabase deployment checks passed");

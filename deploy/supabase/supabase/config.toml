@@ -19,10 +19,11 @@ major_version = 17
 
 [storage]
 enabled = true
-# The project's limit per file. 5 GiB masters need this, and only the Pro plan or higher
-# allows it: the Free plan caps a file at 50 MB. Each bucket's own limit is set in
-# deploy/supabase/sql/0002_buckets.sql (masters 5 GiB, covers 20 MiB).
-file_size_limit = "5GiB"
+# The project's limit per file, from MC_FILE_SIZE_LIMIT (scripts/stand-up.sh sets 5GiB if it is
+# unset). The Phase 0 project is a free project (settled), so set MC_FILE_SIZE_LIMIT=50MiB: the
+# Free plan caps a file at 50 MiB. 5 GiB masters need the Pro plan or higher. Each bucket's own
+# limit is set in deploy/supabase/sql/0002_buckets.sql from the same setting.
+file_size_limit = "env(MC_FILE_SIZE_LIMIT)"
 
 [auth]
 enabled = true

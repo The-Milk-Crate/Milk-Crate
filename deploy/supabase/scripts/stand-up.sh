@@ -10,8 +10,8 @@
 #   3. Applies the database in one transaction: the app's SQL if the project has none yet,
 #      then db/migrations/, db/supabase/ and deploy/supabase/sql/ (scripts/apply-sql.sh).
 #      This also turns on pg_cron and makes the three private buckets with their limits.
-#   4. Pushes supabase/config.toml: the access token hook, token life (1 hour), the 5 GiB
-#      file size limit. The hook is turned on only after its function exists (step 3).
+#   4. Pushes supabase/config.toml: the access token hook, token life (1 hour), the file
+#      size limit (MC_FILE_SIZE_LIMIT). The hook is turned on only after its function exists (step 3).
 #   5. Sets the Edge Function secrets from your secrets file.
 #   6. Deploys every Edge Function entry point (none until session G's handlers exist).
 #   7. Fly: creates the app if needed, sets its secrets, builds and pushes the worker image,
@@ -32,9 +32,12 @@
 #   FLY_API_TOKEN           a Fly token that may create apps and machines in MC_FLY_ORG
 #   MC_FLY_APP, MC_FLY_ORG, MC_FLY_REGION
 #   MC_FLY_SECRETS_FILE     the worker's secrets, NAME=value lines (see fly-secrets.env.example)
+#   MC_FILE_SIZE_LIMIT      the project's file size limit: 50MiB on a free project (the Phase 0
+#                           project, settled), 5GiB on Pro. Default 5GiB. Put the same value in
+#                           MC_SECRETS_FILE, so uploads above it are refused in plain words.
 #
-# Plan: masters up to 5 GiB need the Pro plan or higher. The Free plan caps a file at 50 MB
-# and step 4 cannot raise the limit above that; step 8 then reports it.
+# Plan: the Phase 0 project is a free project (settled), so files are capped at 50 MiB and the
+# proof of concept uses small test masters. Masters up to 5 GiB need the Pro plan or higher.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,6 +62,11 @@ if [[ "$MC_DB_URL" =~ ://[^/@]*:[^/@]*@ ]]; then
   echo "Put the password in PGPASSWORD, not in MC_DB_URL." >&2
   exit 2
 fi
+export MC_FILE_SIZE_LIMIT="${MC_FILE_SIZE_LIMIT:-5GiB}"
+if ! grep -q "^MC_FILE_SIZE_LIMIT=$MC_FILE_SIZE_LIMIT$" "$MC_SECRETS_FILE"; then
+  echo "$MC_SECRETS_FILE must set MC_FILE_SIZE_LIMIT=$MC_FILE_SIZE_LIMIT, as your shell does." >&2
+  exit 2
+fi
 ref="$MC_SUPABASE_PROJECT_REF"
 app="$MC_FLY_APP"
 image="registry.fly.io/$app:phase0"
@@ -68,6 +76,7 @@ if ! grep -q "^MC_FLY_WORKER_IMAGE=$image$" "$MC_SECRETS_FILE"; then
 fi
 
 echo "This changes Supabase project $ref (database, auth settings, storage, functions, secrets)"
+echo "with a file size limit of $MC_FILE_SIZE_LIMIT."
 echo "and Fly app $app. Pushing config.toml replaces the project's auth settings."
 echo "Use the Phase 0 project, not the app's live project."
 read -r -p "Type the project ref again to go on: " typed

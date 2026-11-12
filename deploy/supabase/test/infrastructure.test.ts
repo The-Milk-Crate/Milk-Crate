@@ -52,6 +52,19 @@ describe("Infrastructure.confirm (local Postgres after the stand-up SQL, APIs mo
     ]);
   });
 
+  test("a free project stood up with MC_FILE_SIZE_LIMIT=50MiB passes against its own limit", async () => {
+    await db.query("update storage.buckets set file_size_limit = 52428800 where id = 'mc-masters'");
+    try {
+      const free = apis(goodAuth, { fileSizeLimit: 52428800 });
+      const r = await confirmDeployment({ database: db, projectRef: "abcd", accessToken: "t", flyApp: "mc-worker", flyToken: "f", fileSizeLimitBytes: 52428800, fetch: free.fetch });
+      assert.deepEqual(r, { ok: true, problems: [] });
+      const low = await confirmDeployment({ database: db, projectRef: "abcd", accessToken: "t", flyApp: "mc-worker", flyToken: "f", fileSizeLimitBytes: 52428800, fetch: apis(goodAuth, { fileSizeLimit: 1000 }).fetch });
+      assert.deepEqual(low.problems, ["the project's file size limit is 1000 bytes; MC_FILE_SIZE_LIMIT asks for 52428800"]);
+    } finally {
+      await db.query("update storage.buckets set file_size_limit = 5368709120 where id = 'mc-masters'");
+    }
+  });
+
   test("finds the daily schedule sweep missing", async () => {
     await db.query("update cron.job set active = false where jobname = 'mc_schedule_sweep'");
     try {

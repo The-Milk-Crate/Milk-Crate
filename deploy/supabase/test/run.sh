@@ -87,6 +87,17 @@ if ! diff -u "$work/schema-1.sql" "$work/schema-2.sql" >"$work/schema.diff"; the
 fi
 echo "ok - the second stand-up run changed nothing"
 
+# The free project: MC_FILE_SIZE_LIMIT=50MiB sets the masters bucket to 50 MiB (covers stay at
+# 20 MiB). Then back to the default for the tests.
+MC_FILE_SIZE_LIMIT=50MiB MC_DB_URL="$url" PSQL="$PG_BIN/psql" bash "$pkg/scripts/apply-sql.sh" >/dev/null
+limits="$(psql_db -At -c "select string_agg(id || '=' || coalesce(file_size_limit::text, 'none'), ' ' order by id) from storage.buckets where id like 'mc-%'")"
+if [[ "$limits" != "mc-art=20971520 mc-masters=52428800 mc-streams=none" ]]; then
+  echo "FAIL - with MC_FILE_SIZE_LIMIT=50MiB the buckets are: $limits" >&2
+  exit 1
+fi
+MC_DB_URL="$url" PSQL="$PG_BIN/psql" bash "$pkg/scripts/apply-sql.sh" >/dev/null
+echo "ok - MC_FILE_SIZE_LIMIT=50MiB sets the buckets for a free project ($limits)"
+
 cd "$pkg"
 MC_TEST_DB_URL="$url" node --test --test-reporter=spec --test-concurrency=1 test/*.test.ts
 echo "All deploy/supabase tests passed."

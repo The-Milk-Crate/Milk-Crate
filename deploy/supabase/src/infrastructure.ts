@@ -13,6 +13,8 @@ export interface ConfirmOptions {
   /** The Fly app and a token for it. */
   flyApp: string;
   flyToken: string;
+  /** The file size limit the deployment was stood up with (MC_FILE_SIZE_LIMIT). Default 5 GiB. */
+  fileSizeLimitBytes?: number;
   managementApi?: string;
   flyApi?: string;
   fetch?: typeof fetch;
@@ -22,6 +24,7 @@ export interface ConfirmOptions {
 export async function confirmDeployment(options: ConfirmOptions): Promise<{ ok: boolean; problems: string[] }> {
   const problems: string[] = [];
   const db = options.database;
+  const fileLimit = Math.min(options.fileSizeLimitBytes ?? MASTER_MAX_BYTES, MASTER_MAX_BYTES);
   const doFetch = options.fetch ?? fetch;
   const check = async (what: string, fn: () => Promise<void>) => {
     try {
@@ -89,8 +92,8 @@ export async function confirmDeployment(options: ConfirmOptions): Promise<{ ok: 
       [Object.values(DEFAULT_BUCKETS)],
     );
     const want: Record<string, number | null> = {
-      [DEFAULT_BUCKETS.masters]: MASTER_MAX_BYTES,
-      [DEFAULT_BUCKETS.art]: COVER_MAX_BYTES,
+      [DEFAULT_BUCKETS.masters]: fileLimit,
+      [DEFAULT_BUCKETS.art]: Math.min(COVER_MAX_BYTES, fileLimit),
       [DEFAULT_BUCKETS.streams]: null,
     };
     for (const [id, limit] of Object.entries(want)) {
@@ -126,8 +129,12 @@ export async function confirmDeployment(options: ConfirmOptions): Promise<{ ok: 
   await check("storage", async () => {
     const storage = await mgmt("/config/storage");
     const limit = Number(storage.fileSizeLimit);
-    if (!(limit >= MASTER_MAX_BYTES)) {
-      problems.push(`the project's file size limit is ${limit} bytes; 5 GiB masters need 5368709120 (Pro plan or higher)`);
+    if (!(limit >= fileLimit)) {
+      problems.push(
+        fileLimit === MASTER_MAX_BYTES
+          ? `the project's file size limit is ${limit} bytes; 5 GiB masters need 5368709120 (Pro plan or higher)`
+          : `the project's file size limit is ${limit} bytes; MC_FILE_SIZE_LIMIT asks for ${fileLimit}`,
+      );
     }
   });
 
