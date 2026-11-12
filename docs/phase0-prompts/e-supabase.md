@@ -1,16 +1,16 @@
 You are session E of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Session A and B are merged. Read these first, in this order:
+Sessions A, B and C are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "E: Supabase deployment")
 2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for Supabase)
-4. `db/` (session B's migrations, tests and README)
+4. `db/` (session B's migrations, tests and README, then session C's `db/supabase/README.md`)
 5. `milk-crate/supabase/*.sql` and `milk-crate/src/lib/supabase.ts` (how the app uses Supabase today; do not change any of it)
 
 Your job: the Supabase deployment. Implement each platform interface on Supabase, and the entry point wiring for Edge Functions. Session F does the same for AWS, and session G writes the shared handlers. Don't write handlers.
 
 ### Build (each one a module that implements its interface in `core/src/platform/`)
-- Identity: who is calling, from the Supabase token. Read the `account_type` claim (session C writes the hook; you only read the claim). Return null for no valid token.
+- Identity: who is calling, from the Supabase token. Read the `account_type` claim from the token's top-level claims, never from `user_metadata`, which users can change (session C's hook `public.api_access_token_hook` writes it; you only read it). Return null for no valid token.
 - Object storage:
   - Upload session method `tus`: resumable uploads through Supabase Storage. An interrupted upload resumes from the stored offset. Masters are WAV, AIFF or FLAC, up to 5 GiB, stored at `masters/{artist}/{release}/{track}/original` and never altered. Store keys, never public URLs.
   - Confirm: check the stored size (a mismatch is `checksum_mismatch`, and the upload stays open). Supabase Storage keeps no SHA-256 of an object and an Edge Function cannot hash 5 GiB, so the SHA-256 is checked by the worker while it streams the master (settled; session H builds it). Say what that costs for 5 GiB in the pull request.
@@ -41,6 +41,14 @@ See `db/README.md`.
 - **Takedown storage.** `api_takedown_release` returns the prefixes to delete. After `ObjectStorage.delete` succeeds for each, call `api_takedown_files_deleted(audit)`.
 - **The connection role.** Session C revokes Supabase's default grants on the `api_` tables and functions from `anon` and `authenticated`. The server's database connection (Edge Functions and the worker) must use a role that keeps full access, such as the owner that applied `db/migrations/`, not a client role. Say which role you use and why.
 - **Stand-up order.** Apply `db/migrations/`, then `db/supabase/`, in one step, so the default grants are never left open.
+
+### From session C (merged; handle these)
+See `db/supabase/README.md`.
+- **The hook.** Enable the custom access token hook in `config.toml`: under `[auth.hook.custom_access_token]`, set `enabled = true` and `uri = "pg-functions://postgres/public/api_access_token_hook"`. Only `supabase_auth_admin` may run it; C's SQL grants that.
+- **Applying `db/supabase/`.** Six numbered files (`0001` to `0006`), in order, after `db/migrations/`. Each is safe to run twice. `0006` runs the lock-down again and must be last.
+- **No direct reads (settled).** Clients read the new slice only through the API. `anon` gets nothing, and `authenticated` gets only `api_client_get_invitation` and `api_client_respond_to_invite`. Don't grant clients any `api_` table, view or function. The server connection uses `service_role` or the owner, which keep their access; say which.
+- **Expected linter warnings.** Supabase's linter will flag C's public views as "security definer view". That is by design, and the views are not granted to clients.
+- **Tokens.** A role change shows only after the token refreshes (default life is one hour). Keep the default unless K Marcus asks; say what you set.
 
 ### Constraints
 - No real projects, no real keys. You have no Supabase or Fly account access. Code, config and a script are the deliverable, and tests use mocks or a local Postgres.

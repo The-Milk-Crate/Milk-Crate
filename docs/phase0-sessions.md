@@ -60,7 +60,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 |---|---|
 | A (done) | `docs/phase0-prompts/a-contract.md`. The original brief, as first given. The contract has changed since: see `api/openapi.yaml`. |
 | B | `docs/phase0-prompts/b-database.md` |
-| C | `docs/phase0-prompts/c-read-rules.md` |
+| C (done) | `docs/phase0-prompts/c-read-rules.md`. Merged; see "Settled with session C" below and `db/supabase/README.md`. |
 | D | `docs/phase0-prompts/d-ci.md` |
 | E | `docs/phase0-prompts/e-supabase.md` |
 | F | `docs/phase0-prompts/f-aws.md` |
@@ -178,13 +178,24 @@ Branch `phase0/c-read-rules`.
 Done when: tests prove each account type reads only what the contract allows under the
 Supabase rules, and the expected-results fixture is ready for G's handler tests.
 
+Merged. What C left for the others:
+- `db/supabase/` (six files; see `db/supabase/README.md`): the lock-down, the hook
+  `public.api_access_token_hook`, the sync, backstop policies and views, the invitee wrappers
+  and the grants.
+- `db/account-claim.json`: the claim for both deployments, with the Cognito group names and
+  precedence.
+- `db/test/access-expected.json`: the expected-results fixture, with a `settled` section for G.
+- Its tests run as step 5 of `bash db/test/run.sh`.
+
 ## D: CI
 Branch `phase0/d-ci`. The only session that may edit `.github/workflows/`.
 - New workflow files only. Don't edit `build.yml` or `pages.yml`.
 - On pull requests: lint the contract, type-check `core/` and `milk-crate/`, run
   `cd milk-crate && npm test`, regenerate the client and fail if `schema.d.ts` is stale.
 - Run B's database test, `bash db/test/run.sh` (it starts its own throwaway PostgreSQL 16
-  cluster; no Postgres service). Later, E's and F's tests.
+  cluster; no Postgres service). It also runs C's Supabase checks (step 5), which read
+  `milk-crate/supabase/`, `api/openapi.yaml` and `core/src/platform/types.ts`, so run it when
+  those change too. Later, E's and F's tests.
 - No secrets in workflows for this phase. Deploy jobs wait for K Marcus.
 
 Done when: a pull request that breaks the contract, the types or the tests goes red, and a
@@ -210,6 +221,12 @@ Branch `phase0/e-supabase`.
   - pg_cron runs `api_release_go_live` with `p_release_id`.
   - Jobs use `api_create_job` and `api_job_started`.
   - The server's connection uses a role that keeps access after C revokes the default grants.
+- From C (merged):
+  - Wire the hook `public.api_access_token_hook`. Identity reads `account_type` from the
+    token's top-level claims, never from `user_metadata`.
+  - Clients get no direct reads: `anon` gets nothing, and `authenticated` gets only the two
+    invitee wrappers. The server connection uses `service_role` or the owner.
+  - Apply all six files in `db/supabase/`, in order, after `db/migrations/`.
 
   Details in `docs/phase0-prompts/e-supabase.md`.
 
@@ -229,7 +246,8 @@ Branch `phase0/f-aws`.
 - The account source on AWS: a Cognito post-confirmation trigger writes the user's email to
   `api_accounts` where a row exists, and a small sync puts each user in the Cognito group named
   by their `api_accounts.account_type` (no group means `end_user`). A suspended account goes in
-  no group until C decides its claim.
+  no group: its claim is `end_user` (settled with C). The group names and precedence are in
+  `db/account-claim.json`; there is no `end_user` group.
 - From B (merged): the Data API runs one statement per call and B's migration files hold several,
   with `$$` bodies, so the stand-up applies each file whole with `psql` or with a tested splitter.
   `Database` surfaces B's SQLSTATEs (`MC403`, `MC404`, `MC409`, `MC422`). Details in
@@ -268,6 +286,11 @@ Stage 1:
   - Map B's SQLSTATEs (`MC403`, `MC404`, `MC409`, `MC422`) to the same HTTP codes.
   - The owner's own party (`is_owner`) gets no invitation. A changed party needs a new one.
   - Refuse suspended accounts.
+- From C (merged):
+  - Test read access against `db/test/access-expected.json`.
+  - On staff endpoints, check the caller's `api_accounts` row as well as the token.
+  - Another artist's release is 404.
+  - Hash invite codes as SHA-256 of the UTF-8 code, in lowercase hex.
 
   Details in `docs/phase0-prompts/g1-core.md`.
 
@@ -347,12 +370,31 @@ file added.
 - **Resending an invitation.** A new endpoint, `resendInvitation`: release owner only, party
   must be `invited`, issues a new 14-day code and voids the old one, limited per party per day.
 
+- **Settled with session C.**
+  - A suspended account's claim is `end_user`. On AWS it is in no Cognito group.
+  - Clients read the new slice only through the API. On Supabase, clients get no direct reads
+    of any `api_` table, view or helper; `authenticated` gets only the invitee wrappers
+    `api_client_get_invitation` and `api_client_respond_to_invite`. C's row level security
+    policies stay as a backstop.
+  - Staff endpoints check the `api_accounts` row as well as the token. The row must exist, have
+    the token's type and not be suspended; otherwise the caller is treated as `end_user`. A
+    removed staff role stops at once; a new role waits for the token refresh.
+  - An artist asking for another artist's release gets 404. 403 is for an account type that may
+    not call the operation.
+  - `recordPlays` accepts events for a track whose release is not live (202, kept, never
+    counted). Only an unknown track id is refused (422).
+  - Both roles at once is refused by the sync. An artist row with history that also gets an
+    admins row is suspended (`end_user`), because an artist row never changes type; that
+    staff member uses a second account. An admins row for an existing `internal`,
+    `internal_accounting` or `third_party` account is refused, not upgraded.
+  - Invite codes are hashed as SHA-256 of the UTF-8 code, in lowercase hex, on both sides.
+
 - **Account source.** One portable table, `api_accounts`, owned by session B; see B and C.
 
 - **Supabase-only SQL.** In `db/supabase/`, applied after `db/migrations/` on Supabase only.
 
-- **Who enforces reads.** G's handlers, on both deployments. Supabase row level security also
-  guards direct table access. See C.
+- **Who enforces reads.** G's handlers, on both deployments. Supabase row level security is a
+  backstop for direct table access, which clients are not granted. See C.
 
 - **Leaving `failed`.** The artist replaces a master with `startUpload` (`failed` → `uploading`).
 
