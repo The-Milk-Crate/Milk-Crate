@@ -353,8 +353,12 @@
     "inviteeDirectReads": "An invitee reads nothing of the release beyond the Invitation fields: the release, tracks, rights and uploads stay hidden unless the release is live, and then only through the public view."
   },
   "supabaseOnly": {
-    "about": "Direct table access on Supabase (PostgREST). Not for the handlers. anon reaches nothing. Clients only read; every write goes through the server.",
-    "readsLike": {
+    "about": "Direct access on Supabase (PostgREST). Not for the handlers. Settled: clients read the new slice only through the API, so anon gets nothing and authenticated gets only the two invitee wrappers. backstopReadsLike says what the row level security policies show if a read grant comes back by mistake; the Supabase tests grant it inside a rolled-back transaction to prove it.",
+    "granted": {
+      "api_client_get_invitation(release, party, code)": "getInvitation",
+      "api_client_respond_to_invite(release, party, code, response)": "respondToSplit"
+    },
+    "backstopReadsLike": {
       "api_releases": "getRelease 200",
       "api_tracks": "getRelease 200 (columns id, release_id, position, title, master_confirmed_at, created_at, updated_at)",
       "api_parties": "getRelease 200 (no invite code hash, invite times or responder)",
@@ -363,9 +367,7 @@
       "api_public_releases": "getPublicRelease 200",
       "api_public_tracks": "getPublicRelease 200",
       "api_can_play_track(track)": "getPlayback 200",
-      "api_can_read_cover(release)": "getCover 200",
-      "api_client_get_invitation(release, party, code)": "getInvitation",
-      "api_client_respond_to_invite(release, party, code, response)": "respondToSplit"
+      "api_can_read_cover(release)": "getCover 200"
     },
     "neverReadable": ["api_accounts", "api_review_decisions", "api_invite_sends", "api_invite_wrong_codes", "api_jobs", "api_play_batches", "api_play_events", "api_qualified_streams", "api_audit_log"]
   }

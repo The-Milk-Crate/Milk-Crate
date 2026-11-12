@@ -2,7 +2,7 @@
 --
 -- One claim, account_type, with the values in the contract's AccountType. The source is
 -- session B's api_accounts: one row per account; no row means end_user. A suspended account
--- gets end_user (open point for K Marcus). AWS uses Cognito groups with the same names and
+-- gets end_user (settled by K Marcus). AWS uses Cognito groups with the same names and
 -- the same rule; see db/account-claim.json.
 --
 -- The claim is read when Supabase Auth issues a token. A role change shows only after the

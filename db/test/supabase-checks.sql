@@ -212,10 +212,7 @@ declare
   r record;
   v_bad text[] := '{}';
   v_allowed_fn text[] := array[
-    'api_caller_type()', 'api_release_visible(uuid)', 'api_can_play_track(uuid)', 'api_can_read_cover(uuid)',
     'api_client_get_invitation(uuid,uuid,text)', 'api_client_respond_to_invite(uuid,uuid,text,text)'];
-  v_read_tables text[] := array['api_releases', 'api_tracks', 'api_parties', 'api_covers', 'api_uploads',
-                                'api_public_releases', 'api_public_tracks'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relname like 'api\_%' and c.relkind in ('r', 'p') and not c.relrowsecurity loop
@@ -240,13 +237,13 @@ begin
          or has_any_column_privilege('authenticated', r.oid, 'insert,update,references') then
         v_bad := v_bad || ('authenticated writes:' || r.relname);
       end if;
-      if has_any_column_privilege('authenticated', r.oid, 'select') <> (r.relname = any (v_read_tables)) then
+      if has_any_column_privilege('authenticated', r.oid, 'select') then
         v_bad := v_bad || ('authenticated select:' || r.relname);
       end if;
     end if;
   end loop;
   perform ct.eq(array_to_string(v_bad, ', '), '',
-    'anon reaches no api_ table; authenticated only reads the seven granted ones and writes none');
+    'anon and authenticated reach no api_ table, view or sequence (no direct reads)');
 
   v_bad := '{}';
   for r in select p.oid, replace(p.oid::regprocedure::text, 'public.', '') as sig
@@ -260,7 +257,7 @@ begin
     end if;
   end loop;
   perform ct.eq(array_to_string(v_bad, ', '), '',
-    'anon runs no api_ function; authenticated runs only the read rule helpers and the two invitee wrappers');
+    'anon runs no api_ function; authenticated runs only the two invitee wrappers');
 
   perform ct.ok(has_function_privilege('supabase_auth_admin', 'public.api_access_token_hook(jsonb)', 'execute'),
                 'supabase_auth_admin can run the access token hook');
@@ -593,7 +590,53 @@ begin
 end
 $$;
 
--- 7. Each account type reads only what the fixture allows ----------------------------
+-- 7. No direct reads, and the policies as a backstop ---------------------------------
+-- Clients read the new slice only through the API. With the real grants every account is
+-- refused every table, view and read-rule helper.
+
+do $$
+declare
+  v_name text;
+  v_sql text;
+  v_bad text[] := '{}';
+  v_rel uuid := (select release_id from ct.rel where owner = 'artistA' and state = 'live');
+  v_track uuid := (select track_id from ct.rel where owner = 'artistA' and state = 'live');
+begin
+  for v_name in values ('listener1'), ('artistA'), ('tp1'), ('admin1'), ('internal1'), ('acct1') loop
+    perform ct.issue_token(v_name);
+    foreach v_sql in array array[
+      'select id from public.api_releases', 'select release_id from public.api_tracks',
+      'select release_id from public.api_parties', 'select release_id from public.api_covers',
+      'select release_id from public.api_uploads', 'select id from public.api_public_releases',
+      'select id from public.api_public_tracks', 'select public.api_caller_type() as t',
+      format('select public.api_can_play_track(%L) as ok', v_track),
+      format('select public.api_can_read_cover(%L) as ok', v_rel)] loop
+      if ct.read_as(v_name, v_sql) ->> 'error' is distinct from '42501' then
+        v_bad := v_bad || format('%s: %s', v_name, v_sql);
+      end if;
+    end loop;
+  end loop;
+  perform ct.eq(array_to_string(v_bad, '; '), '',
+    'no direct reads: every account type is refused the release tables, the public views and the helpers, even for a live release');
+end
+$$;
+
+-- The backstop. Inside one transaction that is rolled back, grant what a mistaken grant might
+-- open (SELECT on the release tables without keys, hashes or invite fields, the public views
+-- and the helpers), then check each account type still reads only what the fixture allows.
+begin;
+grant select on public.api_releases to authenticated;
+grant select (id, release_id, position, title, master_confirmed_at, created_at, updated_at)
+  on public.api_tracks to authenticated;
+grant select (id, release_id, side, role, name, email, percent, is_owner, state, created_at, updated_at)
+  on public.api_parties to authenticated;
+grant select (release_id, confirmed_at) on public.api_covers to authenticated;
+grant select (id, release_id, track_id, kind, method, object_key, format, size_bytes, state,
+              expires_at, created_at, confirmed_at, updated_at)
+  on public.api_uploads to authenticated;
+grant select on public.api_public_releases, public.api_public_tracks to authenticated;
+grant execute on function public.api_caller_type(), public.api_release_visible(uuid),
+  public.api_can_play_track(uuid), public.api_can_read_cover(uuid) to authenticated;
 
 create function ct.check_reads(p_type text, p_user text) returns void language plpgsql as $$
 declare
@@ -653,7 +696,7 @@ begin
   if cardinality(v_bad) > 0 then
     raise exception 'FAIL - % (%) reads differ from the fixture: %', p_type, p_user, array_to_string(v_bad, ', ');
   end if;
-  raise notice 'ok - % reads match the fixture: releases, tracks, rights, cover flag, list, public view, uploads, playback, cover', p_type;
+  raise notice 'ok - backstop: % reads match the fixture: releases, tracks, rights, cover flag, list, public view, uploads, playback, cover', p_type;
 end
 $$;
 
@@ -811,6 +854,7 @@ end
 $$;
 
 -- 8. A role change shows only after the token refreshes ------------------------------
+-- Still inside the backstop transaction, so the direct reads show the effect.
 
 do $$
 declare
@@ -853,6 +897,8 @@ begin
   perform ct.eq(ct.claim('admin2'), 'end_user', 'refresh: the refreshed token says end_user');
 end
 $$;
+
+rollback;
 
 -- 9. The invitee path ---------------------------------------------------------------
 -- A release of Artist B awaiting splits, with parties invited by code. The invitee has no

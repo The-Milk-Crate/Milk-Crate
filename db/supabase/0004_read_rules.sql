@@ -1,8 +1,9 @@
--- 0004 (Supabase only): read rules for direct table access.
+-- 0004 (Supabase only): read rules for direct table access, kept as a backstop.
 --
--- On both deployments session G's handlers enforce access in every query. On Supabase the app
--- also talks to the database directly (PostgREST), so these rules guard that path too. They
--- match db/test/access-expected.json, which G's handler tests use as well.
+-- On both deployments session G's handlers enforce access in every query, and clients read
+-- the new slice only through them: 0006_grants.sql grants none of these tables, views or
+-- helpers to clients. These rules guard direct access (PostgREST) in case a grant comes back by
+-- mistake. They match db/test/access-expected.json, which G's handler tests use as well.
 --
 --   * Releases, tracks, rights and the cover flag: the owner (artist) in any state;
 --     administrator and internal for every release. Nobody else reads the tables.
@@ -13,7 +14,8 @@
 --     and internal in any state but taken_down (its files are gone); everyone else only live.
 --   * Nobody reads accounts, jobs, invites, play events, streams, review history or audit rows
 --     directly. Keys, hashes and the storage module's upload ids are never granted.
--- Clients get SELECT only. Every write goes through the server. Grants are in 0006_grants.sql.
+-- If a grant comes back, keep it SELECT only and to these columns: every write goes through
+-- the server, and keys, hashes and invite fields stay hidden (the test grants exactly this).
 --
 -- Who is calling: the token's account_type claim, but only while it matches what the account
 -- would get now (api_account_claim). So a new role shows after the token refreshes, and a role
