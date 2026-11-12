@@ -74,7 +74,10 @@ storage policy gives clients anything in them. Keys are stored, never URLs.
 **Signed reads.** `signRead` signs only `streams/{artist}/{release}/{track}/...` and the cover
 key, never `masters/`. Each call makes a new link that lasts `MC_READ_TTL_SECONDS` (600). A
 Supabase signed link is **not bound to the listener**: anyone who has the link can read the
-file until it expires. `userId` cannot be put into it.
+file until it expires. `userId` cannot be put into it. Settled by K Marcus: keep short links
+(600 s). A leak exposes one streaming copy, never a master, for at most that long, and plays
+still count per signed-in account. When a link expires mid-track, the player asks
+`getPlayback` again (Phase 1 player work).
 
 **`readHead`.** A `Range: bytes=0-(n-1)` read with the secret key, at most 1 MiB, cut at the
 limit even if the server ignores the range.

@@ -315,7 +315,7 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
       }
       // Supabase signed URLs cannot carry the listener: anyone holding the link can read it
       // until it expires. Each call makes a fresh link with a short life; input.userId is not
-      // part of it. (An open point in the pull request.)
+      // part of it. Settled by K Marcus: short links (600 s), as on AWS's short-lived cookies.
       const response = await call(
         `${api}/object/sign/${bucketOf(input.key)}/${encodeKey(input.key)}`,
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expiresIn: ttl }) },
