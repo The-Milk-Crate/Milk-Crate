@@ -1,6 +1,6 @@
 You are session F of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A, B and C are merged. Read these first, in this order:
+Sessions A to D are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "F: AWS deployment")
 2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for AWS)
@@ -54,6 +54,14 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
 - **The claim.** `db/account-claim.json` is the definition. Test your group mapping against it: each group name, no group, a suspended row, and two groups at once.
 - **Supabase-only SQL.** `db/supabase/` never runs on Aurora. Aurora has one shared login, so G's handlers are the only read check there.
 - **Staff rows (settled).** G's handlers check the caller's `api_accounts` row on staff endpoints as well as the token, so a removed staff role stops at once even before the Cognito token expires. Still remove the user from the group when the row changes.
+
+### From session D (merged; CI)
+- Every pull request into `milk-crate-backend-poc` runs "Phase 0 checks" (`.github/workflows/phase0-checks.yml`). Six checks must pass before it can merge: `changes`, `contract`, `client-fresh`, `types`, `desktop-tests` and `database`.
+- Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
+- `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
+- `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
+- The checks start only for changes under `api/`, `core/`, `db/` and `milk-crate/`. A change only under `deploy/aws/` skips them (a skipped check counts as passed), and nothing runs your tests in CI until their job is added.
+- Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
 
 ### Constraints
 - No real AWS account, no real resources, no keys. Code, infrastructure definition and a script are the deliverable. Tests use mocks.

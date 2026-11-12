@@ -1,6 +1,6 @@
 You are session E of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A, B and C are merged. Read these first, in this order:
+Sessions A to D are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "E: Supabase deployment")
 2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for Supabase)
@@ -49,6 +49,14 @@ See `db/supabase/README.md`.
 - **No direct reads (settled).** Clients read the new slice only through the API. `anon` gets nothing, and `authenticated` gets only `api_client_get_invitation` and `api_client_respond_to_invite`. Don't grant clients any `api_` table, view or function. The server connection uses `service_role` or the owner, which keep their access; say which.
 - **Expected linter warnings.** Supabase's linter will flag C's public views as "security definer view". That is by design, and the views are not granted to clients.
 - **Tokens.** A role change shows only after the token refreshes (default life is one hour). Keep the default unless K Marcus asks; say what you set.
+
+### From session D (merged; CI)
+- Every pull request into `milk-crate-backend-poc` runs "Phase 0 checks" (`.github/workflows/phase0-checks.yml`). Six checks must pass before it can merge: `changes`, `contract`, `client-fresh`, `types`, `desktop-tests` and `database`.
+- Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
+- `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
+- `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
+- The checks start only for changes under `api/`, `core/`, `db/` and `milk-crate/`. A change only under `deploy/supabase/` skips them (a skipped check counts as passed), and nothing runs your tests in CI until their job is added.
+- Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
 
 ### Constraints
 - No real projects, no real keys. You have no Supabase or Fly account access. Code, config and a script are the deliverable, and tests use mocks or a local Postgres.
