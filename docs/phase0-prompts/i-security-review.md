@@ -12,12 +12,19 @@ Read these first, in this order:
 5. `deploy/supabase/` (session E), `deploy/aws/` (session F) and `worker/` (session H)
 6. `.github/workflows/` (session D's checks, and the existing `build.yml` and `pages.yml`)
 
+### Settled decisions to check against (session C)
+- Clients read the new slice only through the API. On Supabase, `anon` gets nothing and `authenticated` gets only the invitee wrappers `api_client_get_invitation` and `api_client_respond_to_invite`. Row level security on the `api_` tables is a backstop.
+- A suspended account's claim is `end_user` (on AWS, no Cognito group).
+- Staff endpoints check the `api_accounts` row as well as the token, so a removed staff role stops at once.
+- Another artist's release is 404. `recordPlays` accepts events for a track that is not live and never counts them.
+- One role per account; the sync's both-roles fallback order is in `db/account-claim.json`.
+
 ### What to check
 For each area, read the code, trace a realistic attack, and decide whether it works. Write down what you checked even when you found nothing.
 
 1. Authentication. How tokens are verified on each side: signature and key source, algorithm, expiry, audience and issuer, and what happens with a missing, expired, malformed or foreign token. Edge Functions: is JWT verification left on?
-2. Authorization against the contract. Build the table of every operation against every account type from `x-account-types`, and check that the handlers and the read rules both enforce it. Ownership checks: can an artist reach another artist's release, upload, track, party, invitation or cover by changing an id (IDOR)? Does a listener or an invitee reach any table directly?
-3. The account-type claim. The one-role rule in `api_accounts` and C's sync from the app's tables: can concurrent requests defeat it? Stale tokens after a role change. The both-roles fallback order. Can anyone grant themselves a role?
+2. Authorization against the contract. Build the table of every operation against every account type from `x-account-types`, and check that the handlers and the read rules both enforce it. Ownership checks: can an artist reach another artist's release, upload, track, party, invitation or cover by changing an id (IDOR)? Does a listener or an invitee reach any table directly (settled: they should not; check `db/supabase/0006_grants.sql` and what PostgREST would serve)?
+3. The account-type claim. The one-role rule in `api_accounts` and C's sync from the app's tables: can concurrent requests defeat it? Stale tokens after a role change (do G's staff endpoints really check the row?). The both-roles fallback order. Can anyone grant themselves a role, for example through `user_metadata`, a forged `account_type` claim, or the app's own `admins` and `artists` policies?
 4. The release state machine. Can any call, replay, race or direct database write move a release to a state the contract forbids (for example publishing without approval, editing a submitted release, or reviving a `taken_down` release)? Is "only the server moves a state" true in the database, or only in the handlers?
 5. Invitations. Invite code strength, hashing, constant-time comparison, single use under concurrency, expiry, resend voiding the old code, wrong-code limits, and whether a code can reach logs, error messages, URLs, the email provider's logs or any response.
 6. Uploads and keys. Can user input shape an object key (path traversal, a different artist's prefix, `masters/` versus `art/` mix-ups)? Size, format and content checks; checksum checks; the square-cover check on hostile images; confirming an upload that is incomplete or belongs to someone else; presigned URL scope, expiry and bound headers; multipart abuse.

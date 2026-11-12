@@ -1,15 +1,15 @@
 You are session F of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A and B are merged. Read these first, in this order:
+Sessions A, B and C are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "F: AWS deployment")
 2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. `core/src/platform/` (the eight interfaces; you implement all of them for AWS)
-4. `db/` (session B's migrations, tests and README)
+4. `db/` (session B's migrations, tests and README) and `db/account-claim.json` (session C: the claim, the Cognito group names and precedence)
 
 Your job: the AWS deployment. Implement each platform interface on AWS, and the entry point wiring for Lambda. Session E does the same for Supabase, and session G writes the shared handlers. Don't write handlers.
 
 ### Build (each one a module that implements its interface in `core/src/platform/`)
-- Identity: who is calling, from the Cognito token (verify it against the pool's published keys). The `account_type` claim comes from Cognito groups whose names are exactly the `AccountType` values (session C names them; you read the groups and map them to the claim; no group means `end_user`). Return null for no valid token.
+- Identity: who is calling, from the Cognito token (verify it against the pool's published keys). The `account_type` claim comes from Cognito groups named in `db/account-claim.json` (session C): `administrator`, `internal`, `internal_accounting`, `third_party` and `artist`, with Cognito precedence 1 to 5 in that order. There is no `end_user` group; no group means `end_user`. If a user is ever in more than one group, take the one with the lowest precedence number. Return null for no valid token.
 - The account source on AWS (settled): session B's `api_accounts` table is the one source. Build a Cognito post-confirmation trigger that writes the user's email into their `api_accounts` row where one exists, and a small sync that puts each user in the Cognito group named by their `api_accounts.account_type` (and removes other groups). Rows are written by K Marcus or a later admin tool, not by users.
 - Object storage:
   - Upload session method `s3_multipart`: S3 presigned multipart. Masters are WAV, AIFF or FLAC, up to 5 GiB, stored at `masters/{artist}/{release}/{track}/original` and never altered. Store keys, never public URLs.
@@ -48,7 +48,12 @@ Your job: the AWS deployment. Implement each platform interface on AWS, and the 
   - The post-confirmation trigger only updates `email` on an existing `api_accounts` row; it never inserts one.
   - An artist row never changes type.
   - An account with releases, reviews or takedowns is never deleted. It is `suspended` instead (B refuses the delete with `MC409 has_history`).
-  - Session C decides which claim a suspended account gets (suggested: `end_user`). Until then, put a suspended account in no group, and list it as an open point.
+  - A suspended account's claim is `end_user` (settled with session C), so the sync puts a suspended account in no group.
+
+### From session C (merged; handle these)
+- **The claim.** `db/account-claim.json` is the definition. Test your group mapping against it: each group name, no group, a suspended row, and two groups at once.
+- **Supabase-only SQL.** `db/supabase/` never runs on Aurora. Aurora has one shared login, so G's handlers are the only read check there.
+- **Staff rows (settled).** G's handlers check the caller's `api_accounts` row on staff endpoints as well as the token, so a removed staff role stops at once even before the Cognito token expires. Still remove the user from the group when the row changes.
 
 ### Constraints
 - No real AWS account, no real resources, no keys. Code, infrastructure definition and a script are the deliverable. Tests use mocks.

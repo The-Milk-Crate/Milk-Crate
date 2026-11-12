@@ -1,11 +1,11 @@
 You are session G of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A and B are merged. Read these first, in this order:
+Sessions A, B and C are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "G: Shared core handlers and the cross-cloud check")
 2. `api/openapi.yaml` (the contract, 21 operations; each lists `x-account-types` and `x-state-moves`, and the top of the file has the table of release state moves)
 3. `api/README.md` (who may call what)
 4. `core/src/platform/` (the eight interfaces and `Modules`; read `types.ts`, `database.ts`, `storage.ts` and `playback.ts` closely)
-5. `db/` (session B's tables, SQL functions, tests and README; your handlers call these)
+5. `db/` (session B's tables, SQL functions, tests and README; your handlers call these), then session C's `db/test/access-expected.json` and `db/account-claim.json`
 
 Your job is in two stages. Do stage 1 now, then stop.
 
@@ -15,8 +15,8 @@ One handler per operation, in `core/`. Handlers use web-standard `Request` and `
 Build:
 - Handlers for all 21 operations in the contract: `createRelease`, `getRelease`, `getPublicRelease`, `startUpload`, `getUpload`, `signUploadParts`, `confirmUpload`, `updateRelease`, `listReleases`, `startCoverUpload`, `getCover`, `putRights`, `getInvitation`, `respondToSplit`, `resendInvitation`, `submitRelease`, `reviewRelease`, `publishRelease`, `takedownRelease`, `getPlayback`, `recordPlays`.
 - Request checks written from the contract (hand-written small validators; the library route is closed because `core/` has no runtime dependencies). Responses and errors use the contract's shapes, and every error uses the one `Error` shape with a stable `code`, plain-words `message` and a `requestId`.
-- The account-type rules: each operation allows only the account types in its `x-account-types`, plus the owner checks the contract describes. A hidden release looks like a missing one (404) to listeners.
-- Read access (settled): your handlers enforce it on both deployments, passing the caller into every query. Aurora has one shared login and no per-caller rules, so the handlers are the only check there. Session C (working in parallel) writes an expected-results fixture in `db/test/`; if it is merged before you finish, test against it; if not, list it as an open point.
+- The account-type rules: each operation allows only the account types in its `x-account-types`, plus the owner checks the contract describes. A hidden release looks like a missing one (404) to listeners, and to an artist asking for another artist's release (settled).
+- Read access (settled): your handlers enforce it on both deployments, passing the caller into every query. Aurora has one shared login and no per-caller rules, so the handlers are the only check there. Session C's expected-results fixture, `db/test/access-expected.json`, is merged: test your handlers against every cell of it (see "From session C" below).
 - State moves: only the server moves a release. Do every move through session B's SQL functions, inside one `Database` transaction wherever more than one write must go together. Follow the contract: approve records the decision and does not change the state; publish needs approval first (409 otherwise) and picks `scheduled` or `live` by the release date, and a scheduled release goes `live` through `Schedules` and B's SQL function.
 - Release details: `updateRelease` allows only `draft`, `uploading`, `awaiting_splits` and `needs_changes` (409 otherwise) and never changes the state; `startUpload` allows only `draft`, `uploading`, `needs_changes` and `failed` (409 otherwise), and from `failed` moves to `uploading` and clears the failure reason; a `tracks` list that misses, repeats or invents a track is 422. `listReleases` is scoped by account type (an artist sees only their own; `administrator` and `internal` see all), newest first, with the `state` filter and cursor paging; summaries only.
 - Cover art: `startCoverUpload` returns the same `UploadSession` with `kind` set to `cover` (JPEG or PNG, up to 20 MiB, stored at `art/{artist}/{release}/cover/original`, never altered). `confirmUpload` for a cover also reads the first bytes with `ObjectStorage.readHead` and gets the width and height from the PNG or JPEG header with a small hand-written reader (no image library in `core/`), and returns 422 if the image is unreadable or not square; it queues no processing and changes no state. `getCover` follows the same rules as playback: owners, `administrator` and `internal` in any state, everyone else only when `live`, 404 when there is no cover.
@@ -62,10 +62,21 @@ Read `db/README.md`. B's functions lock the release row and enforce the rules, s
   - Pass lists as JSON text.
   - Read `numeric`, `bigint`, `date`, `timestamptz` and `jsonb` results as strings or parsed values, the same on both deployments.
 
+### From session C (merged; use these)
+Read `db/test/access-expected.json` (including its `settled` section) and `db/account-claim.json`.
+- **The fixture.** For `getRelease`, `listReleases`, `getPublicRelease`, `getPlayback`, `getCover`, `getUpload` and `recordPlays`, it gives every account type, own release or another artist's, and every release state, with the expected outcome. Drive a table test from the file itself, not a copy, so a change to it shows up in your tests. Use its `invitation` section for `getInvitation` and `respondToSplit`.
+- **Staff endpoints check the row (settled).** On `reviewRelease`, `takedownRelease`, and the `administrator` and `internal` reads in `getRelease`, `listReleases`, `getPlayback` and `getCover`, check the caller's `api_accounts` row as well as the token. The row must exist, have the token's `account_type` and not be suspended; otherwise treat the caller as `end_user` (so 403 on the staff-only calls). A removed or suspended staff role stops at once; a new role still waits for the token refresh. Test both.
+- **Suspended accounts.** Their claim is `end_user` on both deployments, so they read as `end_user`.
+- **Another artist's release is 404 (settled).** 403 is only for an account type the operation does not allow.
+- **`recordPlays` (settled).** Accept events for a track whose release is not live (202); B keeps them and never counts them. Only an unknown track id is 422.
+- **Media in `taken_down`.** `getPlayback` and `getCover` are 404 for everyone in `taken_down`, the owner and staff too, because takedown deletes the files.
+- **Invite code hash.** SHA-256 of the UTF-8 code, as lowercase hex. C's Supabase wrappers hash the same way, so the two paths must match.
+- **Supabase direct access.** Clients get no direct reads on Supabase; only C's invitee wrappers are granted. Your handlers run on the server connection, not as a client role.
+
 ### Constraints
 - `core/` gets no runtime dependencies. A test runner or `@types/node` may be added as a dev dependency only. Propose your choice in the pull request as an open point; keep it minimal. Check the handlers also run on Deno if Deno is available here, and say so if you can't.
 - Don't change the contract, the interfaces, session B's database, or the app's existing tables, policies, screens or Supabase calls. If a handler needs one of those changed, write the change and the reason as an open point.
-- Don't write deployment code (sessions E and F), read rules or the claim hook (session C), or CI (session D).
+- Don't write deployment code (sessions E and F), read rules or the claim hook (session C), or CI (session D). Don't edit C's fixture; if a handler and the fixture disagree, list it as an open point.
 - SQL goes through `Database` with parameters (`$1`, `$2`). Never build SQL by joining values into text.
 
 ### Rules (all apply)

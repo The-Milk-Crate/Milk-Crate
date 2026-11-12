@@ -1,4 +1,4 @@
-You are session G of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. This is stage 2 of your job: the cross-cloud check. Stage 1 (the shared handlers in `core/`) is merged, and so are sessions B (database), E (Supabase deployment) and F (AWS deployment).
+You are session G of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. This is stage 2 of your job: the cross-cloud check. Stage 1 (the shared handlers in `core/`) is merged, and so are sessions B (database), C (read rules and the account-type claim), E (Supabase deployment) and F (AWS deployment).
 
 The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other. Your check is the proof of that.
 
@@ -7,7 +7,7 @@ Read these first, in this order:
 2. `api/openapi.yaml` (the contract, 21 operations; the table of release state moves is at the top)
 3. Your own stage 1 handlers and tests in `core/`, and the handler path stated in that pull request
 4. `deploy/supabase/` and `deploy/aws/` (sessions E and F: their modules, adapters, tests and the open points in their pull requests)
-5. `db/` (session B's test approach)
+5. `db/` (session B's test approach, and session C's fixture `db/test/access-expected.json` and claim definition `db/account-claim.json`)
 
 Your job: a test suite that runs the same scenario against both deployments' module sets and checks they behave the same, plus a script K Marcus can later point at real deployments.
 
@@ -21,10 +21,11 @@ Your job: a test suite that runs the same scenario against both deployments' mod
   4b. A second release fails processing (`failed`, with a reason), the artist replaces the master, and it goes `failed` → `uploading` → `processing`.
   5. Submit, then a reviewer asks for changes with a reason, the artist fixes and resubmits, a reviewer approves.
   6. Publish with a future release date (`scheduled`), then the schedule fires and the release goes `live`.
-  7. A reviewer lists releases with `state=awaiting_review` and sees it; an artist cannot see another artist's. A listener reads the public view (no `owner_id`) and gets playback for a track and reads the cover; a listener cannot see a release that is not live.
+  7. A reviewer lists releases with `state=awaiting_review` and sees it; an artist cannot see another artist's (404 on `getRelease`, left out of `listReleases`). A listener reads the public view (no `owner_id`) and gets playback for a track and reads the cover; a listener cannot see a release that is not live.
   8. Play events: `start`, `progress` and `end` in batches, the same batch sent twice counts once, and a play of 30 seconds or more counts as a qualified stream while a shorter one does not.
   9. An administrator takes the release down: access and files are removed and an audit row exists; a non-administrator reviewer is refused.
-- Refused cases, in the same run: each account type calling an operation it is not allowed (403), a wrong release state (409), a bad request (400 or 422), no token (401).
+- Refused cases, in the same run: each account type calling an operation it is not allowed (403), a wrong release state (409), a bad request (400 or 422), no token (401), a suspended account (reads as `end_user`), and a staff account whose `api_accounts` row was removed while its token is still valid (treated as `end_user` at once; settled with session C).
+- Session C's fixture: run every cell of `db/test/access-expected.json` on both module sets. Each side must match the fixture, not only each other.
 - What "behave the same" means. For every step compare: the HTTP status, the error `code` when there is one, the release `state` after the step, and the response field names and types. Ignore ids, timestamps, URLs, signatures, cookies and codes. The only allowed differences are inside the contract's tagged unions: `tus` versus `s3_multipart` for uploads (masters and covers), and `signed_url` versus `cloudfront_cookies` for playback and cover reads. For those, check each deployment returns a valid branch and that the rest of the step matches.
 - Use the mocks and local PostgreSQL that sessions B, E and F built (a throwaway local PostgreSQL 16, no Docker). Put the suite in a new folder, `tests/cross-cloud/`, with its own `package.json`. It may use dev dependencies (for example a YAML reader so the suite can read the contract), and nothing here goes into `core/` as a runtime dependency.
 - A table-driven check from the contract: for each operation, its `x-account-types` and `x-state-moves` are exercised at least once on both sides, so a new operation without a test is a visible gap.
