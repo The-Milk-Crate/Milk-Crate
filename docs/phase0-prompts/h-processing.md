@@ -43,6 +43,14 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 - Use fake storage and a local PostgreSQL 16 (session B's throwaway approach). There is no Docker daemon here, so write the `Dockerfile` but say you could not build it.
 - Keep tests free of anything specific to one machine, because session D runs them in CI.
 
+### From session D (merged; CI)
+- Every pull request into `milk-crate-backend-poc` runs "Phase 0 checks" (`.github/workflows/phase0-checks.yml`). Six checks must pass before it can merge: `changes`, `contract`, `client-fresh`, `types`, `desktop-tests` and `database`.
+- Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
+- `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
+- `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
+- The checks start only for changes under `api/`, `core/`, `db/` and `milk-crate/`. A change under `worker/` skips them (a skipped check counts as passed), and nothing runs your tests in CI until their job is added. A new file in `db/migrations/` does start `database`.
+- Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
+
 ### Constraints
 - No platform SDK imports and no new runtime dependencies in `core/`. The worker code lives in a new top-level folder, `worker/`, and may use dependencies there.
 - Don't change the contract, the other interfaces, the handlers, the read rules, CI, or the app's existing tables, policies, screens or Supabase calls.

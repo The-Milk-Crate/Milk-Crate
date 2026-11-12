@@ -1,6 +1,6 @@
 You are session G of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A, B and C are merged. Read these first, in this order:
+Sessions A to D are merged. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "G: Shared core handlers and the cross-cloud check")
 2. `api/openapi.yaml` (the contract, 21 operations; each lists `x-account-types` and `x-state-moves`, and the top of the file has the table of release state moves)
 3. `api/README.md` (who may call what)
@@ -72,6 +72,14 @@ Read `db/test/access-expected.json` (including its `settled` section) and `db/ac
 - **Media in `taken_down`.** `getPlayback` and `getCover` are 404 for everyone in `taken_down`, the owner and staff too, because takedown deletes the files.
 - **Invite code hash.** SHA-256 of the UTF-8 code, as lowercase hex. C's Supabase wrappers hash the same way, so the two paths must match.
 - **Supabase direct access.** Clients get no direct reads on Supabase; only C's invitee wrappers are granted. Your handlers run on the server connection, not as a client role.
+
+### From session D (merged; CI)
+- Every pull request into `milk-crate-backend-poc` runs "Phase 0 checks" (`.github/workflows/phase0-checks.yml`). Six checks must pass before it can merge: `changes`, `contract`, `client-fresh`, `types`, `desktop-tests` and `database`.
+- Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
+- `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
+- `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
+- `types` type-checks `core/`, but no CI job runs your handler tests yet. Until their job is added, run them yourself and show the output in your pull request.
+- Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
 
 ### Constraints
 - `core/` gets no runtime dependencies. A test runner or `@types/node` may be added as a dev dependency only. Propose your choice in the pull request as an open point; keep it minimal. Check the handlers also run on Deno if Deno is available here, and say so if you can't.

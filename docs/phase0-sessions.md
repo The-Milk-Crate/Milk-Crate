@@ -61,7 +61,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | A (done) | `docs/phase0-prompts/a-contract.md`. The original brief, as first given. The contract has changed since: see `api/openapi.yaml`. |
 | B | `docs/phase0-prompts/b-database.md` |
 | C (done) | `docs/phase0-prompts/c-read-rules.md`. Merged; see "Settled with session C" below and `db/supabase/README.md`. |
-| D | `docs/phase0-prompts/d-ci.md` |
+| D (done) | `docs/phase0-prompts/d-ci.md`. Merged; see "D: CI" below. |
 | E | `docs/phase0-prompts/e-supabase.md` |
 | F | `docs/phase0-prompts/f-aws.md` |
 | G stage 1 | `docs/phase0-prompts/g1-core.md` |
@@ -201,6 +201,16 @@ Branch `phase0/d-ci`. The only session that may edit `.github/workflows/`.
 Done when: a pull request that breaks the contract, the types or the tests goes red, and a
 clean one goes green. `build.yml` is untouched.
 
+Merged. What D left for the others:
+- `.github/workflows/phase0-checks.yml` ("Phase 0 checks") runs on pull requests into
+  `milk-crate-backend-poc` and `main`, and by hand. Never on a push; it deploys nothing.
+- Required on `milk-crate-backend-poc` (K Marcus's ruleset): `changes`, `contract`,
+  `client-fresh`, `types`, `desktop-tests`, `database`. Not required on `main` yet.
+- A small `changes` job skips the heavy jobs when nothing under `api/`, `core/`, `db/` or
+  `milk-crate/` changed. Skipped counts as passed. `database` has its own narrower list.
+- Nobody else edits `.github/workflows/`. A session with new tests gives them one documented
+  command and lists the job it wants in its pull request; a session D follow-up adds it.
+
 ## E: Supabase deployment
 Branch `phase0/e-supabase`.
 - Implement each platform interface on Supabase: identity from the token, storage (TUS
@@ -229,6 +239,9 @@ Branch `phase0/e-supabase`.
   - Apply all six files in `db/supabase/`, in order, after `db/migrations/`.
 
   Details in `docs/phase0-prompts/e-supabase.md`.
+
+- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
+  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
 
 Done when: the interface tests pass against local Supabase or mocks, and the stand-up script
 is ready for K Marcus to run.
@@ -260,6 +273,9 @@ Branch `phase0/f-aws`.
 - Don't create real resources or use real keys. Provide the code, infrastructure definition
   and a script K Marcus runs. Tests use mocks or local emulators.
 - Lambda entry points call G's handlers and only do wiring.
+
+- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
+  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
 
 Done when: the interface tests pass against mocks or emulators, and the stand-up script is
 ready for K Marcus to run.
@@ -300,6 +316,9 @@ Stage 2 (after E, F and G stage 1 are merged):
   they behave the same, plus a script K Marcus can run against real deployments with
   environment variables. Differences are reported as findings, not fixed.
 
+- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
+  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
+
 Done when: every operation has a handler and tests (stage 1); the scenario passes on both
 module sets, or every difference is listed (stage 2).
 
@@ -319,6 +338,9 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
   of E and F.
 - From B (merged): record `stream_key`, `duration_ms` and `sample_rate_hz` on `api_tracks`;
   compare against `api_tracks.master_sha256`; call `api_job_started` when a job is picked up.
+
+- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
+  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
 
 Done when: every track is checked, hashed and turned into a streaming copy by one shared piece,
 and the release reaches `awaiting_splits` or `failed` through the job result path.

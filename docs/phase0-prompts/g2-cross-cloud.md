@@ -35,6 +35,14 @@ Your job: a test suite that runs the same scenario against both deployments' mod
 ### When the two sides differ
 Don't fix sessions B, E or F's code, and don't change the handlers to hide a difference. Report each difference as a finding in the pull request: the step, what each deployment returned, which side looks wrong and why. K Marcus routes the fixes. If a difference is caused by the contract, say that instead.
 
+### From session D (merged; CI)
+- Every pull request into `milk-crate-backend-poc` runs "Phase 0 checks" (`.github/workflows/phase0-checks.yml`). Six checks must pass before it can merge: `changes`, `contract`, `client-fresh`, `types`, `desktop-tests` and `database`.
+- Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
+- `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
+- `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
+- The checks start only for changes under `api/`, `core/`, `db/` and `milk-crate/`. A change only under `tests/cross-cloud/` skips them (a skipped check counts as passed), and nothing runs your suite in CI until its job is added.
+- Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
+
 ### Constraints
 - Don't change the contract, the interfaces, the database, the deployments, or the app's existing tables, policies, screens or Supabase calls.
 - Don't write CI (session D) or read rules (session C).
