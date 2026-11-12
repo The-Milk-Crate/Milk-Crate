@@ -2,7 +2,8 @@
 # scripts/stand-up.sh) sends the auth and storage parts to the linked project.
 #
 # Pushing replaces the project's auth settings with these, so point it only at the Phase 0
-# project, not at the app's live project (an open point for K Marcus). Values that differ per
+# project, never at the app's live project. Settled by K Marcus: Phase 0 runs on its own,
+# separate Supabase project. Values that differ per
 # project come from the environment with env(...); nothing secret is in this file.
 
 project_id = "milk-crate-phase0"

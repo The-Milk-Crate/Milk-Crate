@@ -125,6 +125,12 @@ cannot open SMTP ports 25 or 587, and Supabase Auth's email only sends auth emai
 K Marcus runs these; they hold no secrets. Every setting comes from the shell or from two
 secrets files kept outside the repository (`scripts/*.env.example` show what goes in them).
 
+**Which project (settled).** A separate Supabase project for Phase 0, never the app's live
+project: pushing `config.toml` replaces the project's auth settings. Create the project first
+(on the Pro plan, see below); the stand-up loads the app's tables into it, then the Phase 0
+SQL. It starts with no accounts, so create test artists and admins in it. Standing the slice up
+on the live project is a later, separate step (Phase 1).
+
 ```bash
 bash deploy/supabase/scripts/stand-up.sh
 ```
