@@ -62,7 +62,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | B (done) | `docs/phase0-prompts/b-database.md`. Merged; see "B: Database" below and `db/README.md`. |
 | C (done) | `docs/phase0-prompts/c-read-rules.md`. Merged; see "Settled with session C" below and `db/supabase/README.md`. |
 | D (done) | `docs/phase0-prompts/d-ci.md`. Merged; see "D: CI" below. |
-| D follow-up | `docs/phase0-prompts/d2-ci-supabase-tests.md`. Adds the `supabase-deploy` job that runs session E's tests. |
+| D follow-up (done) | `docs/phase0-prompts/d2-ci-supabase-tests.md`. Merged; added the `supabase-deploy` job that runs session E's tests. See "D: CI" below. |
 | E (done) | `docs/phase0-prompts/e-supabase.md`. Merged; see "E: Supabase deployment" below and `deploy/supabase/README.md`. |
 | F | `docs/phase0-prompts/f-aws.md` |
 | G stage 1 | `docs/phase0-prompts/g1-core.md` |
@@ -206,7 +206,7 @@ Merged. What D left for the others:
 - `.github/workflows/phase0-checks.yml` ("Phase 0 checks") runs on pull requests into
   `milk-crate-backend-poc` and `main`, and by hand. Never on a push; it deploys nothing.
 - Required on `milk-crate-backend-poc` (K Marcus's ruleset): `changes`, `contract`,
-  `client-fresh`, `types`, `desktop-tests`, `database`. Not required on `main` yet.
+  `client-fresh`, `types`, `desktop-tests`, `database`, `supabase-deploy`. Not required on `main` yet.
 - A small `changes` job skips the heavy jobs when nothing under `api/`, `core/`, `db/` or
   `milk-crate/` changed. Skipped counts as passed. `database` has its own narrower list.
 - `supabase-deploy` runs `bash deploy/supabase/test/run.sh` when `deploy/supabase/`, `db/`, `milk-crate/supabase/`, `core/src/platform/` or the workflow file changes.
