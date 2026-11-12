@@ -209,6 +209,7 @@ Merged. What D left for the others:
   `client-fresh`, `types`, `desktop-tests`, `database`. Not required on `main` yet.
 - A small `changes` job skips the heavy jobs when nothing under `api/`, `core/`, `db/` or
   `milk-crate/` changed. Skipped counts as passed. `database` has its own narrower list.
+- `supabase-deploy` runs `bash deploy/supabase/test/run.sh` when `deploy/supabase/`, `db/`, `milk-crate/supabase/`, `core/src/platform/` or the workflow file changes.
 - Nobody else edits `.github/workflows/`. A session with new tests gives them one documented
   command and lists the job it wants in its pull request; a session D follow-up adds it.
 

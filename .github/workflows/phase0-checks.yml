@@ -1,6 +1,6 @@
 # Phase 0 checks for pull requests: the contract, the generated client, types, the
-# desktop tests and the database test. Runs on pull requests and by hand only. It never
-# runs on a push, and it publishes, releases and deploys nothing.
+# desktop tests, the database test and the Supabase deployment tests. Runs on pull requests
+# and by hand only. It never runs on a push, and it publishes, releases and deploys nothing.
 #
 # The workflow always starts, but the `changes` job skips the heavy jobs when nothing
 # relevant changed (a docs-only pull request). A skipped job counts as passed, so a
@@ -28,6 +28,7 @@ jobs:
     outputs:
       app: ${{ steps.filter.outputs.app }}
       db: ${{ steps.filter.outputs.db }}
+      supabase: ${{ steps.filter.outputs.supabase }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +41,7 @@ jobs:
           if [ "$EVENT" != "pull_request" ]; then
             echo "app=true" >> "$GITHUB_OUTPUT"
             echo "db=true" >> "$GITHUB_OUTPUT"
+            echo "supabase=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # On a pull request HEAD is the test merge commit; its first parent is the base.
@@ -48,14 +50,19 @@ jobs:
           echo "$files"
           app=false
           db=false
+          supabase=false
           if grep -qE '^(api/|core/|db/|milk-crate/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             app=true
           fi
           if grep -qE '^(db/|milk-crate/supabase/|api/openapi\.yaml$|core/src/platform/types\.ts$|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             db=true
           fi
+          if grep -qE '^(deploy/supabase/|db/|milk-crate/supabase/|core/src/platform/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+            supabase=true
+          fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "db=$db" >> "$GITHUB_OUTPUT"
+          echo "supabase=$supabase" >> "$GITHUB_OUTPUT"
 
   contract:
     name: contract
@@ -182,6 +189,41 @@ jobs:
       - name: bash db/test/run.sh
         run: bash db/test/run.sh
 
-  # Later sessions add their jobs here (E: Supabase deployment tests, F: AWS deployment
-  # tests), each gated on the `changes` job like the ones above. Session C's checks
-  # already run inside `database`. No secrets or deploy jobs in this phase.
+  # Session E's Supabase deployment tests. The script installs deploy/supabase/'s packages,
+  # type-checks, and starts its own throwaway PostgreSQL 16 cluster, so there is no service
+  # container. Storage, the Management API, Fly and Resend are mocked; no keys needed.
+  supabase-deploy:
+    name: supabase-deploy
+    needs: changes
+    if: needs.changes.outputs.supabase == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tests run TypeScript directly with Node's type stripping: 22.18 or newer.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '>=22.18 <23'
+          cache: npm
+          cache-dependency-path: deploy/supabase/package-lock.json
+      - name: Node version
+        run: |
+          node --version
+          node -e 'const [a, b] = process.versions.node.split(".").map(Number); if (a < 22 || (a === 22 && b < 18)) { console.error("Need Node 22.18 or newer"); process.exit(1); }'
+      - name: PostgreSQL 16 server binaries
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/initdb --version
+      - name: npm ci (deploy/supabase)
+        working-directory: deploy/supabase
+        run: npm ci --no-audit --no-fund
+      - name: bash deploy/supabase/test/run.sh
+        run: bash deploy/supabase/test/run.sh
+
+  # Later: session F's AWS deployment tests, gated on the `changes` job like the ones above.
+  # Session C's checks already run inside `database`. No secrets or deploy jobs in this phase.
