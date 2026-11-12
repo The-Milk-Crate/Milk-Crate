@@ -1,0 +1,187 @@
+# Phase 0 checks for pull requests: the contract, the generated client, types, the
+# desktop tests and the database test. Runs on pull requests and by hand only. It never
+# runs on a push, and it publishes, releases and deploys nothing.
+#
+# The workflow always starts, but the `changes` job skips the heavy jobs when nothing
+# relevant changed (a docs-only pull request). A skipped job counts as passed, so a
+# required check never waits forever.
+name: Phase 0 checks
+
+on:
+  pull_request:
+    branches: [milk-crate-backend-poc, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase0-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Decides which jobs need to run. A manual run runs everything.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      db: ${{ steps.filter.outputs.db }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            echo "db=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # On a pull request HEAD is the test merge commit; its first parent is the base.
+          files="$(git diff --name-only HEAD^1 HEAD)"
+          echo "Changed files:"
+          echo "$files"
+          app=false
+          db=false
+          if grep -qE '^(api/|core/|db/|milk-crate/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+            app=true
+          fi
+          if grep -qE '^(db/|milk-crate/supabase/|api/openapi\.yaml$|core/src/platform/types\.ts$|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+            db=true
+          fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "db=$db" >> "$GITHUB_OUTPUT"
+
+  contract:
+    name: contract
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: milk-crate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: milk-crate/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run api:lint
+
+  client-fresh:
+    name: client-fresh
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: milk-crate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: milk-crate/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run api:client
+      - name: Fail if schema.d.ts is stale
+        run: |
+          if ! git diff --exit-code -- src/lib/api/schema.d.ts; then
+            echo "::error file=milk-crate/src/lib/api/schema.d.ts::schema.d.ts is out of date. Run 'cd milk-crate && npm run api:client' and commit the result."
+            exit 1
+          fi
+
+  types:
+    name: types
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            milk-crate/package-lock.json
+            core/package-lock.json
+      - name: npm ci (core)
+        working-directory: core
+        run: npm ci --no-audit --no-fund
+      - name: npm ci (milk-crate)
+        working-directory: milk-crate
+        run: npm ci --no-audit --no-fund
+      # api:core runs `npm install` in core/ before tsc. After `npm ci` it changes nothing;
+      # the next step makes sure the lockfile stayed as committed.
+      - name: Type-check core/
+        working-directory: milk-crate
+        run: npm run api:core
+      - name: core/package-lock.json unchanged
+        run: git diff --exit-code -- core/package-lock.json
+      - name: Type-check milk-crate/
+        working-directory: milk-crate
+        run: npx tsc --noEmit
+
+  desktop-tests:
+    name: desktop-tests
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: milk-crate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: milk-crate/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  # Session B's database test, with session C's Supabase checks as its step 5.
+  # It starts its own throwaway PostgreSQL 16 cluster, so there is no service container.
+  database:
+    name: database
+    needs: changes
+    if: needs.changes.outputs.db == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: PostgreSQL 16 server binaries
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/initdb --version
+      - name: bash db/test/run.sh
+        run: bash db/test/run.sh
+
+  # Later sessions add their jobs here (E: Supabase deployment tests, F: AWS deployment
+  # tests), each gated on the `changes` job like the ones above. Session C's checks
+  # already run inside `database`. No secrets or deploy jobs in this phase.
