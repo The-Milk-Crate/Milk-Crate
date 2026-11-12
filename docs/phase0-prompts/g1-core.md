@@ -1,11 +1,12 @@
 You are session G of Phase 0 of Milk Crate, a music streaming service and marketplace for artists. The repository holds a desktop app (Tauri 2, React 19, TypeScript, Vite) in `milk-crate/`. Phase 0 is a backend proof of concept that runs on two deployments from one codebase: Supabase (Auth, Postgres, Storage, Edge Functions on Deno, a worker on Fly Machines) and AWS (Cognito, Aurora PostgreSQL through the RDS Data API, S3, API Gateway and Lambda on Node 22, a worker on Fargate). Anything that runs on one must run on the other.
 
-Sessions A to D are merged. Read these first, in this order:
+Sessions A to E are merged; session F (AWS) may still be in progress. Read these first, in this order:
 1. `docs/phase0-sessions.md` (shared rules and your section, "G: Shared core handlers and the cross-cloud check")
 2. `api/openapi.yaml` (the contract, 21 operations; each lists `x-account-types` and `x-state-moves`, and the top of the file has the table of release state moves)
 3. `api/README.md` (who may call what)
 4. `core/src/platform/` (the eight interfaces and `Modules`; read `types.ts`, `database.ts`, `storage.ts` and `playback.ts` closely)
 5. `db/` (session B's tables, SQL functions, tests and README; your handlers call these), then session C's `db/test/access-expected.json` and `db/account-claim.json`
+6. `deploy/supabase/README.md` and the open points in session E's pull request (The-Milk-Crate/Milk-Crate#19): how the Supabase modules behave, and what E is waiting on from you
 
 Your job is in two stages. Do stage 1 now, then stop.
 
@@ -26,7 +27,7 @@ Build:
 - Playback: `getPlayback` checks entitlement and asks `ObjectStorage.signRead` for the grant on the track's streaming copy key (session B's track column, under `streams/{artist}/{release}/{track}/`; never a master); the core adds the track id. 404 when the track has no streaming copy yet (session H fills it later; test with a fake key). Owners and reviewers may get a grant for a release that is not live; everyone else gets 404.
 - Takedown: administrator only. Remove listener access, delete the release's `masters/`, `streams/` and `art/` prefixes through `ObjectStorage.delete`, write the audit row listing what was removed, and email the owner (the email is in `api_accounts`). `review_needs_changes` uses the same email.
 - The worker's result: no HTTP operation exists for it. Write a plain function in `core/` that applies a job result by job id (session B's jobs table gives the release; success moves `processing` to `awaiting_splits`; failure moves it to `failed` with the plain-words reason). Each deployment's `Jobs.reportResult` calls it. State its name next to the handler path.
-- A small router that maps method and path to a handler, so each deployment's entry point stays thin. Choose where the handlers live (suggested: `core/src/handlers/`), state the path at the top of your pull request, and export everything a deployment needs from one place. Sessions E and F are waiting on this path.
+- A small router that maps method and path to a handler, so each deployment's entry point stays thin. Choose where the handlers live (suggested: `core/src/handlers/`), state the path at the top of your pull request, and export everything a deployment needs from one place. Session E (merged) is waiting on this path to write its Edge Function entry points, and F will be too.
 - Tests with fake modules (an in-memory fake of `Database` is not enough for transactions and SQL functions: use session B's throwaway local PostgreSQL 16 approach in `db/test/` for the paths that run SQL, and fakes for storage, jobs, schedules, email and identity). Cover: every operation's allowed and refused account types, every state move and every refused move (409), the 100-percent rule, invite code single use and expiry, idempotent play batches, hidden releases, and takedown.
 - Keep a clock and a random source as injected arguments so tests are repeatable.
 
@@ -62,6 +63,26 @@ Read `db/README.md`. B's functions lock the release row and enforce the rules, s
   - Pass lists as JSON text.
   - Read `numeric`, `bigint`, `date`, `timestamptz` and `jsonb` results as strings or parsed values, the same on both deployments.
 
+### From session E (merged; use these)
+Session E's Supabase modules are in `deploy/supabase/src/`. Session F is asked to match them. Don't import from `deploy/` into `core/`; rely only on the interfaces and on the shapes below.
+- **Database errors.** `Database` throws an error whose `code` is the SQLSTATE (such as `MC409`) and whose `message` is unchanged (`name` is `DatabaseError`). Map on `code`, and read the code word from the start of `message`.
+- **Storage errors.** Storage throws an error with an HTTP-like `status`:
+  - 413: an upload larger than the deployment's file size limit, refused before anything is stored. The free Supabase project for Phase 0 caps files at 50 MiB (settled), though the contract allows 5 GiB masters. The contract has no 413 for `startUpload`, so map it to an error it lists (400 or 422, with a plain message naming the limit). Your call; say which.
+  - 404: `readHead` found no object.
+- **Uploads on Supabase (`tus`).**
+  - `providerUploadId` is opaque; store it exactly as returned (B's column holds up to 1024 characters).
+  - `signParts` throws for a `tus` session: return the contract's 409.
+  - `confirmUpload` reports `incomplete` or `checksum_mismatch`: 422, and the upload stays open.
+  - `getUpload` for a TUS upload that expired returns offset 0 with an `expiresAt` in the past: return it as is; the artist starts a new upload.
+- **Read grants.** `signRead` returns `{ method: "signed_url", url, expiresAt }`, made per call and lasting 600 seconds. It throws for a `masters/` key, so never pass one. The contract now says a grant is short-lived and made per request for a signed-in listener, not bound to one (`getPlayback`, `PlaybackGrant`, `CoverGrant`; settled).
+- **Email.** `sendTemplate` refuses a missing field. It needs these `data` fields (session E's choice; if you need others, list it as an open point instead of guessing):
+  - `split_invitation`: `releaseTitle`, `artistName`, `inviteCode`, `expiresAt`
+  - `review_needs_changes` and `release_taken_down`: `releaseTitle`, `reason`
+- **The job result.** E's worker calls `Jobs.reportResult(jobId, result)`, which calls one function `(jobId: string, result: JobResult) => Promise<void>`; `deploy/supabase/worker/wiring.ts` waits to import it from your path. Export your job-result function so a worker can get one of that shape, for example `makeApplyJobResult(modules)`, and state the name and shape next to the handler path. A worker also reports a job that ran past its time limit (4 hours) or crashed, always with a plain-words message.
+- **Entry points.** E's adapter (`deploy/supabase/src/functions.ts`) takes routes as `"METHOD /v1/path/{param}"`, or `"*"` for every request, and gives the handler the request with its path cut to `/v1/...`, so your router sees the contract's paths. Say whether E should deploy one Edge Function per operation, or one function serving your router under `"*"`.
+- **Schedules.** A schedule name is 1 to 100 of `A-Z a-z 0-9 _ . : -` (for example `go-live:<releaseId>`). `fn` must be a public `api_` function, and the argument names must be its own (`p_release_id`).
+- **Jobs.** `enqueue` returns the job id even when the worker could not start; the job then waits for the hourly sweep.
+
 ### From session C (merged; use these)
 Read `db/test/access-expected.json` (including its `settled` section) and `db/account-claim.json`.
 - **The fixture.** For `getRelease`, `listReleases`, `getPublicRelease`, `getPlayback`, `getCover`, `getUpload` and `recordPlays`, it gives every account type, own release or another artist's, and every release state, with the expected outcome. Drive a table test from the file itself, not a copy, so a change to it shows up in your tests. Use its `invitation` section for `getInvitation` and `respondToSplit`.
@@ -78,7 +99,7 @@ Read `db/test/access-expected.json` (including its `settled` section) and `db/ac
 - Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
 - `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
 - `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
-- `types` type-checks `core/`, but no CI job runs your handler tests yet. Until their job is added, run them yourself and show the output in your pull request.
+- `types` type-checks `core/`, but no CI job runs your handler tests yet. (Session E's tests get theirs from a session D follow-up, `docs/phase0-prompts/d2-ci-supabase-tests.md`.) Until their job is added, run them yourself and show the output in your pull request.
 - Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
 
 ### Constraints
@@ -100,7 +121,7 @@ Read `db/test/access-expected.json` (including its `settled` section) and `db/ac
 - Every operation has a handler and tests, and the tests pass.
 - `core/` and `milk-crate/` type-check and `cd milk-crate && npm test` still passes.
 - The handler path is stated at the top of the pull request.
-- The pull request description lists: what you built, what you ran and its result, the open points for K Marcus (at least: the test runner choice, any change a handler needs in another session's work, where rate limits (429) for play batches and resends are enforced, the minimum cover size in pixels, and the numbers: wrong codes allowed before 429 and over what window, and sends per party per day), and anything you assumed.
+- The pull request description lists: what you built, what you ran and its result, the open points for K Marcus (at least: the test runner choice, any change a handler needs in another session's work, where rate limits (429) for play batches and resends are enforced, the minimum cover size in pixels, and the numbers: wrong codes allowed before 429 and over what window, and sends per party per day; how a too-large upload (storage status 413) maps to the contract; the job-result function's name and shape for E and F; one Edge Function per operation or one router function), and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.
 
 ### Stage 2 (do not start it now)
