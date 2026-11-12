@@ -7,7 +7,8 @@ events, qualified streams, audit rows, jobs and the account source.
 | Folder | What | Runs on |
 |---|---|---|
 | `db/migrations/` | Numbered plain SQL files, applied in order. Safe to run twice. | Both |
-| `db/supabase/` | Supabase-only SQL (session C): read rules, the claim hook, the account sync. Applied after `db/migrations/`. | Supabase |
+| `db/supabase/` | Supabase-only SQL (session C): read rules, the claim hook, the account sync. Applied after `db/migrations/`. See `db/supabase/README.md`. | Supabase |
+| `db/account-claim.json` | The `account_type` claim for both deployments: values, Cognito group names, suspended and precedence rules. | Both |
 | `db/test/` | The checks, on a throwaway local PostgreSQL. | Your machine and CI |
 
 `milk-crate/supabase/` is the desktop app's own hand-run SQL. Nothing here changes or reads it.
@@ -31,7 +32,12 @@ What it does:
 4. Runs `db/test/checks.sql`: state rules (including that the scheduled-to-live function leaves a
    taken-down release alone), the 100-percent rule, idempotent play batches, single-use invite
    codes, one role per account, and the list query.
-5. Stops the cluster and deletes the temp directory, also when a check fails.
+5. Supabase only (session C): in a second database, loads a test-only stand-in for Supabase's
+   roles, `auth` and `storage` (`db/test/supabase-standin.sql`), the app's SQL from
+   `milk-crate/supabase/`, `db/migrations/`, then `db/supabase/` twice. Checks the second run
+   changed nothing and the app's own objects are unchanged, then runs
+   `db/test/supabase-checks.sql` against the shared fixture `db/test/access-expected.json`.
+6. Stops the cluster and deletes the temp directory, also when a check fails.
 
 It prints `ok - ...` per check and exits non-zero on the first failure.
 

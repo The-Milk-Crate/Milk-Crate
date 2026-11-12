@@ -1,0 +1,19 @@
+{
+  "about": "The account_type claim, the same on both deployments. Supabase: the access token hook public.api_access_token_hook (db/supabase/0002_account_claim.sql). AWS: Cognito groups with these names (session F). Both read session B's api_accounts. Tests check this file against api/openapi.yaml and core/src/platform/types.ts.",
+  "claim": "account_type",
+  "values": ["end_user", "artist", "third_party", "administrator", "internal", "internal_accounting"],
+  "source": "api_accounts: one row per account. The claim is the row's account_type.",
+  "noRow": "end_user",
+  "suspended": "end_user",
+  "readWhen": "When the token is issued. A role change shows after the token refreshes.",
+  "precedence": ["administrator", "internal", "internal_accounting", "third_party", "artist", "end_user"],
+  "precedenceUse": "Only if an account somehow holds two roles: take the first in this list. The artist endpoints then refuse the account, because its claim is not artist.",
+  "cognitoGroups": [
+    { "name": "administrator", "precedence": 1 },
+    { "name": "internal", "precedence": 2 },
+    { "name": "internal_accounting", "precedence": 3 },
+    { "name": "third_party", "precedence": 4 },
+    { "name": "artist", "precedence": 5 }
+  ],
+  "cognitoRule": "Each user is in exactly one group: the one named by their api_accounts.account_type. No row, or a suspended row, means no group, and no group means end_user. There is no end_user group. If a user is ever in more than one group, the claim is the group with the lowest precedence number (Cognito's own group precedence is set to the same numbers)."
+}
