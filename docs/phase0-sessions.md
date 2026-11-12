@@ -59,7 +59,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | Session | Prompt |
 |---|---|
 | A (done) | `docs/phase0-prompts/a-contract.md`. The original brief, as first given. The contract has changed since: see `api/openapi.yaml`. |
-| B | `docs/phase0-prompts/b-database.md` |
+| B (done) | `docs/phase0-prompts/b-database.md`. Merged; see "B: Database" below and `db/README.md`. |
 | C (done) | `docs/phase0-prompts/c-read-rules.md`. Merged; see "Settled with session C" below and `db/supabase/README.md`. |
 | D (done) | `docs/phase0-prompts/d-ci.md`. Merged; see "D: CI" below. |
 | E | `docs/phase0-prompts/e-supabase.md` |
@@ -214,7 +214,8 @@ Merged. What D left for the others:
 ## E: Supabase deployment
 Branch `phase0/e-supabase`.
 - Implement each platform interface on Supabase: identity from the token, storage (TUS
-  resumable uploads and signed links unique to the listener), jobs (worker on Fly Machines),
+  resumable uploads and short-lived signed links made per request for a signed-in listener),
+  jobs (worker on Fly Machines),
   schedules (pg_cron), server functions (Edge Functions on Deno), secrets and email,
   infrastructure (stand up, confirm, tear down), and `Database` over a Postgres connection
   (pooled, with transactions).
@@ -428,6 +429,12 @@ file added.
 
 - **Cover check.** `ObjectStorage.readHead` gives G the first bytes of a cover to read its
   width and height.
+
+- **Playback and cover links (settled with session E).** A read grant is short-lived and made
+  per request for a signed-in listener; whoever holds it can use it until it expires, and then
+  the player asks again. Neither a Supabase signed URL nor CloudFront cookies can be bound to
+  one listener. Supabase links last 600 seconds. The contract says so in `getPlayback`,
+  `PlaybackGrant` and `CoverGrant`.
 
 ## Open before work starts
 None.
