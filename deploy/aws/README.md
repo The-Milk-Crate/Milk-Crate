@@ -148,7 +148,19 @@ MC_SETTINGS_FILE=/path/outside/the/repo/aws.settings.env bash deploy/aws/scripts
 MC_SETTINGS_FILE=/path/outside/the/repo/aws.settings.env bash deploy/aws/scripts/tear-down.sh
 ```
 
-The stand-up and tear-down check the credentials are for `MC_AWS_ACCOUNT` and ask you to type the
+```bash
+MC_SETTINGS_FILE=/path/outside/the/repo/aws.settings.env bash deploy/aws/scripts/smoke.sh
+```
+
+The smoke test (about 10 minutes) checks against the real services what the mocked tests
+could not: the Data API's parameters, value shapes and error text; presigned parts on a
+CRC64NVME upload, resume and confirm; CloudFront cookies (one track only, never a master); a
+real Cognito token and the claim through the sync and suspension; a schedule running through
+the Data API and a failed one in the dead-letter queue; one Fargate task per job id; and, with
+`MC_SMOKE_EMAIL_TO`, one SES email. It writes only test data under fresh random ids and removes
+it at the end. The top of `scripts/smoke.sh` lists each check.
+
+The stand-up, tear-down and smoke test check the credentials are for `MC_AWS_ACCOUNT` and ask you to type the
 account id and the region again before changing anything. The top of each script lists what it
 needs and does. The settings file is read as plain `NAME=value` lines, never run.
 

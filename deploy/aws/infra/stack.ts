@@ -213,7 +213,9 @@ export class MilkCrateStack extends Stack {
     }
     const appClient = userPool.addClient("DesktopApp", {
       generateSecret: false,
-      authFlows: { userSrp: true },
+      // userSrp for the app. adminUserPassword needs AWS credentials (AdminInitiateAuth), so it
+      // is not open to the public; the smoke test uses it to get a real token.
+      authFlows: { userSrp: true, adminUserPassword: true },
       accessTokenValidity: Duration.hours(1),
       idTokenValidity: Duration.hours(1),
       refreshTokenValidity: Duration.days(30),
@@ -427,6 +429,12 @@ export class MilkCrateStack extends Stack {
     out("AccountSyncFunction", accountSync.functionName);
     out("DeadLetterQueueUrl", deadLetters.queueUrl);
     out("SecretPrefix", SECRET_PREFIX);
+    // For the smoke test (scripts/smoke.sh).
+    out("EcsCluster", ecsCluster.clusterName);
+    out("WorkerSubnets", publicSubnets.join(","));
+    out("WorkerSecurityGroup", workerGroup.securityGroupId);
+    out("SchedulerRoleArn", runRole.roleArn);
+    out("DeadLetterQueueArn", deadLetters.queueArn);
   }
 }
 
