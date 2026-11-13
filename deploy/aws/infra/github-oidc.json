@@ -26,7 +26,7 @@
       "Type": "AWS::IAM::Role",
       "Properties": {
         "RoleName": "MilkCrateSandboxDeploy",
-        "Description": "Assumed only by The-Milk-Crate/Milk-Crate's aws-sandbox environment, after K Marcus approves the run.",
+        "Description": "Assumed only by The-Milk-Crate/Milk-Crate's aws-sandbox environment (matched by GitHub's immutable owner and repository ids, not names), after K Marcus approves the run.",
         "MaxSessionDuration": 10800,
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
@@ -42,7 +42,7 @@
               "Condition": {
                 "StringEquals": {
                   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                  "token.actions.githubusercontent.com:sub": "repo:The-Milk-Crate/Milk-Crate:environment:aws-sandbox"
+                  "token.actions.githubusercontent.com:sub": "repo:The-Milk-Crate@353489113/Milk-Crate@1421168430:environment:aws-sandbox"
                 }
               }
             }
@@ -56,11 +56,11 @@
               "Version": "2012-10-17",
               "Statement": [
                 {
-                  "Sid": "SmokeTestStartsTheWorkerTask",
+                  "Sid": "SmokeTestStartsTheWorkerTaskAndSchedules",
                   "Effect": "Allow",
                   "Action": "iam:PassRole",
                   "Resource": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/MilkCratePhase0-*" },
-                  "Condition": { "StringEquals": { "iam:PassedToService": "ecs-tasks.amazonaws.com" } }
+                  "Condition": { "StringEquals": { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "scheduler.amazonaws.com"] } }
                 }
               ]
             }
