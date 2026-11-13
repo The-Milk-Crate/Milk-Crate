@@ -180,7 +180,11 @@ Data API on, in isolated subnets.
 `.github/workflows/aws-sandbox.yml` does a throwaway run in a sandbox account: stand up, check,
 smoke test, tear down, in about an hour. It is started by hand, waits for K Marcus's approval,
 and holds no AWS keys. GitHub's OIDC token is exchanged for the `MilkCrateSandboxDeploy` role
-(`infra/github-oidc.json`), which trusts only this repository's `aws-sandbox` environment. There
+(`infra/github-oidc.json`), which trusts only this repository's `aws-sandbox` environment. The trust
+rule matches GitHub's immutable subject, which uses the owner and repository ids
+(`repo:The-Milk-Crate@353489113/Milk-Crate@1421168430:environment:aws-sandbox`). This repository
+uses it (`use_immutable_subject` is on); the old name-only form is rejected. Check yours with
+`gh api repos/<owner>/<repo>/actions/oidc/customization/sub`. There
 are no GitHub secrets: the CloudFront key pair is made fresh on the runner each time.
 
 It is started by creating a branch, not with a Run button: a Run button appears only for

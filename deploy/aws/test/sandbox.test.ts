@@ -21,7 +21,7 @@ test("the OIDC role trusts only this repository's aws-sandbox environment, for 3
   assert.deepEqual(statement.Condition, {
     StringEquals: {
       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-      "token.actions.githubusercontent.com:sub": "repo:The-Milk-Crate/Milk-Crate:environment:aws-sandbox",
+      "token.actions.githubusercontent.com:sub": "repo:The-Milk-Crate@353489113/Milk-Crate@1421168430:environment:aws-sandbox",
     },
   });
   assert.ok(!JSON.stringify(statement).includes("StringLike"), "no wildcard trust");
