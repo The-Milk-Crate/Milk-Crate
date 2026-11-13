@@ -16,29 +16,18 @@ current state and the next steps. Update it when a step is done.
 
 ## Next steps, in order
 
-1. One-time setup of the sandbox run in the `milkcrate-dev` AWS account (decided by K Marcus).
-   As that account's administrator, with the AWS CLI signed in to it:
-
-   ```bash
-   cd deploy/aws && npm ci && npx cdk bootstrap aws://<milkcrate-dev account id>/<region>
-   ```
-
-   From the repository root (`CreateOidcProvider=false` if the account already has a GitHub
-   identity provider):
-
-   ```bash
-   aws cloudformation deploy --stack-name MilkCrateGitHubSandbox --template-file deploy/aws/infra/github-oidc.json --capabilities CAPABILITY_NAMED_IAM --parameter-overrides CreateOidcProvider=true --region <region>
-   ```
-
-   ```bash
-   aws cloudformation describe-stacks --stack-name MilkCrateGitHubSandbox --query "Stacks[0].Outputs[0].OutputValue" --output text --region <region>
-   ```
-
-   In GitHub, Settings → Environments → New environment `aws-sandbox`:
-   - Required reviewers: K Marcus.
-   - Deployment branches: selected branches `aws-sandbox-run` and `aws-sandbox-teardown`.
-   - Variables: `AWS_ROLE_ARN` (from the command above), `MC_AWS_ACCOUNT` (the milkcrate-dev
-     account id), `MC_AWS_REGION`, `MC_EMAIL_DOMAIN`.
+1. Done (K Marcus, November 2026): the one-time setup of the sandbox run in the `milkcrate-dev`
+   AWS account (`689445872429`, `us-east-1`).
+   - CDK bootstrapped; stack `MilkCrateGitHubSandbox` created (role `MilkCrateSandboxDeploy`,
+     with a new GitHub identity provider).
+   - GitHub environment `aws-sandbox`: required reviewer K Marcus; deployment branches
+     `aws-sandbox-run` and `aws-sandbox-teardown`; variables `AWS_ROLE_ARN`, `MC_AWS_ACCOUNT`,
+     `MC_AWS_REGION` and `MC_EMAIL_DOMAIN` (`example.com` for now: there is no email domain yet).
+   - Notes from doing it, for the next person on a Windows drive under WSL: use a Node 22 build
+     with TypeScript support (`nvm install 22`; the distro `/usr/bin/node` had none, and `cdk`
+     runs `node infra/app.ts`); `cdk bootstrap` runs the app, so it needs `MC_EMAIL_DOMAIN`,
+     `MC_EMAIL_FROM` and a PEM file in `MC_CLOUDFRONT_PUBLIC_KEY_FILE` (throwaway values are fine);
+     set `git config core.autocrlf input` or every file shows as modified.
 
 2. First sandbox run: create the branch `aws-sandbox-run` from `milk-crate-backend-poc`, then in
    Actions → "AWS sandbox run" → "Review deployments", approve (check the commit is the one you
