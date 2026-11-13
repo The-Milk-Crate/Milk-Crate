@@ -226,7 +226,13 @@ describe("Database over the Data API (fake Data API on local Postgres)", { skip:
       const fire = async () => {
         const input = JSON.parse(scheduler.inputs(CreateScheduleCommand).at(-1).Target.Input);
         const { ExecuteStatementCommand } = await import("@aws-sdk/client-rds-data");
-        return api.send(new ExecuteStatementCommand({ resourceArn: input.ResourceArn, secretArn: input.SecretArn, database: input.Database, sql: input.Sql, parameters: input.Parameters }));
+        // Scheduler's Input names fields in PascalCase (Name, Value, StringValue); the SDK takes camelCase.
+        const lower = (k: string) => k[0].toLowerCase() + k.slice(1);
+        const parameters = input.Parameters.map((p: { Name: string; Value: Record<string, unknown> }) => ({
+          name: p.Name,
+          value: Object.fromEntries(Object.entries(p.Value).map(([k, v]) => [lower(k), v])),
+        }));
+        return api.send(new ExecuteStatementCommand({ resourceArn: input.ResourceArn, secretArn: input.SecretArn, database: input.Database, sql: input.Sql, parameters }));
       };
       return { scheduler, schedules, fire };
     }

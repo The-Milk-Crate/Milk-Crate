@@ -69,7 +69,7 @@ test("a run is a one-time schedule that calls the Data API, deletes itself, neve
     SecretArn: "arn:secret",
     Database: "milk_crate",
     Sql: "select public.api_release_go_live(p_release_id => :p_release_id::uuid)",
-    Parameters: [{ name: "p_release_id", value: { stringValue: REL } }],
+    Parameters: [{ Name: "p_release_id", Value: { StringValue: REL } }],
   });
   assert.ok(!JSON.parse(input.Target.Input).Sql.includes(REL), "the value is a parameter, not SQL text");
 });
