@@ -63,6 +63,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | C (done) | `docs/phase0-prompts/c-read-rules.md`. Merged; see "Settled with session C" below and `db/supabase/README.md`. |
 | D (done) | `docs/phase0-prompts/d-ci.md`. Merged; see "D: CI" below. |
 | D follow-up (done) | `docs/phase0-prompts/d2-ci-supabase-tests.md`. Merged; added the `supabase-deploy` job that runs session E's tests. See "D: CI" below. |
+| D follow-up 2 | `docs/phase0-prompts/d3-ci-aws-tests.md`. Run after F is merged: adds the `aws-deploy` job that runs session F's tests. |
 | E (done) | `docs/phase0-prompts/e-supabase.md`. Merged; see "E: Supabase deployment" below and `deploy/supabase/README.md`. |
 | F | `docs/phase0-prompts/f-aws.md` |
 | G stage 1 | `docs/phase0-prompts/g1-core.md` |
