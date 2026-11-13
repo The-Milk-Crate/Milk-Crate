@@ -56,11 +56,11 @@
               "Version": "2012-10-17",
               "Statement": [
                 {
-                  "Sid": "SmokeTestStartsTheWorkerTask",
+                  "Sid": "SmokeTestStartsTheWorkerTaskAndSchedules",
                   "Effect": "Allow",
                   "Action": "iam:PassRole",
                   "Resource": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/MilkCratePhase0-*" },
-                  "Condition": { "StringEquals": { "iam:PassedToService": "ecs-tasks.amazonaws.com" } }
+                  "Condition": { "StringEquals": { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "scheduler.amazonaws.com"] } }
                 }
               ]
             }

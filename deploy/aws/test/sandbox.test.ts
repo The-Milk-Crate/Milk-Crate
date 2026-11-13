@@ -30,7 +30,7 @@ test("the OIDC role trusts only this repository's aws-sandbox environment, for 3
   assert.deepEqual(role.ManagedPolicyArns, [{ "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/PowerUserAccess" }]);
   const pass = role.Policies[0].PolicyDocument.Statement[0];
   assert.equal(pass.Action, "iam:PassRole");
-  assert.deepEqual(pass.Condition, { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } });
+  assert.deepEqual(pass.Condition, { StringEquals: { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "scheduler.amazonaws.com"] } });
   assert.match(pass.Resource["Fn::Sub"], /:role\/MilkCratePhase0-\*$/);
   assert.ok(!JSON.stringify(template).includes("AdministratorAccess"));
 });
