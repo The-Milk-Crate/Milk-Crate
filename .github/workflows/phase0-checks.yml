@@ -29,6 +29,7 @@ jobs:
       app: ${{ steps.filter.outputs.app }}
       db: ${{ steps.filter.outputs.db }}
       supabase: ${{ steps.filter.outputs.supabase }}
+      aws: ${{ steps.filter.outputs.aws }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,6 +43,7 @@ jobs:
             echo "app=true" >> "$GITHUB_OUTPUT"
             echo "db=true" >> "$GITHUB_OUTPUT"
             echo "supabase=true" >> "$GITHUB_OUTPUT"
+            echo "aws=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # On a pull request HEAD is the test merge commit; its first parent is the base.
@@ -51,6 +53,7 @@ jobs:
           app=false
           db=false
           supabase=false
+          aws=false
           if grep -qE '^(api/|core/|db/|milk-crate/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             app=true
           fi
@@ -60,9 +63,14 @@ jobs:
           if grep -qE '^(deploy/supabase/|db/|milk-crate/supabase/|core/src/platform/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             supabase=true
           fi
+          # Session F's tests also compare against E's email templates and worker skeleton.
+          if grep -qE '^(deploy/aws/|db/|core/src/platform/|deploy/supabase/src/email-templates\.ts$|deploy/supabase/worker/run\.ts$|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+            aws=true
+          fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "db=$db" >> "$GITHUB_OUTPUT"
           echo "supabase=$supabase" >> "$GITHUB_OUTPUT"
+          echo "aws=$aws" >> "$GITHUB_OUTPUT"
 
   contract:
     name: contract
@@ -225,5 +233,44 @@ jobs:
       - name: bash deploy/supabase/test/run.sh
         run: bash deploy/supabase/test/run.sh
 
-  # Later: session F's AWS deployment tests, gated on the `changes` job like the ones above.
-  # Session C's checks already run inside `database`. No secrets or deploy jobs in this phase.
+  # Session F's AWS deployment tests. The script installs deploy/aws/'s packages, type-checks,
+  # and starts its own throwaway PostgreSQL 16 cluster, so there is no service container. Every
+  # AWS service is mocked, the Data API is a stand-in over that Postgres, and the CDK stack is
+  # synthesized offline (esbuild, not Docker). No keys, no AWS account. The smoke test
+  # (deploy/aws/scripts/smoke.sh) needs a real stand-up and never runs here.
+  aws-deploy:
+    name: aws-deploy
+    needs: changes
+    if: needs.changes.outputs.aws == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tests run TypeScript directly with Node's type stripping: 22.18 or newer.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '>=22.18 <23'
+          cache: npm
+          cache-dependency-path: deploy/aws/package-lock.json
+      - name: Node version
+        run: |
+          node --version
+          node -e 'const [a, b] = process.versions.node.split(".").map(Number); if (a < 22 || (a === 22 && b < 18)) { console.error("Need Node 22.18 or newer"); process.exit(1); }'
+      - name: PostgreSQL 16 server binaries
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/initdb --version
+      - name: npm ci (deploy/aws)
+        working-directory: deploy/aws
+        run: npm ci --no-audit --no-fund
+      - name: bash deploy/aws/test/run.sh
+        run: bash deploy/aws/test/run.sh
+
+  # A session that adds tests adds one job for them here, in the pattern above (see "Adding a
+  # test job" in docs/phase0-sessions.md). Session C's checks already run inside `database`.
+  # No secrets or deploy jobs in this phase.

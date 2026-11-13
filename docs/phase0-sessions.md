@@ -13,7 +13,8 @@ prompt for your session from `docs/phase0-prompts/` (index below).
   Push only that branch. Open one draft pull request into `milk-crate-backend-poc`.
 - Never push to `main` or `milk-crate-backend-poc`, never push or create tags, never merge
   any pull request (including your own), never change repository settings, rulesets,
-  environments or secrets. (Session D may edit `.github/workflows/`. Nobody else may.)
+  environments or secrets. (Session D owns `.github/workflows/`. One exception: a session with
+  new tests adds one job for them to `phase0-checks.yml`, as "D: CI" says. Nobody else edits it.)
 - You get no keys, tokens or passwords. Never print or commit a secret. Where a real
   credential is needed, write what is needed and stop.
 - `build.yml` publishes a desktop release on every push to `main`. Nothing may need a change to it.
@@ -189,7 +190,7 @@ Merged. What C left for the others:
 - Its tests run as step 5 of `bash db/test/run.sh`.
 
 ## D: CI
-Branch `phase0/d-ci`. The only session that may edit `.github/workflows/`.
+Branch `phase0/d-ci`. Owns `.github/workflows/` (one exception: "Adding a test job" below).
 - New workflow files only. Don't edit `build.yml` or `pages.yml`.
 - On pull requests: lint the contract, type-check `core/` and `milk-crate/`, run
   `cd milk-crate && npm test`, regenerate the client and fail if `schema.d.ts` is stale.
@@ -206,12 +207,23 @@ Merged. What D left for the others:
 - `.github/workflows/phase0-checks.yml` ("Phase 0 checks") runs on pull requests into
   `milk-crate-backend-poc` and `main`, and by hand. Never on a push; it deploys nothing.
 - Required on `milk-crate-backend-poc` (K Marcus's ruleset): `changes`, `contract`,
-  `client-fresh`, `types`, `desktop-tests`, `database`, `supabase-deploy`. Not required on `main` yet.
+  `client-fresh`, `types`, `desktop-tests`, `database`, `supabase-deploy`, `aws-deploy`. Not required on `main` yet.
 - A small `changes` job skips the heavy jobs when nothing under `api/`, `core/`, `db/` or
   `milk-crate/` changed. Skipped counts as passed. `database` has its own narrower list.
 - `supabase-deploy` runs `bash deploy/supabase/test/run.sh` when `deploy/supabase/`, `db/`, `milk-crate/supabase/`, `core/src/platform/` or the workflow file changes.
-- Nobody else edits `.github/workflows/`. A session with new tests gives them one documented
-  command and lists the job it wants in its pull request; a session D follow-up adds it.
+- `aws-deploy` (added by session F under "Adding a test job" below) runs `bash deploy/aws/test/run.sh` when `deploy/aws/`, `db/`, `core/src/platform/`, `deploy/supabase/src/email-templates.ts`, `deploy/supabase/worker/run.ts` or the workflow file changes.
+- Adding a test job (settled by K Marcus). A session with new tests adds one job for them to
+  `phase0-checks.yml` in its own pull request, so they run on that pull request. Copy the
+  pattern of `supabase-deploy`:
+  - one new output in `changes` with the paths that should start the job; leave the other
+    outputs and jobs as they are;
+  - the action SHAs already pinned in the file, `runs-on: ubuntu-24.04` and a timeout;
+  - the session's one documented test command, run from a clean checkout; no secrets, no keys,
+    no deploy steps, no `pull_request_target`, no change to `permissions` or `concurrency`;
+  - no new workflow file, and never `build.yml` or `pages.yml`.
+
+  Name the job in the pull request; K Marcus adds it to the required checks. Anything else in
+  `.github/workflows/` is session D's.
 
 ## E: Supabase deployment
 Branch `phase0/e-supabase`.
@@ -243,8 +255,8 @@ Branch `phase0/e-supabase`.
 
   Details in `docs/phase0-prompts/e-supabase.md`.
 
-- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
-  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
+- From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
+  job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
 
 Done when: the interface tests pass against local Supabase or mocks, and the stand-up script
 is ready for K Marcus to run.
@@ -277,8 +289,8 @@ Branch `phase0/f-aws`.
   and a script K Marcus runs. Tests use mocks or local emulators.
 - Lambda entry points call G's handlers and only do wiring.
 
-- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
-  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
+- From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
+  job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
 
 Done when: the interface tests pass against mocks or emulators, and the stand-up script is
 ready for K Marcus to run.
@@ -319,8 +331,8 @@ Stage 2 (after E, F and G stage 1 are merged):
   they behave the same, plus a script K Marcus can run against real deployments with
   environment variables. Differences are reported as findings, not fixed.
 
-- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
-  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
+- From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
+  job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
 
 Done when: every operation has a handler and tests (stage 1); the scenario passes on both
 module sets, or every difference is listed (stage 2).
@@ -342,8 +354,8 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
 - From B (merged): record `stream_key`, `duration_ms` and `sample_rate_hz` on `api_tracks`;
   compare against `api_tracks.master_sha256`; call `api_job_started` when a job is picked up.
 
-- From D (merged): CI runs the six required checks on your pull request; run them first. New tests
-  are not in CI until a session D follow-up adds their job. See "From session D" in your prompt.
+- From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
+  job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
 
 Done when: every track is checked, hashed and turned into a streaming copy by one shared piece,
 and the release reaches `awaiting_splits` or `failed` through the job result path.

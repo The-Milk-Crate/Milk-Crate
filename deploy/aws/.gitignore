@@ -1,0 +1,7 @@
+node_modules
+cdk.out
+# Real settings for the stand-up. Keep them outside the repository; never commit them.
+*.settings.env
+*.pem
+.env
+cdk.context.json

@@ -99,8 +99,8 @@ Read `db/test/access-expected.json` (including its `settled` section) and `db/ac
 - Run them yourself before you push. From the repository root: `bash db/test/run.sh`. From `milk-crate/`: `npm ci`, `npm run api:lint`, `npm run api:client` (then `git diff --exit-code src/lib/api/schema.d.ts` must be empty), `npm run api:core`, `npx tsc --noEmit` and `npm test`.
 - `client-fresh` fails if `milk-crate/src/lib/api/schema.d.ts` no longer matches `api/openapi.yaml`. The contract is fixed, so this matters only if K Marcus approves a contract change: then run `npm run api:client` and commit the result.
 - `database` runs when `db/**`, `milk-crate/supabase/**`, `api/openapi.yaml`, `core/src/platform/types.ts` or the workflow changes. If your change makes it fail, fix it on your branch.
-- `types` type-checks `core/`, but no CI job runs your handler tests yet. (Session E's tests get theirs from a session D follow-up, `docs/phase0-prompts/d2-ci-supabase-tests.md`.) Until their job is added, run them yourself and show the output in your pull request.
-- Don't edit `.github/workflows/`. Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. In your pull request, list the CI job you want added: the command, the paths that should start it, and anything it must install. A session D follow-up adds it.
+- `types` type-checks `core/`, but no CI job runs your handler tests yet: add one in your pull request (below). Run them yourself too, and show the output in your pull request.
+- You may add one job to `.github/workflows/phase0-checks.yml` for your tests, and change nothing else in `.github/workflows/` (settled by K Marcus; see "Adding a test job" under "D: CI" in `docs/phase0-sessions.md`). Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. Add one output to the `changes` job with the paths that should start your job, and copy the pattern of `supabase-deploy` (the pinned action SHAs, no secrets, no deploy steps). Name the job in your pull request so K Marcus can make it required.
 
 ### Constraints
 - `core/` gets no runtime dependencies. A test runner or `@types/node` may be added as a dev dependency only. Propose your choice in the pull request as an open point; keep it minimal. Check the handlers also run on Deno if Deno is available here, and say so if you can't.
@@ -111,7 +111,7 @@ Read `db/test/access-expected.json` (including its `settled` section) and `db/ac
 ### Rules (all apply)
 - Work on a new branch from `milk-crate-backend-poc` named `phase0/g-core`. Push only that branch. Open one draft pull request into `milk-crate-backend-poc`.
 - Never push to `main` or `milk-crate-backend-poc`, never push or create tags, never merge any pull request (including your own), never change repository settings, rulesets, environments or secrets.
-- Don't touch `.github/workflows/` (session D owns CI). `build.yml` publishes a desktop release on every push to `main`, so nothing here may need a change to it.
+- Don't touch `.github/workflows/` beyond adding your one test job (session D owns CI). Never edit `build.yml` or `pages.yml`: `build.yml` publishes a desktop release on every push to `main`, so nothing here may need a change to it.
 - You get no keys, tokens or passwords. Never print or commit a secret.
 - The contract is fixed. If it needs to change, don't edit it; write the change and the reason in your pull request as an open point for K Marcus.
 - Ask before deciding anything this brief doesn't cover. List open points in the pull request description, not as guesses in the code.
