@@ -198,7 +198,8 @@ Branch `phase0/d-ci`. Owns `.github/workflows/` (one exception: "Adding a test j
   cluster; no Postgres service). It also runs C's Supabase checks (step 5), which read
   `milk-crate/supabase/`, `api/openapi.yaml` and `core/src/platform/types.ts`, so run it when
   those change too. Later, E's and F's tests.
-- No secrets in workflows for this phase. Deploy jobs wait for K Marcus.
+- No secrets in workflows for this phase. Deploy jobs wait for K Marcus (he approved one:
+  `aws-sandbox.yml`, below).
 
 Done when: a pull request that breaks the contract, the types or the tests goes red, and a
 clean one goes green. `build.yml` is untouched.
@@ -211,7 +212,12 @@ Merged. What D left for the others:
 - A small `changes` job skips the heavy jobs when nothing under `api/`, `core/`, `db/` or
   `milk-crate/` changed. Skipped counts as passed. `database` has its own narrower list.
 - `supabase-deploy` runs `bash deploy/supabase/test/run.sh` when `deploy/supabase/`, `db/`, `milk-crate/supabase/`, `core/src/platform/` or the workflow file changes.
-- `aws-deploy` (added by session F under "Adding a test job" below) runs `bash deploy/aws/test/run.sh` when `deploy/aws/`, `db/`, `core/src/platform/`, `deploy/supabase/src/email-templates.ts`, `deploy/supabase/worker/run.ts` or the workflow file changes.
+- `aws-deploy` (added by session F under "Adding a test job" below) runs `bash deploy/aws/test/run.sh` when `deploy/aws/`, `db/`, `core/src/platform/`, `deploy/supabase/src/email-templates.ts`, `deploy/supabase/worker/run.ts`, the workflow file or `aws-sandbox.yml` changes.
+- The one deploy workflow (approved by K Marcus): `.github/workflows/aws-sandbox.yml`, added by
+  session F. A throwaway sandbox run of the AWS deployment (stand up, check, smoke test, tear
+  down), started only by creating the branch `aws-sandbox-run`, and only after K Marcus approves
+  the `aws-sandbox` environment. It signs in to AWS with GitHub's OIDC token; no stored keys and
+  no GitHub secrets. See `deploy/aws/README.md`, "Sandbox run from GitHub".
 - Adding a test job (settled by K Marcus). A session with new tests adds one job for them to
   `phase0-checks.yml` in its own pull request, so they run on that pull request. Copy the
   pattern of `supabase-deploy`:
