@@ -47,13 +47,15 @@ export function atExpression(at: Date, nowMs: number): string {
   return `at(${new Date(due).toISOString().slice(0, 19)})`;
 }
 
+// A universal target's Input uses the API's field names in PascalCase (`Name`, `StringValue`),
+// not the lower camel case of the SDK's own objects. Real AWS refused `name` (sandbox run 3).
 function parameter(name: string, value: string | number | boolean | null) {
-  if (value === null) return { name, value: { isNull: true } };
-  if (typeof value === "boolean") return { name, value: { booleanValue: value } };
+  if (value === null) return { Name: name, Value: { IsNull: true } };
+  if (typeof value === "boolean") return { Name: name, Value: { BooleanValue: value } };
   if (typeof value === "number") {
-    return Number.isSafeInteger(value) ? { name, value: { longValue: value } } : { name, value: { doubleValue: value } };
+    return Number.isSafeInteger(value) ? { Name: name, Value: { LongValue: value } } : { Name: name, Value: { DoubleValue: value } };
   }
-  return { name, value: { stringValue: value } };
+  return { Name: name, Value: { StringValue: value } };
 }
 
 /**
