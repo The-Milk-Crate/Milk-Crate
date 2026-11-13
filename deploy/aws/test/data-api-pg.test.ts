@@ -276,12 +276,26 @@ describe("Database over the Data API (fake Data API on local Postgres)", { skip:
       const nobody = "8f0e7c1a-1111-4000-8000-0000000000ff";
       const groups: Record<string, string[]> = { [r.ownerId]: [], [staff.user_id]: ["artist"], [gone.user_id]: ["administrator"], [nobody]: ["internal"] };
       const cognito = new FakeAws()
-        .on(ListUsersCommand, () => ({ Users: Object.keys(groups).map((sub) => ({ Username: sub, Attributes: [{ Name: "sub", Value: sub }] })) }))
+        .on(ListUsersCommand, () => ({
+          Users: Object.keys(groups).map((sub) => ({
+            Username: sub,
+            Attributes: [{ Name: "sub", Value: sub }, { Name: "email", Value: `${sub.slice(0, 8)}@example.invalid` }, { Name: "email_verified", Value: "true" }],
+          })),
+        }))
         .on(AdminListGroupsForUserCommand, (i) => ({ Groups: groups[i.Username].map((GroupName) => ({ GroupName })) }))
         .on(AdminAddUserToGroupCommand, (i) => { groups[i.Username].push(i.GroupName); return {}; })
         .on(AdminRemoveUserFromGroupCommand, (i) => { groups[i.Username] = groups[i.Username].filter((g) => g !== i.GroupName); return {}; });
       await syncAccounts({ database: db, cognito, userPoolId: "pool", log: () => {} });
       assert.deepEqual(groups, { [r.ownerId]: ["artist"], [staff.user_id]: ["internal"], [gone.user_id]: [], [nobody]: [] });
+      // Verified emails copied into the existing rows; no row made for the user without one.
+      const emails = await db.query<{ user_id: string; email: string }>(
+        "select user_id::text as user_id, email from public.api_accounts where user_id in (select (jsonb_array_elements_text($1::jsonb))::uuid) order by email",
+        [[r.ownerId, staff.user_id, gone.user_id, nobody]],
+      );
+      assert.deepEqual(
+        Object.fromEntries(emails.map((e) => [e.user_id, e.email])),
+        Object.fromEntries([r.ownerId, staff.user_id, gone.user_id].map((id) => [id, `${id.slice(0, 8)}@example.invalid`])),
+      );
     });
 
     test("post-confirmation writes the email into an existing row and never inserts one", async () => {

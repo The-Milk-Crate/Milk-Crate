@@ -16,12 +16,18 @@ const C = "8f0e7c1a-1111-4000-8000-00000000000c";
 const D = "8f0e7c1a-1111-4000-8000-00000000000d";
 
 /** A database stand-in that answers the sync's row query from a table, and records every call. */
-function fakeDb(rows: { user_id: string; account_type: string; suspended: boolean }[], fail = false) {
+function fakeDb(rows: { user_id: string; account_type: string; suspended: boolean; email?: string | null }[], fail = false) {
   const calls: { sql: string; params: SqlValue[] }[] = [];
   const db: Database = {
     async query<Row>(sql: string, params: SqlValue[] = []) {
       calls.push({ sql, params });
       if (fail) throw new Error("database down");
+      if (/^\s*update public\.api_accounts set email/.test(sql)) {
+        const row = rows.find((r) => r.user_id === params[0]);
+        if (!row || row.email === params[1]) return [] as Row[];
+        row.email = params[1] as string;
+        return [{ user_id: row.user_id }] as Row[];
+      }
       if (/from public\.api_accounts/.test(sql)) {
         const ids = params[0] as string[];
         return rows.filter((r) => ids.includes(r.user_id)) as Row[];
@@ -35,18 +41,22 @@ function fakeDb(rows: { user_id: string; account_type: string; suspended: boolea
   return { db, calls };
 }
 
-function fakeCognito(groups: Record<string, string[]>) {
+function fakeCognito(groups: Record<string, string[]>, emails: Record<string, { email: string; verified: boolean }> = {}) {
   const users = Object.keys(groups);
+  const attrs = (sub: string) => [
+    { Name: "sub", Value: sub },
+    ...(emails[sub] ? [{ Name: "email", Value: emails[sub].email }, { Name: "email_verified", Value: String(emails[sub].verified) }] : []),
+  ];
   return new FakeAws()
     .on(ListUsersCommand, (input) => {
       if (input.Filter) {
         const sub = /sub = "(.+)"/.exec(input.Filter)![1];
-        return { Users: users.includes(sub) ? [{ Username: `u-${sub}`, Attributes: [{ Name: "sub", Value: sub }] }] : [] };
+        return { Users: users.includes(sub) ? [{ Username: `u-${sub}`, Attributes: attrs(sub) }] : [] };
       }
       // Two pages, to check paging.
       const page = input.PaginationToken === "2" ? users.slice(2) : users.slice(0, 2);
       return {
-        Users: page.map((sub) => ({ Username: `u-${sub}`, Attributes: [{ Name: "sub", Value: sub }] })),
+        Users: page.map((sub) => ({ Username: `u-${sub}`, Attributes: attrs(sub) })),
         PaginationToken: input.PaginationToken ? undefined : users.length > 2 ? "2" : undefined,
       };
     })
@@ -63,7 +73,7 @@ test("the sync puts each user in their row's group and takes them out of the oth
   ]);
   const cognito = fakeCognito({ [A]: [], [B]: ["administrator"], [C]: ["internal", "administrator"], [D]: ["artist"] });
   const totals = await syncAccounts({ database: db, cognito, userPoolId: "pool", log: () => {} });
-  assert.deepEqual(totals, { users: 4, added: 1, removed: 3 });
+  assert.deepEqual(totals, { users: 4, added: 1, removed: 3, emails: 0 });
   assert.deepEqual(cognito.inputs(AdminAddUserToGroupCommand), [{ UserPoolId: "pool", Username: `u-${A}`, GroupName: "artist" }]);
   assert.deepEqual(
     cognito.inputs(AdminRemoveUserFromGroupCommand).map((i) => [i.Username, i.GroupName]),
@@ -79,7 +89,7 @@ test("the sync puts each user in their row's group and takes them out of the oth
 test("a second sync changes nothing", async () => {
   const { db } = fakeDb([{ user_id: A, account_type: "artist", suspended: false }]);
   const cognito = fakeCognito({ [A]: ["artist"], [B]: [] });
-  assert.deepEqual(await syncAccounts({ database: db, cognito, userPoolId: "pool" }), { users: 2, added: 0, removed: 0 });
+  assert.deepEqual(await syncAccounts({ database: db, cognito, userPoolId: "pool" }), { users: 2, added: 0, removed: 0, emails: 0 });
 });
 
 test("the row query passes the ids as one JSON list, never in the SQL text", async () => {
@@ -93,9 +103,44 @@ test("the row query passes the ids as one JSON list, never in the SQL text", asy
 test("one user by sub", async () => {
   const { db } = fakeDb([{ user_id: A, account_type: "third_party", suspended: false }]);
   const cognito = fakeCognito({ [A]: [] });
-  assert.deepEqual(await syncOneAccount({ database: db, cognito, userPoolId: "pool" }, A), { added: ["third_party"], removed: [] });
+  assert.deepEqual(await syncOneAccount({ database: db, cognito, userPoolId: "pool" }, A), { added: ["third_party"], removed: [], emailCopied: false });
   await assert.rejects(syncOneAccount({ database: db, cognito, userPoolId: "pool" }, "x"), /UUID/);
   await assert.rejects(syncOneAccount({ database: db, cognito, userPoolId: "pool" }, B), /no Cognito user/);
+});
+
+test("the sync copies a verified Cognito email into an existing row; never unverified, never a new row", async () => {
+  const rows = [
+    { user_id: A, account_type: "artist", suspended: false, email: null },
+    { user_id: B, account_type: "internal", suspended: false, email: "old@example.invalid" },
+    { user_id: C, account_type: "third_party", suspended: false, email: "same@example.invalid" },
+  ];
+  const { db, calls } = fakeDb(rows);
+  const cognito = fakeCognito(
+    { [A]: ["artist"], [B]: ["internal"], [C]: ["third_party"], [D]: [] },
+    {
+      [A]: { email: "a@example.invalid", verified: true },
+      [B]: { email: "unverified@example.invalid", verified: false },
+      [C]: { email: "same@example.invalid", verified: true },
+      [D]: { email: "norow@example.invalid", verified: true },
+    },
+  );
+  const totals = await syncAccounts({ database: db, cognito, userPoolId: "pool" });
+  assert.equal(totals.emails, 1);
+  assert.deepEqual(rows.map((r) => r.email), ["a@example.invalid", "old@example.invalid", "same@example.invalid"]);
+  const writes = calls.filter((c) => /^\s*update/.test(c.sql));
+  assert.deepEqual(writes.map((c) => c.params), [[A, "a@example.invalid"]], "only the verified, changed email with a row");
+  assert.ok(!calls.some((c) => /insert/i.test(c.sql)), "never inserts a row");
+  assert.ok(writes.every((c) => !c.sql.includes("example.invalid")), "the email is a parameter");
+  // Run again: nothing to write.
+  assert.equal((await syncAccounts({ database: db, cognito, userPoolId: "pool" })).emails, 0);
+});
+
+test("syncing one user copies their verified email too", async () => {
+  const rows = [{ user_id: A, account_type: "artist", suspended: false, email: null }];
+  const { db } = fakeDb(rows);
+  const cognito = fakeCognito({ [A]: [] }, { [A]: { email: "a@example.invalid", verified: true } });
+  assert.deepEqual(await syncOneAccount({ database: db, cognito, userPoolId: "pool" }, A), { added: ["artist"], removed: [], emailCopied: true });
+  assert.equal(rows[0].email, "a@example.invalid");
 });
 
 const event = (sub: string, email?: string) => ({

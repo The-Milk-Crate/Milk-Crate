@@ -73,8 +73,10 @@ no group is `end_user`; other group names are ignored. Null for no token or a ba
 **Account source.** `api_accounts` is the one source. The post-confirmation trigger writes the
 user's email into their row where one exists (never inserts) and syncs their group; it never
 throws, since a throw would stop the sign-up. The sync puts each user in the group their row
-names and removes every other group; a suspended row or no row means no group. It runs every
-15 minutes and by hand (`scripts/sync-accounts.sh`). Staff endpoints check the row too (session
+names and removes every other group; a suspended row or no row means no group. It also copies
+each user's verified Cognito email into their existing row (never a new one), because users
+made with `admin-create-user` never fire the trigger. It runs every 15 minutes and by hand
+(`scripts/sync-accounts.sh`). Staff endpoints check the row too (session
 G), so a removed role stops at once; the group follows within 15 minutes, and the claim at the
 next token refresh (tokens last an hour).
 
