@@ -49,6 +49,13 @@ need_tools() {
   if [[ ${#missing[@]} -gt 0 ]]; then echo "Missing tools: ${missing[*]}" >&2; exit 2; fi
 }
 
+# True only in the aws-sandbox workflow (.github/workflows/aws-sandbox.yml): it runs in GitHub
+# Actions, and the job waits for K Marcus's approval of the aws-sandbox environment, which stands
+# in for typing the account and region again. Anywhere else the scripts always ask.
+non_interactive() {
+  [[ "${MC_NONINTERACTIVE:-}" == "1" && "${GITHUB_ACTIONS:-}" == "true" && -n "${GITHUB_RUN_ID:-}" ]]
+}
+
 # The credentials must be for MC_AWS_ACCOUNT, and K Marcus types the account and region again.
 confirm_target() {
   local what="$1" actual
@@ -59,6 +66,10 @@ confirm_target() {
   fi
   echo "$what"
   echo "  account $MC_AWS_ACCOUNT, region $MC_AWS_REGION, stack $MC_STACK_NAME"
+  if non_interactive; then
+    echo "  (GitHub Actions: approved in the aws-sandbox environment instead of typing it again)"
+    return 0
+  fi
   local typed_account typed_region
   read -r -p "Type the account id again to go on: " typed_account
   [[ "$typed_account" == "$MC_AWS_ACCOUNT" ]] || { echo "Stopped."; exit 1; }

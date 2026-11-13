@@ -1,0 +1,83 @@
+# A throwaway run of the Phase 0 AWS deployment in a sandbox account: stand up, check, smoke
+# test, tear down. Added by session F at K Marcus's request (the one deploy workflow of Phase 0).
+#
+# How to start it (deploy/aws/README.md, "Sandbox run from GitHub"):
+#   - create the branch aws-sandbox-run (from milk-crate-backend-poc) to run;
+#   - create the branch aws-sandbox-teardown to tear down a run kept with MC_SANDBOX_KEEP=true.
+# Delete the branch afterwards. The job then waits for K Marcus to approve the aws-sandbox
+# environment before it touches AWS.
+#
+# Why branches and not a Run button: a workflow_dispatch button appears only for workflows on
+# the default branch (main), and every push to main publishes a desktop release (build.yml).
+#
+# No stored AWS keys: the job signs in with GitHub's OIDC token to the MilkCrateSandboxDeploy
+# role (deploy/aws/infra/github-oidc.json), which trusts only this repository's aws-sandbox
+# environment. No GitHub secrets: the CloudFront key pair is made fresh on the runner.
+name: AWS sandbox run
+
+on:
+  push:
+    branches: [aws-sandbox-run, aws-sandbox-teardown]
+
+permissions:
+  contents: read
+  id-token: write # for the OIDC sign-in to AWS
+
+concurrency:
+  group: aws-sandbox
+  cancel-in-progress: false
+
+jobs:
+  sandbox:
+    name: aws-sandbox
+    runs-on: ubuntu-24.04
+    # Aurora and CloudFront take a while to make and remove.
+    timeout-minutes: 150
+    environment: aws-sandbox
+    env:
+      MC_NONINTERACTIVE: "1"
+      MC_AWS_ACCOUNT: ${{ vars.MC_AWS_ACCOUNT }}
+      MC_AWS_REGION: ${{ vars.MC_AWS_REGION }}
+      MC_EMAIL_DOMAIN: ${{ vars.MC_EMAIL_DOMAIN }}
+      MC_SMOKE_SKIP_WORKER: ${{ vars.MC_SMOKE_SKIP_WORKER }}
+      MC_SANDBOX_KEEP: ${{ vars.MC_SANDBOX_KEEP }}
+      MODE: ${{ github.ref_name == 'aws-sandbox-teardown' && 'teardown' || 'run' }}
+      CDK_DISABLE_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '>=22.18 <23'
+          cache: npm
+          cache-dependency-path: deploy/aws/package-lock.json
+      - name: Node version
+        run: |
+          node --version
+          node -e 'const [a, b] = process.versions.node.split(".").map(Number); if (a < 22 || (a === 22 && b < 18)) { console.error("Need Node 22.18 or newer"); process.exit(1); }'
+      - name: Settings and a fresh CloudFront key pair (outside the repository)
+        run: |
+          file="$(bash deploy/aws/scripts/ci-settings.sh "$RUNNER_TEMP/milk-crate")"
+          echo "MC_SETTINGS_FILE=$file" >> "$GITHUB_ENV"
+          echo "mode: $MODE"
+      - name: Sign in to AWS (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.MC_AWS_REGION }}
+          role-duration-seconds: 10800
+          role-session-name: milk-crate-sandbox-${{ github.run_id }}
+      - name: npm ci (deploy/aws)
+        working-directory: deploy/aws
+        run: npm ci --no-audit --no-fund
+      - name: Stand up
+        if: env.MODE == 'run'
+        run: bash deploy/aws/scripts/stand-up.sh
+      - name: Smoke test
+        if: env.MODE == 'run'
+        run: bash deploy/aws/scripts/smoke.sh
+      # Also after a failure, so nothing is left running, unless MC_SANDBOX_KEEP is true.
+      - name: Tear down
+        if: always() && (env.MODE == 'teardown' || env.MC_SANDBOX_KEEP != 'true')
+        run: bash deploy/aws/scripts/tear-down.sh

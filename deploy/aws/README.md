@@ -174,3 +174,67 @@ written by you (`user_id` is the Cognito `sub`); run `scripts/sync-accounts.sh` 
 The stack: a VPC with no NAT gateway (the worker uses a public IP with no inbound rule, and an S3
 gateway endpoint), Aurora PostgreSQL 16 Serverless v2 (0 to 2 ACUs, pausing when idle) with the
 Data API on, in isolated subnets.
+
+## Sandbox run from GitHub
+
+`.github/workflows/aws-sandbox.yml` does a throwaway run in a sandbox account: stand up, check,
+smoke test, tear down, in about an hour. It is started by hand, waits for K Marcus's approval,
+and holds no AWS keys. GitHub's OIDC token is exchanged for the `MilkCrateSandboxDeploy` role
+(`infra/github-oidc.json`), which trusts only this repository's `aws-sandbox` environment. There
+are no GitHub secrets: the CloudFront key pair is made fresh on the runner each time.
+
+It is started by creating a branch, not with a Run button: a Run button appears only for
+workflows on `main`, and every push to `main` publishes a desktop release (`build.yml`).
+
+The role has `PowerUserAccess` (no IAM changes) plus passing the stack's own roles to the
+worker task. CDK deploys through its bootstrap roles, whose CloudFormation role is an
+administrator, so anyone who can run this workflow can change anything in that account. Use an
+account that holds nothing else you care about; your approval is the gate.
+
+### Once, by hand (account administrator, AWS CLI)
+
+1. Bootstrap CDK in the sandbox account and region (from `deploy/aws`, after `npm ci`):
+
+   ```bash
+   npx cdk bootstrap aws://<account id>/<region>
+   ```
+
+2. Create the GitHub sign-in role. Use `CreateOidcProvider=false` if the account already has an
+   identity provider for `token.actions.githubusercontent.com`:
+
+   ```bash
+   aws cloudformation deploy --stack-name MilkCrateGitHubSandbox --template-file deploy/aws/infra/github-oidc.json --capabilities CAPABILITY_NAMED_IAM --parameter-overrides CreateOidcProvider=true --region <region>
+   ```
+
+   ```bash
+   aws cloudformation describe-stacks --stack-name MilkCrateGitHubSandbox --query "Stacks[0].Outputs[0].OutputValue" --output text --region <region>
+   ```
+
+3. In GitHub: Settings → Environments → New environment `aws-sandbox`:
+   - Required reviewers: yourself. Turn on "Prevent self-review" only if someone else approves.
+   - Deployment branches and tags: "Selected branches", add `aws-sandbox-run` and
+     `aws-sandbox-teardown`.
+   - Environment variables (not secrets; none of these is secret):
+
+     | Name | Value |
+     |---|---|
+     | `AWS_ROLE_ARN` | the role ARN from step 2 |
+     | `MC_AWS_ACCOUNT` | the 12-digit account id |
+     | `MC_AWS_REGION` | the region, such as `us-east-1` |
+     | `MC_EMAIL_DOMAIN` | your domain (SES only records it; unverified is fine for a throwaway run) |
+     | `MC_SMOKE_SKIP_WORKER` | optional: `1` skips the Fargate check (saves a few minutes) |
+     | `MC_SANDBOX_KEEP` | optional: `true` keeps the deployment after the run, to look at it |
+
+### Each run
+
+1. In GitHub, open the branch list and create `aws-sandbox-run` from `milk-crate-backend-poc`.
+2. Actions → "AWS sandbox run" → the new run → "Review deployments" → approve `aws-sandbox`.
+   Check the run's commit is the one you expect: whoever pushes the branch chooses the code.
+3. Watch the log: stand-up (about 30 minutes, mostly Aurora and CloudFront), the checks, the
+   smoke test (`ok -` / `FAIL -` lines), then tear-down. Tear-down runs even after a failure.
+   The checks will report SES as unverified and in its sandbox; that is expected here.
+4. Delete the branch `aws-sandbox-run`. To run again, create it again.
+
+If you kept the deployment (`MC_SANDBOX_KEEP=true`), create `aws-sandbox-teardown` the same
+way to remove it, approve it, then delete that branch. Tear-down leaves only the CDK bootstrap
+stack and its small asset bucket and image repository.

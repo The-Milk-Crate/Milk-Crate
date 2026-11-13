@@ -44,7 +44,16 @@ echo "== 2. packages"
 npm ci --no-audit --no-fund
 
 echo "== 3. CDK bootstrap"
-npx cdk bootstrap "aws://$MC_AWS_ACCOUNT/$MC_AWS_REGION"
+if non_interactive; then
+  # The workflow's role cannot change IAM, so bootstrap is done once by hand (see the README).
+  aws cloudformation describe-stacks --stack-name CDKToolkit >/dev/null 2>&1 || {
+    echo "CDK is not bootstrapped in $MC_AWS_ACCOUNT/$MC_AWS_REGION. Run once by hand: npx cdk bootstrap aws://$MC_AWS_ACCOUNT/$MC_AWS_REGION" >&2
+    exit 1
+  }
+  echo "already bootstrapped"
+else
+  npx cdk bootstrap "aws://$MC_AWS_ACCOUNT/$MC_AWS_REGION"
+fi
 
 echo "== 4. CloudFront private key -> Secrets Manager"
 key_secret="milk-crate/phase0/MC_CLOUDFRONT_PRIVATE_KEY"
@@ -57,7 +66,12 @@ fi
 echo "stored $key_secret"
 
 echo "== 5. deploy"
-npx cdk deploy "$MC_STACK_NAME" --require-approval broadening
+if non_interactive; then
+  # The environment approval covered the run; there is no one to answer CDK's IAM prompt.
+  npx cdk deploy "$MC_STACK_NAME" --require-approval never
+else
+  npx cdk deploy "$MC_STACK_NAME" --require-approval broadening
+fi
 
 echo "== 6. outputs -> $MC_OUTPUTS_FILE"
 write_outputs
