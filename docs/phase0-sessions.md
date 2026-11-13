@@ -65,7 +65,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | D (done) | `docs/phase0-prompts/d-ci.md`. Merged; see "D: CI" below. |
 | D follow-up (done) | `docs/phase0-prompts/d2-ci-supabase-tests.md`. Merged; added the `supabase-deploy` job that runs session E's tests. See "D: CI" below. |
 | E (done) | `docs/phase0-prompts/e-supabase.md`. Merged; see "E: Supabase deployment" below and `deploy/supabase/README.md`. |
-| F | `docs/phase0-prompts/f-aws.md` |
+| F (done) | `docs/phase0-prompts/f-aws.md`. Merged (#23, #24); see "F: AWS deployment" below and `deploy/aws/README.md`. |
 | G stage 1 | `docs/phase0-prompts/g1-core.md` |
 | G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md` |
 | H | `docs/phase0-prompts/h-processing.md` |
@@ -301,6 +301,19 @@ Branch `phase0/f-aws`.
 Done when: the interface tests pass against mocks or emulators, and the stand-up script is
 ready for K Marcus to run.
 
+Merged. What F left for the others:
+- `deploy/aws/` (see its README): every interface on AWS, the account sync, a CDK stack, and
+  `stand-up.sh`, `confirm.sh`, `tear-down.sh`, `smoke.sh`. Tests: `bash deploy/aws/test/run.sh`,
+  the required check `aws-deploy`.
+- Decided by K Marcus: CDK; the account sync every 15 minutes, copying verified emails into
+  existing rows; the admin password sign-in stays on the app client (for the smoke test); and
+  the gaps from E are accepted (a `bigint` above 2^53 loses digits on the Data API; cast to
+  `::text` if it matters).
+- `DatabaseError` (`code` = SQLSTATE, `message`) and `StorageError` (`status`) have E's shapes.
+- The sandbox run: `.github/workflows/aws-sandbox.yml` (see "D: CI"), in the `milkcrate-dev`
+  account (decided by K Marcus). Its one-time setup and first run are in `docs/phase0-handoff.md`.
+- Not yet run against real AWS: the first sandbox run's smoke test is the check.
+
 ## G: Shared core handlers and the cross-cloud check
 Branch `phase0/g-core` (stage 1) and `phase0/g-cross-cloud` (stage 2).
 
@@ -330,6 +343,16 @@ Stage 1:
   - Hash invite codes as SHA-256 of the UTF-8 code, in lowercase hex.
 
   Details in `docs/phase0-prompts/g1-core.md`.
+- From E and F (merged):
+  - State the job-result function's path at the top of your pull request. Both workers throw
+    until it is wired (`deploy/supabase/worker/wiring.ts`, `deploy/aws/worker/wiring.ts`).
+  - Entry points: one file per operation. Supabase: `serveOperation(route, handler)` in
+    `deploy/supabase/src/edge.ts`. AWS: `deploy/aws/functions/<op>.ts` plus a line in
+    `deploy/aws/functions/routes.json` (see `deploy/aws/functions/README.md`).
+  - Map `DatabaseError.code` (`MC403`, `MC404`, `MC409`, `MC422`) and `StorageError.status` the
+    same way on both.
+  - `confirmUpload`: refuse an `s3_multipart` confirm with no `crc64nvme` or no `parts` as the
+    contract's 400 before calling storage (decided by K Marcus).
 
 Stage 2 (after E, F and G stage 1 are merged):
 - A suite that runs the same scenario against both deployments' module sets (create a release,
@@ -359,6 +382,9 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
   of E and F.
 - From B (merged): record `stream_key`, `duration_ms` and `sample_rate_hz` on `api_tracks`;
   compare against `api_tracks.master_sha256`; call `api_job_started` when a job is picked up.
+- From F (merged): the Fargate worker's task role has no S3 access yet. Add the least it needs
+  (read `masters/*`, write `streams/*`) in `deploy/aws/infra/stack.ts`. Replace both skeletons'
+  `processingNotBuilt` (`deploy/*/worker/run.ts`); the words and rules there are shared.
 
 - From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
   job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
