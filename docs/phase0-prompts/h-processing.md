@@ -22,7 +22,7 @@ Today each worker (Fly Machines on Supabase, Fargate on AWS) picks up a `process
   - A crash in your step is reported in plain words, never as a stack.
   - Reporting the result through `makeApplyJobResult` (`worker/wiring.ts`), which moves the release to `awaiting_splits` or `failed`. Don't move states yourself.
   - The hourly sweep (`MC_WORKER_MODE=sweep`) runs G's `makeRequeueStuckReleases` and `makeRetryTakedownDeletes` first, then fails stuck jobs and runs queued ones with your step.
-- **The images.** Each platform has its own `worker/Dockerfile` (Node 22, no ffmpeg), built from its own folder: Fly builds `deploy/supabase/` through `deploy/supabase/fly/fly.toml`; CDK builds `deploy/aws/` (`ecs.ContainerImage.fromAsset` in `deploy/aws/infra/stack.ts`). Neither build can reach outside its folder, so each `scripts/copy-core.sh` copies `core/src/` into `_core/` before the build (not committed). Shared worker code outside those folders needs the same treatment (see question 8).
+- **The images.** Each platform has its own `worker/Dockerfile` (Node 22, no ffmpeg), built from its own folder: Fly builds `deploy/supabase/` through `deploy/supabase/fly/fly.toml`; CDK builds `deploy/aws/` (`ecs.ContainerImage.fromAsset` in `deploy/aws/infra/stack.ts`). Neither build can reach outside its folder, so each `scripts/copy-core.sh` copies `core/src/` into `_core/` before the build (not committed). Your shared code reaches the images the same way (question 8, settled).
 - **The machines.** The Fargate task has 1 vCPU and 2 GiB of memory. Fly machines are started per job by `Jobs.enqueue` (`deploy/supabase/src/fly.ts`). Say whether that is enough for ffmpeg on your largest release; if not, propose a size as an open point.
 
 ### Storage on each side
@@ -39,14 +39,14 @@ Don't guess these. Ask them in this session, one round, with the recommended ans
 5. Sonic analysis (tempo, energy, brightness, dynamics) and smaller sizes of the cover art: in or out for Phase 0? Recommended: both out; the slice does not need them and fingerprinting is out of scope. Covers stay as the uploaded original.
 6. The interface gap below.
 7. The `mc-streams` bucket's limits on Supabase, once the format is chosen: the file type, and a size limit. Recommended: the format's MIME type, and no size limit beyond the project's.
-8. Where the shared piece lives and how it reaches the images. Recommended: the code in a new top-level `worker/` folder, copied into each platform's build folder by its `scripts/copy-core.sh` (next to `_core/`, not committed), and each platform's existing `worker/Dockerfile` gains ffmpeg and that copy. That keeps one shared piece without changing either build's folder. The alternative is one image built from the repository root that holds both platforms' modules, which changes how Fly and CDK build.
+8. Where the shared piece lives and how it reaches the images (settled by K Marcus, 20 November 2026): the code goes in a new top-level `worker/` folder. Each platform's `scripts/copy-core.sh` copies it into that platform's build folder next to `_core/` (not committed). Each platform keeps its own `worker/Dockerfile`, built as today, and both add ffmpeg the same way from the same pinned base image. Add a test that fails if the two Dockerfiles' base image or ffmpeg lines drift apart. Nothing to ask.
 
 ### Interface gap (needs K Marcus's approval)
 `ObjectStorage` has only `readHead` (small ranged reads, for cover headers), no way for a worker to stream a master or write a streaming copy. Propose the smallest addition (for example `read(key)` returning a stream, and `put(key, stream)`). If K Marcus approves it, you may make exactly that addition in `core/src/platform/storage.ts` and the matching minimal implementations in `deploy/supabase/src/storage.ts` and `deploy/aws/src/storage.ts`, with tests next to theirs (`deploy/supabase/test/fake-storage.ts` is E's fake Supabase Storage, and `deploy/aws/test/storage.test.ts` F's; extend them for the new calls). G's handlers and test fakes implement `ObjectStorage` too: add the new methods to the fakes so `bash core/test/run.sh` still passes, and change no handler.
 
 Beyond that, in `deploy/` you may only:
 - pass your function to each worker in place of `processingNotBuilt` (`deploy/supabase/worker/main.ts`, `deploy/aws/worker/main.ts`), and remove `processingNotBuilt` from both `run.ts` files once nothing uses it (keep the words test passing);
-- get your code and ffmpeg into each image as K Marcus decides in question 8 (each `worker/Dockerfile`, `scripts/copy-core.sh`, `.gitignore` and `.dockerignore`, and `deploy/supabase/fly/fly.toml` if the build changes);
+- get your code and ffmpeg into each image as settled in question 8 (each `worker/Dockerfile`, `scripts/copy-core.sh`, `.gitignore` and `.dockerignore`, and `deploy/supabase/fly/fly.toml` if the build changes);
 - give the Fargate task role read on `masters/*` and write on `streams/*`, and change its size only if K Marcus approves (`deploy/aws/infra/stack.ts`, with its infrastructure test);
 - set the `mc-streams` limits K Marcus approves (`deploy/supabase/sql/0002_buckets.sql`).
 
@@ -59,7 +59,7 @@ Nothing else there. `bash deploy/supabase/test/run.sh` and `bash deploy/aws/test
   - Record what is needed to play and show it in session B's track columns through `Database`, with parameters: `api_tracks.stream_key` (under `streams/{artist}/{release}/{track}/`; B refuses any other key), `duration_ms` and `sample_rate_hz`. Session G's `getPlayback` signs that key. On AWS `Database` runs over the RDS Data API, one statement per call, so keep each write one statement or use a transaction.
 - The release result: success when every track passes; failure with one plain-words reason for the artist when any track fails. Return it from your step; the skeleton reports it.
 - Safe to run twice: a retried job (or one the sweep runs again) gives the same result, never leaves half-written derived files behind (clean up on failure), and never touches the master.
-- The thin entry point each platform's `worker/main.ts` calls, given that platform's modules. Ffmpeg in the image(s), as decided in question 8.
+- The thin entry point each platform's `worker/main.ts` calls, given that platform's modules. Ffmpeg in both images, as settled in question 8.
 - If the data you need to record has no home in session B's tables, add an additive migration in `db/migrations/` (new numbered file, safe to run twice, existing tables unchanged) and say so in the pull request.
 
 ### Tests
@@ -78,7 +78,7 @@ Nothing else there. `bash deploy/supabase/test/run.sh` and `bash deploy/aws/test
 - You may add one job to `.github/workflows/phase0-checks.yml` for your tests, and change nothing else in `.github/workflows/` (settled by K Marcus; see "Adding a test job" under "D: CI" in `docs/phase0-sessions.md`). Give your tests one documented command that runs from a clean checkout, with no keys and no network beyond package installs. Add one output to the `changes` job with the paths that should start your job (at least `worker/`, `core/src/platform/` and both `deploy/*/worker/`), and copy the pattern of `core-handlers` (the pinned action SHAs, `runs-on: ubuntu-24.04`, a timeout, no secrets, no deploy steps); install ffmpeg in the job with `apt-get`. Name the job in your pull request so K Marcus can make it required.
 
 ### Constraints
-- No platform SDK imports and no new runtime dependencies in `core/`. The shared worker code lives outside `core/` (question 8) and may use dependencies there; keep them few.
+- No platform SDK imports and no new runtime dependencies in `core/`. The shared worker code lives in `worker/` (question 8) and may use dependencies there; keep them few.
 - Don't change the contract, the other interfaces, the handlers, the read rules, CI beyond your one job, or the app's existing tables, policies, screens or Supabase calls.
 - No real accounts, keys or network calls. Don't start a sandbox run; K Marcus does that after merging.
 
@@ -96,5 +96,5 @@ Nothing else there. `bash deploy/supabase/test/run.sh` and `bash deploy/aws/test
 - Every track of a release is checked, hashed and turned into a streaming copy by one shared piece, and the release reaches `awaiting_splits` or `failed` through the existing job result path, on both platforms' workers.
 - The tests pass, including the failure cases and cleanup; `core/` and `milk-crate/` type-check, `cd milk-crate && npm test` passes, and `bash core/test/run.sh`, `bash deploy/supabase/test/run.sh` and `bash deploy/aws/test/run.sh` still pass.
 - Both images are ready to carry ffmpeg and your code, and the Fargate task role has the S3 access processing needs and no more.
-- The pull request description lists: K Marcus's answers to the open questions (1, 3, 5, 6, 7 and 8) and the file names chosen under `streams/`, what you built, what you ran and its result, what you could not run (at least the image builds and anything on real Supabase or AWS), every change made to another session's folders, the name of your CI job, the open points for K Marcus, and anything you assumed.
+- The pull request description lists: K Marcus's answers to the open questions (1, 3, 5, 6 and 7) and the file names chosen under `streams/`, what you built, what you ran and its result, what you could not run (at least the image builds and anything on real Supabase or AWS), every change made to another session's folders, the name of your CI job, the open points for K Marcus, and anything you assumed.
 Then stop. K Marcus reviews it, and a separate review agent also reviews the pull request.

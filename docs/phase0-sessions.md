@@ -388,8 +388,9 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
 
 - From G1 and the wiring (merged, #31 and #32): both workers already claim the job and report
   through G's `makeApplyJobResult`; H only replaces the step. Each image builds from its own
-  `deploy/*` folder with a copy of `core/src/` (`scripts/copy-core.sh`), so where the shared
-  piece lives and how it reaches both images is a question for K Marcus (question 8 in the prompt).
+  `deploy/*` folder with a copy of `core/src/` (`scripts/copy-core.sh`). Settled by K Marcus:
+  the shared code lives in a top-level `worker/`, copied in the same way; each platform keeps
+  its own image, and both add ffmpeg from the same pinned base image.
 
 - From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
   job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
