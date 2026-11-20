@@ -47,14 +47,15 @@ current state and the next steps. Update it when a step is done.
      `MC_EMAIL_FROM` and a PEM file in `MC_CLOUDFRONT_PUBLIC_KEY_FILE` (throwaway values are fine);
      set `git config core.autocrlf input` or every file shows as modified.
 
-2. Run 4 of the sandbox, to check the Scheduler fix (#28). It is created and waiting for
-   approval: https://github.com/The-Milk-Crate/Milk-Crate/actions/runs/43512182763 (commit
-   `d0fd318`, queued 13 November). In Actions → "AWS sandbox run" → "Review deployments", check
-   the commit and approve. Read the smoke test's `ok -` / `FAIL -` lines (about 12 minutes so
-   far). If the Schedules line is `ok`, the AWS side is clean except SES. If the run cannot be
-   approved (the branch `aws-sandbox-run` was deleted after it was queued, so GitHub may refuse),
-   cancel it, create the branch again from `milk-crate-backend-poc` and approve the new run.
-   Delete the branch afterwards. Another failure goes to `deploy/aws/` before G1, as before.
+2. Run 4 of the sandbox, to check the Scheduler fix (#28):
+   https://github.com/The-Milk-Crate/Milk-Crate/actions/runs/43512182763 (commit `d0fd318`).
+   K Marcus approved it on 20 November (approving the queued run worked even though the branch
+   `aws-sandbox-run` had been deleted); it started 18:23 UTC and signed in to AWS. Read the
+   smoke test's `ok -` / `FAIL -` lines (about 12 minutes). If the Schedules line is `ok`, the
+   AWS side is clean except SES: record that here and move on to G1. Another failure goes to
+   `deploy/aws/` before G1, as before. If the run is still going or failed to tear down, check
+   for a leftover `MilkCratePhase0` stack in CloudFormation (`us-east-1`) and use
+   `deploy/aws/scripts/tear-down.sh`.
 
 3. Session G1, the shared handlers: `docs/phase0-prompts/g1-core.md`. See "From E and F" in
    G's section of `docs/phase0-sessions.md` (the job-result path, entry points, error mapping,
