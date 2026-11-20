@@ -66,7 +66,7 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | D follow-up (done) | `docs/phase0-prompts/d2-ci-supabase-tests.md`. Merged; added the `supabase-deploy` job that runs session E's tests. See "D: CI" below. |
 | E (done) | `docs/phase0-prompts/e-supabase.md`. Merged; see "E: Supabase deployment" below and `deploy/supabase/README.md`. |
 | F (done) | `docs/phase0-prompts/f-aws.md`. Merged (#23, #24); see "F: AWS deployment" below and `deploy/aws/README.md`. |
-| G stage 1 | `docs/phase0-prompts/g1-core.md` |
+| G stage 1 (done) | `docs/phase0-prompts/g1-core.md`. Merged (#31), and wired into E and F (#32); see `docs/phase0-handoff.md`. |
 | G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md` |
 | H | `docs/phase0-prompts/h-processing.md` |
 | I | `docs/phase0-prompts/i-security-review.md` |
@@ -375,16 +375,24 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
   names inside). The worker checks the client's SHA-256 while streaming the master; a mismatch
   fails the release with a plain reason. Record the streaming key, duration and sample rate in
   B's track columns.
-- Before building, ask K Marcus: streaming format and bitrate, what makes a master bad, sonic
-  analysis and cover sizes in or out, and the storage interface addition.
-- `ObjectStorage` has only `readHead` (small ranged reads), no stream read or write for a worker.
-  With K Marcus's approval only, add the smallest addition in `core/` and in the storage modules
-  of E and F.
+- Settled by K Marcus (20 November 2026; details in the prompt): one 320 kbps MP3 per track at
+  `streams/{artist}/{release}/{track}/mp3-320.mp3`; a master fails on a format mismatch, a
+  decode that breaks, or an unreadable duration or sample rate (no silence check); sonic
+  analysis and smaller cover sizes are out; `mc-streams` allows only `audio/mpeg`.
+- `ObjectStorage` has only `readHead` (small ranged reads). Approved addition, in `core/` and in
+  E's and F's storage modules: `read(key)` returning a `ReadableStream`, and
+  `put(key, body, { contentType, sizeBytes })`.
 - From B (merged): record `stream_key`, `duration_ms` and `sample_rate_hz` on `api_tracks`;
   compare against `api_tracks.master_sha256`; call `api_job_started` when a job is picked up.
 - From F (merged): the Fargate worker's task role has no S3 access yet. Add the least it needs
   (read `masters/*`, write `streams/*`) in `deploy/aws/infra/stack.ts`. Replace both skeletons'
   `processingNotBuilt` (`deploy/*/worker/run.ts`); the words and rules there are shared.
+
+- From G1 and the wiring (merged, #31 and #32): both workers already claim the job and report
+  through G's `makeApplyJobResult`; H only replaces the step. Each image builds from its own
+  `deploy/*` folder with a copy of `core/src/` (`scripts/copy-core.sh`). Settled by K Marcus:
+  the shared code lives in a top-level `worker/`, copied in the same way; each platform keeps
+  its own image, and both add ffmpeg from the same pinned base image.
 
 - From D (merged): CI runs the required checks on your pull request; run them first. Add one CI
   job for your new tests in the same pull request ("D: CI", "Adding a test job"). See "From session D" in your prompt.
