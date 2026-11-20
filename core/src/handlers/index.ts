@@ -7,7 +7,13 @@
 // "METHOD /v1/path/{param}", for session E's `serveOperation` and session F's routes.json.
 import { makeOperations, makeRouter } from "./router.ts";
 
-export { makeApplyJobResult, type ApplyJobResult } from "./jobs.ts";
+export {
+  makeApplyJobResult,
+  makeRequeueStuckReleases,
+  type ApplyJobResult,
+  type RequeueOptions,
+  type RequeueResult,
+} from "./jobs.ts";
 export { makeOperations, makeRouter, type OperationId } from "./router.ts";
 export type { CoreOptions, Operation } from "./context.ts";
 export { imageSize, type ImageSize } from "./image.ts";

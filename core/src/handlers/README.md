@@ -10,6 +10,7 @@ One handler per operation in `api/openapi.yaml`, for both deployments. Import ev
 | `router` | One handler for every operation, by method and path. No match is the contract's 404. |
 | `makeOperations(options)`, `makeRouter(options)` | The same with your own clock, random source, invite daily limit, minimum cover size or log (`CoreOptions`). |
 | `makeApplyJobResult({ database })` | The worker's result: returns `(jobId: string, result: JobResult) => Promise<void>` for `Jobs.reportResult`. |
+| `makeRequeueStuckReleases({ database, jobs }, options?)` | For each deployment's hourly sweep: returns `() => Promise<{ requeued, failed }>`, which queues a job for every release stuck in `processing` with no queued or running job for 15 minutes (a confirm whose enqueue failed). |
 
 The handler sees the contract's path (`/v1/...`). Each handler checks its own method and path,
 so it works behind the router or as a function of its own.

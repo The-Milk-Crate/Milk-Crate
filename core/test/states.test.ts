@@ -2,7 +2,7 @@
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ReleaseState } from "../src/platform/index.ts";
-import { makeApplyJobResult } from "../src/handlers/index.ts";
+import { makeApplyJobResult, makeRequeueStuckReleases } from "../src/handlers/index.ts";
 import { account, db, forceState, harness, releaseState, seedRelease } from "./helpers.ts";
 
 after(() => db.close());
@@ -250,5 +250,69 @@ describe("moves", () => {
     const r = await h.call("submitRelease", { as: artist, params: { releaseId: s.releaseId } });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.deepEqual(r.body.review, { decision: "none" });
+  });
+});
+
+describe("releases stuck in processing", () => {
+  async function stuck(h: ReturnType<typeof harness>) {
+    const artist = await account("artist");
+    const c = await h.call("createRelease", { as: artist, body: { title: "S", releaseDate: "2026-01-01", tracks: [{ title: "A" }] } });
+    const up = await h.call("startUpload", { as: artist, params: { releaseId: c.body.id, trackId: c.body.tracks[0].id }, body: { format: "wav", sizeBytes: 10 } });
+    // The enqueue fails after the confirm committed: no job row.
+    const enqueue = h.modules.jobs.enqueue.bind(h.modules.jobs);
+    h.modules.jobs.enqueue = async () => {
+      throw new Error("database blip");
+    };
+    const r = await h.call("confirmUpload", { as: artist, params: { uploadId: up.body.uploadId }, body: { sha256: "f".repeat(64) } });
+    h.modules.jobs.enqueue = enqueue;
+    assert.equal(r.status, 200);
+    assert.equal(r.body.releaseState, "processing");
+    assert.ok(h.options.logs.some((l) => l.includes("its job was not queued")));
+    return c.body.id as string;
+  }
+  // With triggers off: the touch trigger would set updated_at back to now.
+  const age = (releaseId: string, minutes: number) =>
+    db.transaction(async (tx) => {
+      await tx.query("set local session_replication_role = replica");
+      await tx.query("update public.api_releases set updated_at = now() - make_interval(mins => $2::integer) where id = $1::uuid", [
+        releaseId,
+        minutes,
+      ]);
+    });
+  const jobs = async (releaseId: string) =>
+    (await db.query<{ n: number }>("select count(*)::int as n from public.api_jobs where release_id = $1::uuid", [releaseId]))[0].n;
+
+  it("a confirm whose enqueue failed is queued again by the sweep, once", async () => {
+    const h = harness();
+    const releaseId = await stuck(h);
+    assert.equal(await jobs(releaseId), 0);
+    const requeue = makeRequeueStuckReleases(h.modules, { log: (m) => h.options.logs.push(m), limit: 1000 });
+
+    // Inside the grace period: left alone, in case its enqueue is still under way.
+    assert.ok(!(await requeue()).requeued.includes(releaseId));
+    await age(releaseId, 20);
+    assert.ok((await requeue()).requeued.includes(releaseId));
+    assert.equal(await jobs(releaseId), 1);
+    // It has a queued job now, so the next sweep leaves it alone.
+    await age(releaseId, 20);
+    assert.ok(!(await requeue()).requeued.includes(releaseId));
+
+    // The new job's result moves the release on as usual.
+    const job = h.modules.jobs.enqueued.find((e) => e.job.releaseId === releaseId)!;
+    await makeApplyJobResult(h.modules)(job.jobId, { ok: true });
+    assert.equal(await releaseState(releaseId), "awaiting_splits");
+  });
+
+  it("a release whose requeue fails again is reported and tried on the next sweep", async () => {
+    const h = harness();
+    const releaseId = await stuck(h);
+    await age(releaseId, 60);
+    const failing = { database: h.modules.database, jobs: { enqueue: async (): Promise<never> => { throw new Error("still down"); }, reportResult: async () => {} } };
+    const logs: string[] = [];
+    const first = await makeRequeueStuckReleases(failing, { log: (m) => logs.push(m), limit: 1000 })();
+    assert.ok(first.failed.includes(releaseId));
+    assert.ok(logs.some((l) => l.includes(releaseId)));
+    const second = await makeRequeueStuckReleases(h.modules, { limit: 1000 })();
+    assert.ok(second.requeued.includes(releaseId));
   });
 });

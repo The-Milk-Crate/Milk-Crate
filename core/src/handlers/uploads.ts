@@ -250,7 +250,7 @@ export function uploadOperations(s: Settings) {
 
     if (confirmed.start_processing) {
       // After the commit: the job row needs the release to be processing. If this fails the
-      // release stays processing with no job (logged; an open point).
+      // release stays processing with no job; makeRequeueStuckReleases picks it up later.
       try {
         await ctx.modules.jobs.enqueue({ kind: "process_release", releaseId: upload.release_id });
       } catch (error) {
