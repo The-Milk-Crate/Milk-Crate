@@ -30,6 +30,7 @@ jobs:
       db: ${{ steps.filter.outputs.db }}
       supabase: ${{ steps.filter.outputs.supabase }}
       aws: ${{ steps.filter.outputs.aws }}
+      core: ${{ steps.filter.outputs.core }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,6 +45,7 @@ jobs:
             echo "db=true" >> "$GITHUB_OUTPUT"
             echo "supabase=true" >> "$GITHUB_OUTPUT"
             echo "aws=true" >> "$GITHUB_OUTPUT"
+            echo "core=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # On a pull request HEAD is the test merge commit; its first parent is the base.
@@ -54,6 +56,7 @@ jobs:
           db=false
           supabase=false
           aws=false
+          core=false
           if grep -qE '^(api/|core/|db/|milk-crate/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             app=true
           fi
@@ -68,10 +71,16 @@ jobs:
           if grep -qE '^(deploy/aws/|db/|core/src/platform/|deploy/supabase/src/email-templates\.ts$|deploy/supabase/worker/run\.ts$|\.github/workflows/phase0-checks\.yml$|\.github/workflows/aws-sandbox\.yml$)' <<<"$files"; then
             aws=true
           fi
+          # Session G's handler tests: the handlers, session B's SQL they call, C's fixture
+          # and the contract they read.
+          if grep -qE '^(core/|db/|api/openapi\.yaml$|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+            core=true
+          fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "db=$db" >> "$GITHUB_OUTPUT"
           echo "supabase=$supabase" >> "$GITHUB_OUTPUT"
           echo "aws=$aws" >> "$GITHUB_OUTPUT"
+          echo "core=$core" >> "$GITHUB_OUTPUT"
 
   contract:
     name: contract
@@ -271,6 +280,42 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: bash deploy/aws/test/run.sh
         run: bash deploy/aws/test/run.sh
+
+  # Session G's handler tests. The script installs core/'s dev packages, type-checks, and
+  # starts its own throwaway PostgreSQL 16 cluster, so there is no service container. Identity,
+  # storage, jobs, schedules and email are fakes; no keys needed.
+  core-handlers:
+    name: core-handlers
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tests run TypeScript directly with Node's type stripping: 22.18 or newer.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '>=22.18 <23'
+          cache: npm
+          cache-dependency-path: core/package-lock.json
+      - name: Node version
+        run: |
+          node --version
+          node -e 'const [a, b] = process.versions.node.split(".").map(Number); if (a < 22 || (a === 22 && b < 18)) { console.error("Need Node 22.18 or newer"); process.exit(1); }'
+      - name: PostgreSQL 16 server binaries
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/initdb --version
+      - name: npm ci (core)
+        working-directory: core
+        run: npm ci --no-audit --no-fund
+      - name: bash core/test/run.sh
+        run: bash core/test/run.sh
 
   # A session that adds tests adds one job for them here, in the pattern above (see "Adding a
   # test job" in docs/phase0-sessions.md). Session C's checks already run inside `database`.
