@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 20 November 2026, after four sandbox runs, session G1 and its wiring.
+For K Marcus and the next session. Last updated 20 November 2026, after five sandbox runs, session G1 and its wiring. Next: session H.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -37,6 +37,15 @@ current state and the next steps. Update it when a step is done.
   MC404`). Tear-down finished (`MilkCratePhase0: destroyed`, CloudFront key secret deleted), so
   nothing was left in the account. Smoke test about 3 minutes, tear-down about 22. The AWS side
   is clean except SES.
+- Sandbox run 5 (20 November, commit `7925cd5`, after G1 and its wiring,
+  https://github.com/The-Milk-Crate/Milk-Crate/actions/runs/44807547866): the first deploy
+  of the shared handlers on AWS. The stand-up copied `core/src/` into `_core/`, CDK bundled
+  all 21 operation Lambdas and built the worker image with the copy; the stack created all 21
+  Lambdas and 21 API Gateway routes and the worker role's S3 delete rights, with no failure or
+  rollback (about 9 minutes). Every smoke check `ok` as in run 4, SES skipped; torn down
+  cleanly (`MilkCratePhase0: destroyed`). The smoke test does not call the API, so this shows
+  the API deploys, not that it answers (G2's job). `confirm.sh`'s two SES problems (domain not
+  verified, SES sandbox) are expected while there is no email domain.
 - G1, the shared handlers (#31): every operation in `core/src/handlers/`, exported from
   `core/src/handlers/index.ts` (the 21 handlers, `operations` with each route, `router`), plus
   `makeApplyJobResult` for the workers and two sweep functions, `makeRequeueStuckReleases` and
@@ -73,7 +82,7 @@ current state and the next steps. Update it when a step is done.
 3. Done (20 November 2026): session G1, the shared handlers (#31). See "Done" above.
    K Marcus adds `core-handlers` to the required checks on `milk-crate-backend-poc`.
 
-4. Done (20 November 2026): G1 wired into E and F (#32, pending review).
+4. Done (20 November 2026): G1 wired into E and F (#32).
    - Supabase: one Edge Function, `api`, serving G's router (decided by K Marcus: one address
      for the app, `.../functions/v1/api/v1/...`).
    - AWS: one Lambda and one API route per operation (`deploy/aws/functions/`, `routes.json`).
@@ -83,12 +92,21 @@ current state and the next steps. Update it when a step is done.
    - The worker images and the Edge Function get a copy of `core/src/` (`scripts/copy-core.sh`
      in each package, run by the stand-ups and the tests; not committed), because their build
      contexts cannot reach `core/`.
-   - Not yet run for real: `supabase functions deploy api` with the copy, the Fly image, and the
-     21 Lambdas behind API Gateway. The next sandbox run (step 8's workflow) is the first check
-     of the AWS side; the Supabase side needs K Marcus's stand-up.
+   - AWS deployed for real in sandbox run 5 (see "Done"). Not yet run for real: the Supabase
+     side (`supabase functions deploy api` with the copy, and the Fly image), which needs
+     K Marcus's stand-up; the hourly sweeps' new part; and any call to the API.
 
-5. Session H, processing: `docs/phase0-prompts/h-processing.md`. See "From F" in H's section
-   (the worker's S3 access).
+5. Next: session H, processing, in a new Claude session: `docs/phase0-prompts/h-processing.md`.
+   See "From F" in H's section (the worker's S3 access). What H starts from:
+   - Both workers already report through G's `makeApplyJobResult` (`worker/wiring.ts`); H
+     replaces `processingNotBuilt` in `worker/run.ts` (both deployments) with real processing.
+   - The worker images hold a copy of `core/src/` in `_core/` (`scripts/copy-core.sh`), so H's
+     shared worker code can live in `core/` too, or in `deploy/`, as H decides.
+   - The Fargate task role so far may only list and delete in the bucket (the takedown retry);
+     reading masters and writing `streams/` is H's to add. The Fly worker uses the service key.
+   - H fills `api_tracks.stream_key` (under `streams/{artist}/{release}/{track}/`),
+     `duration_ms` and `sample_rate_hz`, and checks the master's SHA-256 while streaming it; a
+     mismatch is a plain-words failure.
 
 6. Session G2, the cross-cloud check, best after H (its scenario plays a track, which needs a
    streaming copy). Its real-deployment script can use a sandbox run kept with
@@ -105,7 +123,8 @@ current state and the next steps. Update it when a step is done.
   unverified addresses. There is no email domain yet; `MC_EMAIL_DOMAIN` is `example.com`. The
   smoke test's email check needs `MC_SMOKE_EMAIL_TO`, which the workflow does not pass yet.
 - Not yet checked against real AWS: SES sending, the Fargate worker doing real processing
-  (session H), and the handlers behind API Gateway and Lambda (wired in step 4, not yet run).
+  (session H), and a call to the handlers behind API Gateway and Lambda (deployed in run 5;
+  G2 calls them).
 - Two handler limits noted in #31: a failed email is only logged (the owner can resend an
   invitation), and two sweeps at the same moment could queue an extra, harmless job.
 - The owner and repository ids are written into `deploy/aws/infra/github-oidc.json`. They
