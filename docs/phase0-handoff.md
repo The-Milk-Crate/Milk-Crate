@@ -10,8 +10,8 @@ current state and the next steps. Update it when a step is done.
 - F: the AWS deployment (`deploy/aws/`, #23) and a throwaway sandbox run from GitHub
   (`.github/workflows/aws-sandbox.yml`, #24).
 - Required checks on `milk-crate-backend-poc`: `changes`, `contract`, `client-fresh`, `types`,
-  `desktop-tests`, `database`, `supabase-deploy`, `aws-deploy`, `worker-processing` (added
-  20 November, session H), and `core-handlers` once added (step 3).
+  `desktop-tests`, `database`, `supabase-deploy`, `aws-deploy`, `core-handlers` and
+  `worker-processing` (both added 20 November).
 - Sandbox runs 1 to 3 (13 November): the first time the AWS code ran against real AWS. Run 1
   could not sign in; run 2 and run 3 passed 11 checks and skipped SES (no email domain). Three
   problems found and fixed, none in the main AWS code until the last:
@@ -81,7 +81,7 @@ current state and the next steps. Update it when a step is done.
    checks `ok` except SES; torn down cleanly. See "Done" above.
 
 3. Done (20 November 2026): session G1, the shared handlers (#31). See "Done" above.
-   K Marcus adds `core-handlers` to the required checks on `milk-crate-backend-poc`.
+   `core-handlers` is a required check on `milk-crate-backend-poc` (added 20 November).
 
 4. Done (20 November 2026): G1 wired into E and F (#32).
    - Supabase: one Edge Function, `api`, serving G's router (decided by K Marcus: one address
