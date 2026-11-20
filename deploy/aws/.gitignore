@@ -5,3 +5,5 @@ cdk.out
 *.pem
 .env
 cdk.context.json
+# The copy of core/src/ (scripts/copy-core.sh). Never edit it; edit core/src/.
+_core/

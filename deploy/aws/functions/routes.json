@@ -1,1 +1,23 @@
-[]
+[
+  {"operationId": "createRelease", "route": "POST /v1/releases", "entry": "createRelease.ts"},
+  {"operationId": "getRelease", "route": "GET /v1/releases/{releaseId}", "entry": "getRelease.ts"},
+  {"operationId": "getPublicRelease", "route": "GET /v1/public/releases/{releaseId}", "entry": "getPublicRelease.ts"},
+  {"operationId": "updateRelease", "route": "PATCH /v1/releases/{releaseId}", "entry": "updateRelease.ts"},
+  {"operationId": "listReleases", "route": "GET /v1/releases", "entry": "listReleases.ts"},
+  {"operationId": "submitRelease", "route": "POST /v1/releases/{releaseId}/submit", "entry": "submitRelease.ts"},
+  {"operationId": "reviewRelease", "route": "POST /v1/releases/{releaseId}/review", "entry": "reviewRelease.ts"},
+  {"operationId": "publishRelease", "route": "POST /v1/releases/{releaseId}/publish", "entry": "publishRelease.ts"},
+  {"operationId": "takedownRelease", "route": "POST /v1/releases/{releaseId}/takedown", "entry": "takedownRelease.ts"},
+  {"operationId": "startUpload", "route": "POST /v1/releases/{releaseId}/tracks/{trackId}/uploads", "entry": "startUpload.ts"},
+  {"operationId": "startCoverUpload", "route": "POST /v1/releases/{releaseId}/cover/uploads", "entry": "startCoverUpload.ts"},
+  {"operationId": "getUpload", "route": "GET /v1/uploads/{uploadId}", "entry": "getUpload.ts"},
+  {"operationId": "signUploadParts", "route": "POST /v1/uploads/{uploadId}/parts", "entry": "signUploadParts.ts"},
+  {"operationId": "confirmUpload", "route": "POST /v1/uploads/{uploadId}/confirm", "entry": "confirmUpload.ts"},
+  {"operationId": "putRights", "route": "PUT /v1/releases/{releaseId}/rights", "entry": "putRights.ts"},
+  {"operationId": "resendInvitation", "route": "POST /v1/releases/{releaseId}/rights/parties/{partyId}/resend", "entry": "resendInvitation.ts"},
+  {"operationId": "getInvitation", "route": "POST /v1/releases/{releaseId}/rights/parties/{partyId}/invitation", "entry": "getInvitation.ts"},
+  {"operationId": "respondToSplit", "route": "POST /v1/releases/{releaseId}/rights/parties/{partyId}/respond", "entry": "respondToSplit.ts"},
+  {"operationId": "getPlayback", "route": "GET /v1/tracks/{trackId}/playback", "entry": "getPlayback.ts"},
+  {"operationId": "getCover", "route": "GET /v1/releases/{releaseId}/cover", "entry": "getCover.ts"},
+  {"operationId": "recordPlays", "route": "POST /v1/plays", "entry": "recordPlays.ts"}
+]

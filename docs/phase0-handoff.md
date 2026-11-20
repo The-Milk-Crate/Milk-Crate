@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 20 November 2026, after four sandbox runs and session G1.
+For K Marcus and the next session. Last updated 20 November 2026, after four sandbox runs, session G1 and its wiring.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -73,15 +73,19 @@ current state and the next steps. Update it when a step is done.
 3. Done (20 November 2026): session G1, the shared handlers (#31). See "Done" above.
    K Marcus adds `core-handlers` to the required checks on `milk-crate-backend-poc`.
 
-4. Wire G1 into E and F (a small follow-up session, before H, because H's worker must report its
-   result). Code goes in `deploy/supabase/` and `deploy/aws/` only:
-   - one entry point per operation: `deploy/supabase/supabase/functions/<op>/index.ts` with
-     `serveOperation`, and `deploy/aws/functions/<op>.ts` plus a line in `routes.json`. Take the
-     routes from `operations` in `core/src/handlers/index.ts`;
-   - replace both `worker/wiring.ts` stubs with `makeApplyJobResult(modules)`;
-   - call `makeRequeueStuckReleases(modules)()` and `makeRetryTakedownDeletes(modules)()` from
-     each worker's hourly sweep.
-   Then a sandbox run (step 8's workflow) can call the real API for the first time.
+4. Done (20 November 2026): G1 wired into E and F (#32, pending review).
+   - Supabase: one Edge Function, `api`, serving G's router (decided by K Marcus: one address
+     for the app, `.../functions/v1/api/v1/...`).
+   - AWS: one Lambda and one API route per operation (`deploy/aws/functions/`, `routes.json`).
+   - Both workers: `makeApplyJobResult` for job results, and the hourly sweep runs
+     `makeRequeueStuckReleases` and `makeRetryTakedownDeletes` first. The Fargate task role
+     may now list and delete in the bucket, and gets `MC_BUCKET`.
+   - The worker images and the Edge Function get a copy of `core/src/` (`scripts/copy-core.sh`
+     in each package, run by the stand-ups and the tests; not committed), because their build
+     contexts cannot reach `core/`.
+   - Not yet run for real: `supabase functions deploy api` with the copy, the Fly image, and the
+     21 Lambdas behind API Gateway. The next sandbox run (step 8's workflow) is the first check
+     of the AWS side; the Supabase side needs K Marcus's stand-up.
 
 5. Session H, processing: `docs/phase0-prompts/h-processing.md`. See "From F" in H's section
    (the worker's S3 access).
@@ -101,7 +105,7 @@ current state and the next steps. Update it when a step is done.
   unverified addresses. There is no email domain yet; `MC_EMAIL_DOMAIN` is `example.com`. The
   smoke test's email check needs `MC_SMOKE_EMAIL_TO`, which the workflow does not pass yet.
 - Not yet checked against real AWS: SES sending, the Fargate worker doing real processing
-  (session H), and the handlers behind API Gateway and Lambda (after step 4).
+  (session H), and the handlers behind API Gateway and Lambda (wired in step 4, not yet run).
 - Two handler limits noted in #31: a failed email is only logged (the owner can resend an
   invitation), and two sweeps at the same moment could queue an extra, harmless job.
 - The owner and repository ids are written into `deploy/aws/infra/github-oidc.json`. They

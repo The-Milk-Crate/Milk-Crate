@@ -13,7 +13,8 @@
 #   4. Pushes supabase/config.toml: the access token hook, token life (1 hour), the file
 #      size limit (MC_FILE_SIZE_LIMIT). The hook is turned on only after its function exists (step 3).
 #   5. Sets the Edge Function secrets from your secrets file.
-#   6. Deploys every Edge Function entry point (none until session G's handlers exist).
+#   6. Copies core/src/ into supabase/functions/_core/ and _core/ (scripts/copy-core.sh), then
+#      deploys every Edge Function entry point: one, `api`, serving session G's router.
 #   7. Fly: creates the app if needed, sets its secrets, builds and pushes the worker image,
 #      and makes (or updates) the hourly sweep machine.
 #   8. Runs the checks (scripts/confirm.sh).
@@ -98,6 +99,8 @@ echo "== 5. Edge Function secrets"
 supabase secrets set --project-ref "$ref" --env-file "$MC_SECRETS_FILE"
 
 echo "== 6. Edge Functions"
+# The function and the worker image hold copies of session G's core (see copy-core.sh).
+bash scripts/copy-core.sh
 deployed=0
 for dir in supabase/functions/*/; do
   name="$(basename "$dir")"
@@ -106,7 +109,7 @@ for dir in supabase/functions/*/; do
   deployed=$((deployed + 1))
 done
 echo "deployed $deployed Edge Functions"
-[[ $deployed -gt 0 ]] || echo "(none yet: the entry points wait on session G's handlers)"
+[[ $deployed -gt 0 ]] || { echo "No Edge Function was deployed; expected supabase/functions/api." >&2; exit 1; }
 
 echo "== 7. Fly worker"
 if ! flyctl status --app "$app" >/dev/null 2>&1; then

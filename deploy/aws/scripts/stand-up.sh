@@ -11,7 +11,8 @@
 #   3. Bootstraps CDK in the account and region (once; a no-op after).
 #   4. Puts the CloudFront private key in Secrets Manager (milk-crate/phase0/MC_CLOUDFRONT_PRIVATE_KEY),
 #      after checking it matches the public key. The key is read from its file, never printed.
-#   5. Deploys the stack (infra/stack.ts): Aurora with the Data API, Cognito and its groups,
+#   5. Copies core/src/ into _core/ for the worker image (scripts/copy-core.sh), then deploys
+#      the stack (infra/stack.ts): Aurora with the Data API, Cognito and its groups,
 #      the bucket, CloudFront and its key group, the API, the Lambdas, the Fargate worker
 #      image, the schedules, the dead-letter queue, SES and IAM. It shows IAM changes first.
 #   6. Writes the stack's outputs to MC_OUTPUTS_FILE.
@@ -66,6 +67,8 @@ fi
 echo "stored $key_secret"
 
 echo "== 5. deploy"
+# The worker image holds a copy of session G's core (its build context cannot reach core/).
+bash "$here/copy-core.sh"
 if non_interactive; then
   # The environment approval covered the run; there is no one to answer CDK's IAM prompt.
   npx cdk deploy "$MC_STACK_NAME" --require-approval never

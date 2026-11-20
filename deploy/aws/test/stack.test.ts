@@ -1,14 +1,15 @@
 // Synthesizes the CDK stack offline (no AWS account; esbuild bundles the Lambdas locally) and
 // checks what it would stand up.
 import { after, test } from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { MilkCrateStack, readRoutes } from "../infra/stack.ts";
+import { MilkCrateStack, PACKAGE_DIR, readRoutes } from "../infra/stack.ts";
+import { operations } from "../../../core/src/handlers/index.ts";
 
 const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const settings = {
@@ -95,8 +96,28 @@ test("no secret is in the template; no NAT gateway", () => {
   template.resourceCountIs("AWS::EC2::VPCEndpoint", 1);
 });
 
-test("one Lambda per operation from functions/routes.json (none until session G); bad entries are refused", () => {
-  assert.deepEqual(readRoutes(), []);
+test("one Lambda and one route per operation from functions/routes.json, matching session G's handlers", () => {
+  const routes = readRoutes();
+  assert.deepEqual(
+    routes.map((r) => `${r.operationId} ${r.route}`).sort(),
+    Object.values(operations).map((o) => `${o.operationId} ${o.route}`).sort(),
+  );
+  for (const r of routes) {
+    assert.equal(r.entry, `${r.operationId}.ts`);
+    // The entry serves the operation's own handler on its own route.
+    const entry = readFileSync(join(PACKAGE_DIR, "functions", r.entry), "utf8");
+    assert.match(entry, new RegExp(`import \\{ ${r.operationId} \\} from "\\.\\./\\.\\./\\.\\./core/src/handlers/index\\.ts";`));
+    assert.ok(entry.includes(`serveOperation("${r.route}", ${r.operationId})`), r.entry);
+    template.hasResourceProperties("AWS::ApiGatewayV2::Route", { RouteKey: r.route });
+  }
+  template.resourceCountIs("AWS::ApiGatewayV2::Route", 21);
+  // The worker's sweep can delete a taken-down release's files, and knows the bucket.
+  template.hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: { Statement: Match.arrayWith([Match.objectLike({ Action: ["s3:DeleteObject", "s3:AbortMultipartUpload"] })]) },
+  });
+  template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+    ContainerDefinitions: [Match.objectLike({ Environment: Match.arrayWith([Match.objectLike({ Name: "MC_BUCKET" })]) })],
+  });
   assert.throws(() => new MilkCrateStack(new App({ outdir }), "Bad", settings, [{ operationId: "x", route: "GET /other", entry: "x.ts" }]), /bad route/);
   assert.throws(() => new MilkCrateStack(new App(), "Bad2", settings, [{ operationId: "x", route: "GET /v1/x", entry: "../x.ts" }]), /bad route/);
 });

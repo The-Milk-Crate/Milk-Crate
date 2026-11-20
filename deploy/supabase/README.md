@@ -34,9 +34,10 @@ mocked at their HTTP edges.
 | `src/infrastructure.ts`, `scripts/` | `Infrastructure`: stand up, confirm, tear down. |
 | `src/modules.ts` | Builds all the modules from the environment. |
 | `sql/0002_buckets.sql` | The three private buckets and their limits. |
-| `worker/` | The worker skeleton for Fly, its image and the hourly sweep. |
+| `worker/` | The worker skeleton for Fly, its image and the hourly sweep, wired to session G's functions (`wiring.ts`). |
+| `scripts/copy-core.sh` | Copies `core/src/` into `_core/` and `supabase/functions/_core/` (not committed). |
 | `supabase/config.toml` | Supabase CLI settings: the access token hook, token life, the file size limit. |
-| `supabase/functions/` | Edge Function entry points (none yet: they wait on session G). |
+| `supabase/functions/` | The one Edge Function, `api`, serving session G's router for every operation (see its README). |
 | `fly/fly.toml` | The Fly app for the worker image. |
 
 ## How each part works
@@ -97,7 +98,10 @@ worker stops waiting and reports "Processing took too long and was stopped ...",
 sweep does the same for any job still `running` past the limit (its machine died). The release
 moves to `failed` and the artist uploads again. A late report from the old machine changes
 nothing, because a finished job is left alone. `reportResult` hands the result to session G's
-job-result function, which is not wired yet (`worker/wiring.ts`).
+`makeApplyJobResult` (`worker/wiring.ts`). The hourly sweep first runs session G's part: a job
+again for a release stuck in `processing` with no job (`makeRequeueStuckReleases`), and the
+files of a takedown whose delete failed (`makeRetryTakedownDeletes`). The worker imports them
+from `_core/`, the copy of `core/src/` that `scripts/copy-core.sh` makes before the image is built.
 
 **Processing.** Not decided (session H). The skeleton's step touches no file and reports a
 plain failure ("Processing is not set up yet ...") so no release moves on without it.
