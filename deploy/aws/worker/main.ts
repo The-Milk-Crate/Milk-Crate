@@ -2,7 +2,9 @@
 // sweep (MC_WORKER_MODE=sweep, started by EventBridge Scheduler): session G's part first (a job
 // again for a release stuck in processing; files of a takedown whose delete failed), then it
 // fails jobs running past the time limit (MC_JOB_TIME_LIMIT_MINUTES, default 240), then runs
-// jobs whose task never started.
+// jobs whose task never started. The processing step is session H's shared one (worker/src/,
+// copied into _worker/ by scripts/copy-core.sh); it needs ffmpeg and ffprobe on PATH (the image
+// has them).
 //
 //   node worker/main.ts
 //
@@ -11,23 +13,25 @@
 // Credentials come from the task role.
 import { databaseFromEnv, workerStorageFromEnv } from "../src/modules.ts";
 import { awsJobs } from "../src/jobs.ts";
-import { processingNotBuilt, runOneJob, sweep } from "./run.ts";
+import { runOneJob, sweep } from "./run.ts";
+import { makeProcessRelease } from "../_worker/index.ts";
 import { applyJobResultWith, coreSweep } from "./wiring.ts";
 
 const env = (name: string) => process.env[name];
 const database = databaseFromEnv(env);
 const jobs = awsJobs({ database, applyResult: applyJobResultWith(database) });
+const storage = workerStorageFromEnv(env);
 const minutes = Number(env("MC_JOB_TIME_LIMIT_MINUTES") || 0);
 const deps = {
   database,
   jobs,
-  process: processingNotBuilt,
+  process: makeProcessRelease({ database, storage }),
   timeLimitMs: minutes > 0 ? minutes * 60_000 : undefined,
 };
 
 try {
   if (env("MC_WORKER_MODE") === "sweep") {
-    await coreSweep({ database, jobs, storage: workerStorageFromEnv(env) });
+    await coreSweep({ database, jobs, storage });
     console.log(`sweep ran ${await sweep(deps)} jobs`);
   } else {
     await runOneJob(deps, env("MC_JOB_ID") || undefined);

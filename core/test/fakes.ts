@@ -15,6 +15,7 @@ import type {
   Modules,
   ObjectKey,
   ObjectStorage,
+  PutOptions,
   ReadGrantBody,
   Schedules,
   SecretsAndEmail,
@@ -130,6 +131,38 @@ export class FakeStorage implements ObjectStorage {
     const bytes = this.objects.get(key);
     if (!bytes) throw new StorageError(404, `no object at ${key}`);
     return bytes.slice(0, maxBytes);
+  }
+
+  async read(key: ObjectKey): Promise<ReadableStream<Uint8Array>> {
+    const bytes = this.objects.get(key);
+    if (!bytes) throw new StorageError(404, `no object at ${key}`);
+    const copy = bytes.slice();
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(copy);
+        controller.close();
+      },
+    });
+  }
+
+  async put(key: ObjectKey, body: ReadableStream<Uint8Array>, options: PutOptions): Promise<void> {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    const reader = body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+    }
+    if (size !== options.sizeBytes) throw new Error(`put: the body was ${size} bytes, not ${options.sizeBytes}`);
+    const out = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, at);
+      at += chunk.length;
+    }
+    this.objects.set(key, out);
   }
 
   async signRead(input: SignReadInput): Promise<ReadGrantBody> {

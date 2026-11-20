@@ -183,8 +183,15 @@ export class MilkCrateStack extends Stack {
       stopTimeout: Duration.seconds(30),
     });
     cluster.grantDataApiAccess(taskDefinition.taskRole);
+    // Processing (session H): read masters, write streaming copies. Nothing else.
+    taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({ actions: ["s3:GetObject"], resources: [bucket.arnForObjects("masters/*")] }),
+    );
+    taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({ actions: ["s3:PutObject"], resources: [bucket.arnForObjects("streams/*")] }),
+    );
     // The sweep's takedown retry: list and delete under a release's prefixes, and abort
-    // unfinished uploads there (storage.delete). Processing's own S3 access is session H's.
+    // unfinished uploads there (storage.delete). Processing's failure cleanup uses it too.
     taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({ actions: ["s3:DeleteObject", "s3:AbortMultipartUpload"], resources: [bucket.arnForObjects("*")] }),
     );

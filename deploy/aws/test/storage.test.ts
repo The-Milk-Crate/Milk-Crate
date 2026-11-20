@@ -11,6 +11,7 @@ import {
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
   ListPartsCommand,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getSignedCookies } from "@aws-sdk/cloudfront-signer";
@@ -235,6 +236,57 @@ test("readHead is a ranged GET, capped at 1 MiB; 404 and an empty object", async
   await assert.rejects(storage(missing).readHead(COVER, 10), (e: any) => e instanceof StorageError && e.status === 404);
   const empty = new FakeAws().on(GetObjectCommand, () => { throw awsError("InvalidRange", "", 416); });
   assert.deepEqual(await storage(empty).readHead(COVER, 10), new Uint8Array(0));
+});
+
+test("read is a whole-object GET returned as a web stream; a missing object is a 404", async () => {
+  const data = Uint8Array.from({ length: 70_000 }, (_, i) => i % 251);
+  const s3 = new FakeAws().on(GetObjectCommand, () => ({
+    Body: { transformToWebStream: () => new Response(data).body },
+  }));
+  const body = await storage(s3).read(MASTER);
+  assert.deepEqual(new Uint8Array(await new Response(body).arrayBuffer()), data);
+  assert.deepEqual(s3.inputs(GetObjectCommand)[0], { Bucket: "mc-files", Key: MASTER });
+  const missing = new FakeAws().on(GetObjectCommand, () => { throw awsError("NoSuchKey", "", 404); });
+  await assert.rejects(storage(missing).read(MASTER), (e: any) => e instanceof StorageError && e.status === 404);
+});
+
+/** A PutObject reply that reads the body as S3 would, keeping what arrived. */
+function putSink() {
+  const stored: { input: any; bytes: Uint8Array }[] = [];
+  const s3 = new FakeAws().on(PutObjectCommand, async (input) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of input.Body) chunks.push(Buffer.from(chunk));
+    stored.push({ input, bytes: new Uint8Array(Buffer.concat(chunks)) });
+    return {};
+  });
+  return { s3, stored };
+}
+const streamOf = (d: Uint8Array) => new ReadableStream<Uint8Array>({
+  start(c) {
+    for (let at = 0; at < d.length; at += 4096) c.enqueue(d.slice(at, at + 4096));
+    c.close();
+  },
+});
+
+test("put is one streamed PutObject with the length and type set, only under streams/", async () => {
+  const { s3, stored } = putSink();
+  const data = Uint8Array.from({ length: 100_000 }, (_, i) => (i * 7) % 256);
+  const key = `streams/${ART}/${REL}/${TRK}/mp3-320.mp3`;
+  await storage(s3).put(key, streamOf(data), { contentType: "audio/mpeg", sizeBytes: data.length });
+  assert.equal(stored.length, 1);
+  assert.deepEqual(stored[0].bytes, data);
+  const { Body, ...rest } = stored[0].input;
+  assert.deepEqual(rest, { Bucket: "mc-files", Key: key, ContentLength: data.length, ContentType: "audio/mpeg" });
+  assert.equal(typeof Body.pipe, "function", "the body is streamed, not buffered");
+  await assert.rejects(storage(s3).put(MASTER, streamOf(data), { contentType: "audio/wav", sizeBytes: data.length }), /only under streams/);
+  await assert.rejects(storage(s3).put(COVER, streamOf(data), { contentType: "image/png", sizeBytes: data.length }), /only under streams/);
+});
+
+test("put fails when the body is not the size given", async () => {
+  const { s3 } = putSink();
+  const data = new Uint8Array(10_000);
+  await assert.rejects(storage(s3).put(STREAM, streamOf(data), { contentType: "audio/mpeg", sizeBytes: 10_001 }), /10000 bytes, not 10001/);
+  await assert.rejects(storage(s3).put(STREAM, streamOf(data), { contentType: "audio/mpeg", sizeBytes: 9_999 }), /longer than 9999/);
 });
 
 function cookie(grant: { cookies: { name: string; value: string }[] }, name: string) {

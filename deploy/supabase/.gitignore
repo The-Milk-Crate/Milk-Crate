@@ -7,3 +7,5 @@ supabase/.branches
 # The copies of core/src/ (scripts/copy-core.sh). Never edit them; edit core/src/.
 _core/
 supabase/functions/_core/
+# The copy of worker/src/ (scripts/copy-core.sh). Never edit it; edit worker/src/.
+_worker/

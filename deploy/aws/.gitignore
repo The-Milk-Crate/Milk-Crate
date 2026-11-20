@@ -7,3 +7,5 @@ cdk.out
 cdk.context.json
 # The copy of core/src/ (scripts/copy-core.sh). Never edit it; edit core/src/.
 _core/
+# The copy of worker/src/ (scripts/copy-core.sh). Never edit it; edit worker/src/.
+_worker/

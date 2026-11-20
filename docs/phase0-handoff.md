@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 20 November 2026, after five sandbox runs, session G1 and its wiring. Next: session H.
+For K Marcus and the next session. Last updated 20 November 2026, after five sandbox runs, session G1, its wiring and session H. Next: session G2.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -96,20 +96,27 @@ current state and the next steps. Update it when a step is done.
      side (`supabase functions deploy api` with the copy, and the Fly image), which needs
      K Marcus's stand-up; the hourly sweeps' new part; and any call to the API.
 
-5. Next: session H, processing, in a new Claude session: `docs/phase0-prompts/h-processing.md`.
-   See "From F" in H's section (the worker's S3 access). What H starts from:
-   - Both workers already report through G's `makeApplyJobResult` (`worker/wiring.ts`); H
-     replaces `processingNotBuilt` in `worker/run.ts` (both deployments) with real processing.
-   - The worker images hold a copy of `core/src/` in `_core/` (`scripts/copy-core.sh`), so H's
-     shared worker code can live in `core/` too, or in `deploy/`, as H decides.
-   - The Fargate task role so far may only list and delete in the bucket (the takedown retry);
-     reading masters and writing `streams/` is H's to add. The Fly worker uses the service key.
-   - H fills `api_tracks.stream_key` (under `streams/{artist}/{release}/{track}/`),
-     `duration_ms` and `sample_rate_hz`, and checks the master's SHA-256 while streaming it; a
-     mismatch is a plain-words failure.
+5. Done (20 November 2026, pull request open): session H, processing. One shared step in
+   `worker/` (see `worker/README.md`), passed to both workers' skeletons in place of
+   `processingNotBuilt`. Per track: stream the master once and check its SHA-256, check the
+   format with ffprobe, decode it all the way through into one 320 kbps MP3 at
+   `streams/{artist}/{release}/{track}/mp3-320.mp3`, then record `stream_key`, `duration_ms` and
+   `sample_rate_hz` on every track together. Built to K Marcus's eight decisions in the H prompt.
+   - `ObjectStorage` gained `read` and `put` (decision 6), on both storage modules.
+   - Both worker images: the same pinned base image (`node:22.23.5-bookworm-slim` by digest)
+     plus ffmpeg, and a copy of `worker/src/` in `_worker/` (`scripts/copy-core.sh`).
+   - The Fargate task role may now read `masters/*` and write `streams/*` (nothing more).
+   - `mc-streams` on Supabase takes `audio/mpeg` only (decision 7).
+   - Tests: `bash worker/test/run.sh` (CI job `worker-processing`; K Marcus adds it to the
+     required checks). Slow test: `MC_SLOW=1 bash worker/test/run.sh`.
+   - Not run for real yet: neither image was built (no Docker here), and nothing ran on real
+     Supabase, Fly or AWS. The next sandbox run builds the Fargate image with ffmpeg.
+   - Open points are in the pull request: the 4-hour limit against the largest releases,
+     `processingNotBuilt` kept because E's and F's tests still use it, Debian's ffmpeg 5.1 in
+     the images against 6.1 in the tests, and the Fly machine size.
 
-6. Session G2, the cross-cloud check, best after H (its scenario plays a track, which needs a
-   streaming copy). Its real-deployment script can use a sandbox run kept with
+6. Next: session G2, the cross-cloud check (its scenario plays a track; the streaming copy now
+   exists once H is merged). Its real-deployment script can use a sandbox run kept with
    `MC_SANDBOX_KEEP=true`.
 
 7. Session I, the security review. Include the missing rate limits on `createRelease` and
@@ -123,7 +130,7 @@ current state and the next steps. Update it when a step is done.
   unverified addresses. There is no email domain yet; `MC_EMAIL_DOMAIN` is `example.com`. The
   smoke test's email check needs `MC_SMOKE_EMAIL_TO`, which the workflow does not pass yet.
 - Not yet checked against real AWS: SES sending, the Fargate worker doing real processing
-  (session H), and a call to the handlers behind API Gateway and Lambda (deployed in run 5;
+  (session H's step, with ffmpeg in the image; the next sandbox run builds it), and a call to the handlers behind API Gateway and Lambda (deployed in run 5;
   G2 calls them).
 - Two handler limits noted in #31: a failed email is only logged (the owner can resend an
   invitation), and two sweeps at the same moment could queue an extra, harmless job.

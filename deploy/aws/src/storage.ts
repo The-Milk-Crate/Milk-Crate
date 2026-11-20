@@ -8,13 +8,16 @@ import {
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
   ListPartsCommand,
+  PutObjectCommand,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import type {
   ConfirmUploadInput,
   ConfirmUploadResult,
   ObjectKey,
   ObjectStorage,
+  PutOptions,
   ReadGrantBody,
   SignReadInput,
   SignedPart,
@@ -37,6 +40,8 @@ export const MASTER_MAX_BYTES = 5 * 1024 ** 3; // 5 GiB, the contract's largest 
 export const COVER_MAX_BYTES = 20 * 1024 ** 2; // 20 MiB
 const READ_HEAD_MAX_BYTES = 1024 ** 2;
 const MIB = 1024 ** 2;
+/** The most one PutObject takes. */
+const PUT_MAX_BYTES = 5 * 1024 ** 3;
 /** S3 allows at most 10,000 parts; every part but the last must be at least 5 MiB. */
 const MAX_PARTS = 10_000;
 const MIN_PART_BYTES = 8 * MIB;
@@ -346,6 +351,50 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       const bytes: Uint8Array = await out.Body.transformToByteArray();
       // Stop at the limit even if a range was ignored.
       return bytes.slice(0, limit);
+    },
+
+    async read(key: ObjectKey): Promise<ReadableStream<Uint8Array>> {
+      let out;
+      try {
+        out = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      } catch (error) {
+        const name = errorName(error);
+        if (name === "NoSuchKey" || name === "NotFound" || errorStatus(error) === 404) throw new StorageError(404, `no object at ${key}`);
+        throw error;
+      }
+      if (!out.Body) throw new StorageError(502, `S3 returned no body for ${key}`);
+      return out.Body.transformToWebStream() as ReadableStream<Uint8Array>;
+    },
+
+    async put(key: ObjectKey, body: ReadableStream<Uint8Array>, options: PutOptions): Promise<void> {
+      // The worker writes only streaming copies.
+      if (!STREAM_KEY.test(key)) throw new Error(`put writes only under streams/, not ${key}`);
+      const size = options.sizeBytes;
+      if (!Number.isInteger(size) || size < 1 || size > PUT_MAX_BYTES) throw new Error("put takes 1 byte to 5 GiB");
+      // One PutObject with the length set, so the SDK streams the body. A body of the wrong
+      // length fails the request, and S3 stores nothing.
+      let seen = 0;
+      const counted = body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            seen += chunk.length;
+            if (seen > size) throw new Error(`put: the body is longer than ${size} bytes`);
+            controller.enqueue(chunk);
+          },
+          flush() {
+            if (seen !== size) throw new Error(`put: the body was ${seen} bytes, not ${size}`);
+          },
+        }),
+      );
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: Readable.fromWeb(counted as import("node:stream/web").ReadableStream<Uint8Array>),
+          ContentLength: size,
+          ContentType: options.contentType,
+        }),
+      );
     },
 
     async signRead(input: SignReadInput): Promise<ReadGrantBody> {

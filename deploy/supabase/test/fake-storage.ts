@@ -7,7 +7,7 @@ export const SERVICE_KEY = "sb_secret_test_only";
 export const PUBLISHABLE_KEY = "sb_publishable_test_only";
 
 interface Obj { bytes: Uint8Array; modified: number; contentType: string }
-interface Upload { bucket: string; key: string; length: number; bytes: number[]; contentType: string; gone: boolean }
+interface Upload { bucket: string; key: string; length: number; chunks: Uint8Array[]; offset: number; contentType: string; gone: boolean }
 
 const b64url = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
 
@@ -51,7 +51,7 @@ export function fakeStorage(limits: Record<string, { max: number | null; mimes: 
       if (limit.max !== null && length > limit.max) return new Response("too large", { status: 413 });
       if (limit.mimes && !limit.mimes.includes(meta.contentType)) return new Response("bad type", { status: 415 });
       const id = `u${++n}`;
-      uploads.set(id, { bucket: t.bucket, key: t.key, length, bytes: [], contentType: meta.contentType, gone: false });
+      uploads.set(id, { bucket: t.bucket, key: t.key, length, chunks: [], offset: 0, contentType: meta.contentType, gone: false });
       return new Response(null, { status: 201, headers: { location: `/storage/v1/upload/resumable/sign/${id}` } });
     }
 
@@ -61,17 +61,21 @@ export function fakeStorage(limits: Record<string, { max: number | null; mimes: 
       if (!u || u.gone) return new Response(null, { status: 404 });
       if (!t || t.bucket !== u.bucket || t.key !== u.key) return deny();
       if (req.method === "HEAD") {
-        return new Response(null, { status: 200, headers: { "upload-offset": String(u.bytes.length), "upload-length": String(u.length) } });
+        return new Response(null, { status: 200, headers: { "upload-offset": String(u.offset), "upload-length": String(u.length) } });
       }
       if (req.method === "PATCH") {
-        if (Number(req.headers.get("upload-offset")) !== u.bytes.length) return new Response("offset", { status: 409 });
+        if (Number(req.headers.get("upload-offset")) !== u.offset) return new Response("offset", { status: 409 });
         const chunk = new Uint8Array(await req.arrayBuffer());
-        if (u.bytes.length + chunk.length > u.length) return new Response("too long", { status: 400 });
-        u.bytes.push(...chunk);
-        if (u.bytes.length === u.length) {
-          objects.set(`${u.bucket}/${u.key}`, { bytes: Uint8Array.from(u.bytes), modified: Date.now(), contentType: u.contentType });
+        if (u.offset + chunk.length > u.length) return new Response("too long", { status: 400 });
+        u.chunks.push(chunk);
+        u.offset += chunk.length;
+        if (u.offset === u.length) {
+          const bytes = new Uint8Array(u.length);
+          let at = 0;
+          for (const c of u.chunks) { bytes.set(c, at); at += c.length; }
+          objects.set(`${u.bucket}/${u.key}`, { bytes, modified: Date.now(), contentType: u.contentType });
         }
-        return new Response(null, { status: 204, headers: { "upload-offset": String(u.bytes.length) } });
+        return new Response(null, { status: 204, headers: { "upload-offset": String(u.offset) } });
       }
     }
 

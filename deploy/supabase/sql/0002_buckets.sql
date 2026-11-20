@@ -17,9 +17,9 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
   ('mc-masters', 'mc-masters', false,
    least(5368709120, coalesce(nullif(current_setting('mc.file_size_limit', true), '')::bigint, 5368709120)),
    array['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/aiff', 'audio/x-aiff', 'audio/flac', 'audio/x-flac']),
-  -- Streaming copies: format and size are session H's choice, so no type or size limit here
-  -- beyond the global one. Set them when H decides.
-  ('mc-streams', 'mc-streams', false, null, null),
+  -- Streaming copies (session H, decided by K Marcus): 320 kbps MP3 only, and no size limit
+  -- here beyond the project's global one.
+  ('mc-streams', 'mc-streams', false, null, array['audio/mpeg']),
   ('mc-art', 'mc-art', false,
    least(20971520, coalesce(nullif(current_setting('mc.file_size_limit', true), '')::bigint, 20971520)),
    array['image/jpeg', 'image/png'])
