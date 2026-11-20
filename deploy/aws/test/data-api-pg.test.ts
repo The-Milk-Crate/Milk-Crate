@@ -19,7 +19,10 @@ import { fargateWorker } from "../src/fargate.ts";
 import { eventBridgeSchedules } from "../src/schedules.ts";
 import { postConfirmation, syncAccounts } from "../src/accounts.ts";
 import { s3Storage } from "../src/storage.ts";
-import { failStuckJobs, processingNotBuilt, runOneJob, sweep } from "../worker/run.ts";
+import { failStuckJobs, runOneJob, sweep, type ProcessRelease } from "../worker/run.ts";
+
+/** A processing step that fails in plain words (test only). */
+const failsPlainly: ProcessRelease = async () => ({ ok: false, message: "The file is not a WAV." });
 import { FakeAws, awsError } from "./fake-aws.ts";
 import type { FakeDataApi } from "./fake-data-api.ts";
 import { NEEDS_DB, admin, newRelease, processingRelease, scheduledRelease, sessionEShape, testDb } from "./helpers.ts";
@@ -163,7 +166,7 @@ describe("Database over the Data API (fake Data API on local Postgres)", { skip:
     };
     const state = async (releaseId: string) =>
       (await db.query<{ state: string; failure_reason: string | null }>("select state, failure_reason from public.api_releases where id = $1::uuid", [releaseId]))[0];
-    const deps = (process = processingNotBuilt, timeLimitMs?: number) => ({
+    const deps = (process = failsPlainly, timeLimitMs?: number) => ({
       database: db,
       jobs: awsJobs({ database: db, applyResult: applyResult(db) }),
       process,
@@ -183,13 +186,13 @@ describe("Database over the Data API (fake Data API on local Postgres)", { skip:
       assert.equal(await runOneJob(deps(async () => ({ ok: true })), jobId), null);
     });
 
-    test("the skeleton's processing fails the release plainly; a crash is plain words, not a stack", async () => {
+    test("a step's plain-words failure becomes the release's reason; a crash is plain words, not a stack", async () => {
       const r = await processingRelease(db);
       const { jobId } = await awsJobs({ database: db }).enqueue({ kind: "process_release", releaseId: r.releaseId });
       await runOneJob(deps(), jobId);
       assert.deepEqual(await state(r.releaseId), {
         state: "failed",
-        failure_reason: "Processing is not set up yet, so this release cannot move on. Nothing is wrong with your files.",
+        failure_reason: "The file is not a WAV.",
       });
       const r2 = await processingRelease(db);
       const { jobId: j2 } = await awsJobs({ database: db }).enqueue({ kind: "process_release", releaseId: r2.releaseId });

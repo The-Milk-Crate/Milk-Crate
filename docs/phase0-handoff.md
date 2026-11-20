@@ -111,9 +111,18 @@ current state and the next steps. Update it when a step is done.
      required checks). Slow test: `MC_SLOW=1 bash worker/test/run.sh`.
    - Not run for real yet: neither image was built (no Docker here), and nothing ran on real
      Supabase, Fly or AWS. The next sandbox run builds the Fargate image with ffmpeg.
-   - Open points are in the pull request: the 4-hour limit against the largest releases,
-     `processingNotBuilt` kept because E's and F's tests still use it, Debian's ffmpeg 5.1 in
-     the images against 6.1 in the tests, and the Fly machine size.
+   - Decided by K Marcus on 20 November, from the pull request's open points:
+     - keep the 4-hour job limit. A cap on a release's total master size, or one job per
+       track, waits until after Phase 0 and real Fargate timings;
+     - keep the machine sizes (Fargate 1 vCPU / 2 GiB, Fly 2 shared CPUs / 2 GiB);
+     - `processingNotBuilt` removed from both skeletons, with E's and F's tests changed to a
+       test-only step;
+     - Debian's ffmpeg 5.1 in the images (6.1 in the tests): check it in the next sandbox run
+       (see step 8);
+     - keep it strict: any error ffmpeg logs fails the track;
+     - copies left by a worker that dies mid-job are accepted for Phase 0. They are never
+       recorded, and the next job or a takedown removes them;
+     - the deployment READMEs now describe the real step.
 
 6. Next: session G2, the cross-cloud check (its scenario plays a track; the streaming copy now
    exists once H is merged). Its real-deployment script can use a sandbox run kept with
@@ -122,7 +131,10 @@ current state and the next steps. Update it when a step is done.
 7. Session I, the security review. Include the missing rate limits on `createRelease` and
    `recordPlays` (decided: not in Phase 0).
 
-8. A larger sandbox run after I, with the same workflow.
+8. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
+   one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
+   tests use 6.1; decided by K Marcus with session H). Note the real time per job, for the
+   4-hour limit.
 
 ## Still open
 

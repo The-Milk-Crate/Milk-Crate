@@ -47,7 +47,7 @@ export function streamFolder(artistId: string, releaseId: string, trackId: strin
   return `streams/${artistId}/${releaseId}/${trackId}/`;
 }
 
-/** The function each platform's worker passes to its skeleton in place of processingNotBuilt. */
+/** The processing step each platform's worker/main.ts passes to its skeleton (runOneJob). */
 export function makeProcessRelease(deps: ProcessDeps): (job: JobToRun) => Promise<JobResult> {
   const log = deps.log ?? ((m: string) => console.log(m));
   const tools = deps.tools ?? {};

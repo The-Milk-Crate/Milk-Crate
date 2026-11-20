@@ -4,7 +4,10 @@ import type { ClosableDatabase } from "../src/database.ts";
 import type { Database, JobResult } from "../src/core.ts";
 import { flyMachines } from "../src/fly.ts";
 import { supabaseJobs, type ApplyJobResult } from "../src/jobs.ts";
-import { failStuckJobs, processingNotBuilt, runOneJob, sweep } from "../worker/run.ts";
+import { failStuckJobs, runOneJob, sweep, type ProcessRelease } from "../worker/run.ts";
+
+/** A processing step that fails in plain words (test only). */
+const failsPlainly: ProcessRelease = async () => ({ ok: false, message: "The file is not a WAV." });
 import { fakeFetch, NEEDS_DB, newRelease, processingRelease, releaseState, testDb } from "./helpers.ts";
 
 const fly = (status = 201, body = "{}") =>
@@ -126,12 +129,12 @@ describe("Jobs and the worker skeleton (local Postgres)", { skip: NEEDS_DB }, ()
     assert.doesNotMatch(s.failure_reason!, /undefined/);
   });
 
-  test("the skeleton's processing is not built: it fails the release plainly and touches no file", async () => {
+  test("a step's plain-words failure becomes the release's reason", async () => {
     const r = await processingRelease(db);
     const jobs = supabaseJobs({ database: db, applyResult });
     const { jobId } = await jobs.enqueue({ kind: "process_release", releaseId: r.releaseId });
-    await runOneJob({ database: db, jobs, process: processingNotBuilt, log: () => {} }, jobId);
-    assert.match((await releaseState(db, r.releaseId)).failure_reason!, /^Processing is not set up yet/);
+    await runOneJob({ database: db, jobs, process: failsPlainly, log: () => {} }, jobId);
+    assert.deepEqual(await releaseState(db, r.releaseId), { state: "failed", failure_reason: "The file is not a WAV." });
   });
 
   test("a job that runs past its time limit is stopped and reported in plain words", async () => {
@@ -155,7 +158,7 @@ describe("Jobs and the worker skeleton (local Postgres)", { skip: NEEDS_DB }, ()
     await db.query("select public.api_job_started($1::uuid), public.api_job_started($2::uuid)", [a, b]);
     await db.query("update public.api_jobs set started_at = now() - interval '5 hours' where id = $1::uuid", [a]);
 
-    const failed = await failStuckJobs({ database: db, jobs, process: processingNotBuilt, log: () => {} });
+    const failed = await failStuckJobs({ database: db, jobs, process: failsPlainly, log: () => {} });
     assert.deepEqual(failed, [a]);
     assert.match((await releaseState(db, stuck.releaseId)).failure_reason!, /^Processing took too long/);
     assert.equal((await jobState(b)).state, "running");
@@ -165,7 +168,7 @@ describe("Jobs and the worker skeleton (local Postgres)", { skip: NEEDS_DB }, ()
     await applyResult(a, { ok: true });
     assert.equal((await releaseState(db, stuck.releaseId)).state, "failed");
     await db.query("update public.api_jobs set started_at = now() - interval '5 hours' where id = $1::uuid", [b]);
-    await failStuckJobs({ database: db, jobs, process: processingNotBuilt, log: () => {} });
+    await failStuckJobs({ database: db, jobs, process: failsPlainly, log: () => {} });
   });
 
   test("the sweep runs queued jobs whose machine never started", async () => {

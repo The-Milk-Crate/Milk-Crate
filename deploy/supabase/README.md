@@ -103,8 +103,11 @@ again for a release stuck in `processing` with no job (`makeRequeueStuckReleases
 files of a takedown whose delete failed (`makeRetryTakedownDeletes`). The worker imports them
 from `_core/`, the copy of `core/src/` that `scripts/copy-core.sh` makes before the image is built.
 
-**Processing.** Not decided (session H). The skeleton's step touches no file and reports a
-plain failure ("Processing is not set up yet ...") so no release moves on without it.
+**Processing.** Session H's shared step (`worker/src/`, see `worker/README.md`), copied into
+`_worker/` by `scripts/copy-core.sh`. For each track it streams the master, checks its SHA-256
+and format, and writes a 320 kbps MP3 to `streams/{artist}/{release}/{track}/mp3-320.mp3` with
+a TUS upload. Then it records the stream key, duration and sample rate. The image installs
+ffmpeg for it. The `mc-streams` bucket takes `audio/mpeg` only.
 
 **Schedules.** `runSqlFunctionAt` calls `api_schedule_set`, which records the run and
 schedules a pg_cron job `mc_schedule:<name>` for that minute in UTC (rounded up; a past time

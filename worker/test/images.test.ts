@@ -41,5 +41,6 @@ test("each worker passes the shared step to its skeleton, not the placeholder", 
     assert.match(main, /import \{ makeProcessRelease \} from "\.\.\/_worker\/index\.ts";/, p);
     assert.match(main, /process: makeProcessRelease\(\{ database[^}]*storage[^}]*\}\),/, p);
     assert.ok(!main.includes("processingNotBuilt"), p);
+    assert.ok(!read(`${p}/worker/run.ts`).includes("processingNotBuilt"), `${p}: the placeholder is gone`);
   }
 });

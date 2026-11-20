@@ -70,7 +70,6 @@ test("the worker skeleton uses session E's rules and words", () => {
   const mine = readFileSync(join(import.meta.dirname, "../worker/run.ts"), "utf8");
   const theirs = readFileSync(join(import.meta.dirname, "../../supabase/worker/run.ts"), "utf8");
   for (const words of [
-    "Processing is not set up yet, so this release cannot move on. Nothing is wrong with your files.",
     "Processing stopped before it finished. Please upload the masters again, or contact us if it keeps happening.",
     "Processing took too long and was stopped. Please upload the masters again, or contact us if it keeps happening.",
     "DEFAULT_JOB_TIME_LIMIT_MS = 4 * 60 * 60 * 1000",

@@ -5,17 +5,8 @@ export interface JobToRun {
   releaseId: string;
 }
 
-/** What processing does to a release's masters. Not decided yet (session H). */
+/** What processing does to a release's masters: session H's shared step (worker/src/). */
 export type ProcessRelease = (job: JobToRun) => Promise<JobResult>;
-
-/**
- * The skeleton's processing: it does nothing to the masters and reports a plain failure, so a
- * release never moves on without real processing. Session H replaces it.
- */
-export const processingNotBuilt: ProcessRelease = async () => ({
-  ok: false,
-  message: "Processing is not set up yet, so this release cannot move on. Nothing is wrong with your files.",
-});
 
 const CRASHED = "Processing stopped before it finished. Please upload the masters again, or contact us if it keeps happening.";
 const TOO_LONG = "Processing took too long and was stopped. Please upload the masters again, or contact us if it keeps happening.";
