@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, verify } from "node:crypto";
+import { createServer } from "node:http";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -12,6 +13,7 @@ import {
   ListObjectsV2Command,
   ListPartsCommand,
   PutObjectCommand,
+  S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getSignedCookies } from "@aws-sdk/cloudfront-signer";
@@ -287,6 +289,54 @@ test("put fails when the body is not the size given", async () => {
   const data = new Uint8Array(10_000);
   await assert.rejects(storage(s3).put(STREAM, streamOf(data), { contentType: "audio/mpeg", sizeBytes: 10_001 }), /10000 bytes, not 10001/);
   await assert.rejects(storage(s3).put(STREAM, streamOf(data), { contentType: "audio/mpeg", sizeBytes: 9_999 }), /longer than 9999/);
+});
+
+test("put with the real S3 client: streams the body, and a wrong-size body rejects without ending the process", async () => {
+  // A local server in place of S3, so the SDK sends the body the way it does for real (pipe()).
+  const got: { contentLength?: string; bytes: number; aborted: boolean }[] = [];
+  const server = createServer((req, res) => {
+    const seen = { contentLength: req.headers["content-length"], bytes: 0, aborted: false };
+    got.push(seen);
+    req.on("data", (c: Buffer) => { seen.bytes += c.length; });
+    req.on("error", () => { seen.aborted = true; });
+    req.on("end", () => { res.writeHead(200); res.end(); });
+  }).listen(0, "127.0.0.1");
+  await new Promise((r) => server.once("listening", r));
+  try {
+    const port = (server.address() as { port: number }).port;
+    const s3 = new S3Client({
+      region: "us-east-1",
+      endpoint: `http://127.0.0.1:${port}`,
+      forcePathStyle: true,
+      credentials: { accessKeyId: "AKIDEXAMPLE", secretAccessKey: "secret-example" },
+      requestChecksumCalculation: "WHEN_REQUIRED",
+    });
+    const real = storage(s3 as never);
+    const key = `streams/${ART}/${REL}/${TRK}/mp3-320.mp3`;
+    const body = (n: number) => new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let at = 0; at < n; at += 65536) c.enqueue(new Uint8Array(Math.min(65536, n - at)));
+        c.close();
+      },
+    });
+    await real.put(key, body(300_000), { contentType: "audio/mpeg", sizeBytes: 300_000 });
+    assert.deepEqual(got[0], { contentLength: "300000", bytes: 300_000, aborted: false });
+    await assert.rejects(real.put(key, body(100_000), { contentType: "audio/mpeg", sizeBytes: 300_000 }), /100000 bytes, not 300000/);
+    await assert.rejects(real.put(key, body(400_000), { contentType: "audio/mpeg", sizeBytes: 300_000 }), /longer than 300000/);
+    // A source that fails part way rejects too.
+    let sent = 0;
+    const failing = new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (sent >= 131072) return c.error(new Error("the temp file could not be read (test)"));
+        sent += 65536;
+        c.enqueue(new Uint8Array(65536));
+      },
+    });
+    await assert.rejects(real.put(key, failing, { contentType: "audio/mpeg", sizeBytes: 300_000 }), /could not be read/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 function cookie(grant: { cookies: { name: string; value: string }[] }, name: string) {

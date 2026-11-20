@@ -122,7 +122,7 @@ current state and the next steps. Update it when a step is done.
        (see step 8);
      - keep it strict: any error ffmpeg logs fails the track;
      - copies left by a worker that dies mid-job are accepted for Phase 0. They are never
-       recorded, and the next job or a takedown removes them;
+       recorded. The next successful job overwrites them, or a takedown deletes them;
      - the deployment READMEs now describe the real step.
 
 6. Next: session G2, the cross-cloud check (its scenario plays a track; the streaming copy now

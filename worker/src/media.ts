@@ -1,6 +1,7 @@
 // ffprobe and ffmpeg: check what a master really is, then decode it all the way through while
 // making the streaming copy.
 import { spawn } from "node:child_process";
+import { open } from "node:fs/promises";
 import type { AudioFormat } from "./types.ts";
 
 export interface Tools {
@@ -54,7 +55,9 @@ function run(command: string, args: string[]): Promise<Run> {
       if (!line) return;
       tail.push(line);
       if (tail.length > 200) tail.shift();
-      if (/\[(error|fatal|panic)\]/.test(line) && errors.length < 50) errors.push(line);
+      // The level tag ffmpeg puts first (after an optional "[component @ 0x...]"), so text in
+      // a file's own tags, such as a title "[error] ...", does not count.
+      if (/^(\[[^\]]*\] )?\[(error|fatal|panic)\] /.test(line) && errors.length < 50) errors.push(line);
     }
     child.on("error", reject);
     child.on("close", (code) => {
@@ -99,7 +102,71 @@ export async function probe(tools: Tools, file: string, declared: AudioFormat): 
   if (Number.isFinite(ts) && ts > 0 && num > 0 && den > 0) {
     expectedSamples = Math.round((ts * num * sampleRateHz) / den);
   }
+  // For WAV, ffprobe gives the length the file holds, not the one its header declares, so a
+  // WAV cut short on a packet boundary would look whole. Read the header's own data size.
+  if (declared === "wav") {
+    const fromHeader = await wavDeclaredSamples(file);
+    if (fromHeader !== null) expectedSamples = fromHeader;
+  }
   return { ok: true, sampleRateHz, channels: Number(audio.channels) || 0, expectedSamples };
+}
+
+/**
+ * The samples per channel a WAV's header declares: the `data` chunk's size (from `ds64` in an
+ * RF64 file) over the block size in `fmt `. Null when the header doesn't say (a streamed WAV
+ * with an unknown size) or can't be read; the decode checks still apply then.
+ */
+export async function wavDeclaredSamples(file: string): Promise<number | null> {
+  const handle = await open(file, "r");
+  try {
+    const { size: fileSize } = await handle.stat();
+    const at = async (position: number, length: number): Promise<Buffer | null> => {
+      if (position + length > fileSize) return null;
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, position);
+      return bytesRead === length ? buffer : null;
+    };
+    const riff = await at(0, 12);
+    if (!riff || riff.toString("latin1", 8, 12) !== "WAVE") return null;
+    const kind = riff.toString("latin1", 0, 4);
+    if (kind !== "RIFF" && kind !== "RF64") return null;
+    let blockAlign = 0;
+    let ds64DataSize: number | null = null;
+    // Walk the chunks up to `data`. A few hundred is far more than any real file has.
+    let position = 12;
+    for (let n = 0; n < 1000; n++) {
+      const header = await at(position, 8);
+      if (!header) return null;
+      const id = header.toString("latin1", 0, 4);
+      const size = header.readUInt32LE(4);
+      const bodyAt = position + 8;
+      if (id === "fmt ") {
+        const fmt = await at(bodyAt, 16);
+        if (!fmt) return null;
+        blockAlign = fmt.readUInt16LE(12);
+      } else if (id === "ds64") {
+        const ds64 = await at(bodyAt, 16);
+        if (!ds64) return null;
+        ds64DataSize = Number(ds64.readBigUInt64LE(8));
+      } else if (id === "data") {
+        let dataSize = size;
+        if (kind === "RF64" && size === 0xffffffff) {
+          if (ds64DataSize === null) return null;
+          dataSize = ds64DataSize;
+        } else if (size === 0xffffffff || size === 0) {
+          // Unknown size (written while streaming).
+          return null;
+        }
+        if (blockAlign <= 0) return null;
+        return Math.floor(dataSize / blockAlign);
+      }
+      // Chunks are padded to an even size.
+      position = bodyAt + size + (size % 2);
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
 }
 
 export type TranscodeResult =

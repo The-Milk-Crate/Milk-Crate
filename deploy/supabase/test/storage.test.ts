@@ -229,6 +229,14 @@ describe("ObjectStorage on Supabase Storage (mocked at the HTTP edge)", () => {
     await assert.rejects(storage.put(STREAM, body(10), { contentType: "audio/mpeg", sizeBytes: 11 }), /10 bytes, not 11/);
     await assert.rejects(storage.put(STREAM, body(12), { contentType: "audio/mpeg", sizeBytes: 11 }), /longer than 11/);
     assert.equal(fake.objects.has(`mc-streams/${STREAM}`), false);
+    // A body that is too long is cancelled, so its source is closed.
+    let cancelled = false;
+    const long = new ReadableStream<Uint8Array>({
+      pull(c) { c.enqueue(bytes(8)); },
+      cancel() { cancelled = true; },
+    });
+    await assert.rejects(storage.put(STREAM, long, { contentType: "audio/mpeg", sizeBytes: 11 }), /longer than 11/);
+    assert.equal(cancelled, true);
   });
 
   test("put writes only under streams/, and the mc-streams type limit applies", async () => {

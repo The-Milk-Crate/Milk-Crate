@@ -372,7 +372,9 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       const size = options.sizeBytes;
       if (!Number.isInteger(size) || size < 1 || size > PUT_MAX_BYTES) throw new Error("put takes 1 byte to 5 GiB");
       // One PutObject with the length set, so the SDK streams the body. A body of the wrong
-      // length fails the request, and S3 stores nothing.
+      // length, or one whose source fails, aborts the request: S3 stores nothing, and put
+      // rejects with that error (a stream error the SDK's pipe() does not listen for would
+      // otherwise end the whole process).
       let seen = 0;
       const counted = body.pipeThrough(
         new TransformStream<Uint8Array, Uint8Array>({
@@ -386,15 +388,26 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
           },
         }),
       );
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: Readable.fromWeb(counted as import("node:stream/web").ReadableStream<Uint8Array>),
-          ContentLength: size,
-          ContentType: options.contentType,
-        }),
-      );
+      const stream = Readable.fromWeb(counted as import("node:stream/web").ReadableStream<Uint8Array>);
+      const abort = new AbortController();
+      let failed: unknown;
+      stream.on("error", (error) => {
+        failed ??= error;
+        abort.abort(error);
+      });
+      // The SDK client's send takes an abort signal; the Sender type here names only the command.
+      const send = s3.send.bind(s3) as (command: unknown, options?: { abortSignal?: AbortSignal }) => Promise<unknown>;
+      try {
+        await send(
+          new PutObjectCommand({ Bucket: bucket, Key: key, Body: stream, ContentLength: size, ContentType: options.contentType }),
+          { abortSignal: abort.signal },
+        );
+      } catch (error) {
+        throw failed ?? error;
+      } finally {
+        stream.destroy();
+      }
+      if (failed) throw failed;
     },
 
     async signRead(input: SignReadInput): Promise<ReadGrantBody> {

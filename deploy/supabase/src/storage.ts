@@ -418,6 +418,10 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
             }
           }
         }
+      } catch (error) {
+        // Close the source (the worker's temp file) rather than leave it open.
+        await reader.cancel(error).catch(() => {});
+        throw error;
       } finally {
         reader.releaseLock();
       }

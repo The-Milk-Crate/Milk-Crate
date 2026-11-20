@@ -15,17 +15,20 @@ session G's `makeApplyJobResult`. The step never moves a release's state itself.
    sample rate must be readable.
 3. Decodes it all the way through with ffmpeg into one 320 kbps MP3 (libmp3lame, 44.1 kHz
    stereo, no metadata), as the desktop app makes. Any error ffmpeg logs, or fewer samples than
-   the header declares, fails the track as damaged. No samples at all is "no audio". A silent
-   track passes.
+   the header declares, fails the track as damaged. For WAV the declared length is read from the
+   header's `data` chunk (or `ds64` in RF64), because ffprobe reports only what the file holds.
+   A file whose length can't be read fails too. A silent track passes.
 4. Writes the copy to `streams/{artist}/{release}/{track}/mp3-320.mp3` (`ObjectStorage.put`,
    `audio/mpeg`). The master is never written.
 
 When every track passes, one transaction records `stream_key`, `duration_ms` and
 `sample_rate_hz` on each track, but only while the release is still `processing`, this job is
 its newest, and each master is still the one that was hashed. The first failing track stops the
-job, and its plain-words reason is the release's reason. On a failure (or a crash), the copies
-this job wrote are deleted, except a track's copy that an earlier job already recorded. Temp
-files are removed either way. A retried job writes the same keys and gives the same result.
+job, and its plain-words reason is the release's reason. Whenever nothing is recorded (a
+failure, a crash, or the release moved on, such as a takedown during the job), the copies this
+job wrote are deleted. Two cases keep them: a newer job exists (it owns those keys), or the
+track has a copy an earlier job recorded. Temp files are removed either way. A retried job
+writes the same keys and gives the same result.
 
 The words the artist reads are in `src/words.ts`.
 
@@ -47,9 +50,11 @@ bash worker/test/run.sh
 It installs the packages of `worker/`, `deploy/supabase/` and `deploy/aws/` if needed, runs both
 copy scripts, type-checks, starts a throwaway PostgreSQL 16, applies `db/migrations/`, then runs:
 
-- `process.test.ts`: each format, the wrong format, truncated, empty, no samples, silent (it
-  passes), a wrong SHA-256, a missing master, one bad track among good ones, a storage failure
-  part way, a retried job, a stale job, cleanup after failures;
+- `process.test.ts`: each format, the wrong format, truncated (also a WAV cut on a packet
+  boundary), empty, no samples, silent (it passes), valid edge cases (24-bit, RF64, AIFF-C, a
+  tag that reads `[error]`), a wrong SHA-256, a missing master, one bad track among good ones,
+  a storage failure part way, a retried job, a stale job, a takedown during the job, cleanup
+  after failures;
 - `platforms.test.ts`: one run through each platform's skeleton with its storage module over
   its fake (E's Supabase Storage fake; S3 at the SDK edge with F's Data API stand-in), ending in
   `awaiting_splits` or `failed`;

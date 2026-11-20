@@ -103,8 +103,8 @@ export function makeProcessRelease(deps: ProcessDeps): (job: JobToRun) => Promis
         return true;
       });
       if (!recorded) {
-        // A newer job or a replaced master owns these keys now; leave its files alone.
-        kept = true;
+        // The release moved on (a takedown, a replaced master) or a newer job exists. The
+        // cleanup below removes this job's copies unless a newer job owns those keys now.
         log(`job ${job.jobId}: release ${job.releaseId} changed while processing; nothing recorded`);
         return { ok: false, message: words.changed };
       }
@@ -180,18 +180,42 @@ export function makeProcessRelease(deps: ProcessDeps): (job: JobToRun) => Promis
   }
 
   /**
-   * After a failure: remove the copies this job wrote, so none is left half done. A track that
-   * already has a recorded copy (from an earlier successful job, same master) keeps its file,
-   * because its stream_key still points at it.
+   * When nothing was recorded (a failure, a crash, or the release moved on): remove the copies
+   * this job wrote, so none is left behind, also after a takedown during the job. Two cases
+   * keep files, decided from the database as it is now:
+   *   - a newer job exists for the release: it writes the same keys, so its files are left alone;
+   *   - a track has a recorded copy (an earlier successful job, same master): its stream_key
+   *     still points at the file.
    */
   async function removeWritten(written: TrackRow[], job: JobToRun, log: (m: string) => void): Promise<void> {
+    if (written.length === 0) return;
+    let keep: Set<string>;
+    try {
+      const [newest] = await deps.database.query<{ id: string }>(
+        "select j.id::text as id from public.api_jobs j where j.release_id = $1::uuid order by j.seq desc limit 1",
+        [job.releaseId],
+      );
+      if (newest && newest.id !== job.jobId) {
+        log(`job ${job.jobId}: a newer job (${newest.id}) owns this release's copies; left them alone`);
+        return;
+      }
+      const recorded = await deps.database.query<{ id: string }>(
+        "select t.id::text as id from public.api_tracks t where t.release_id = $1::uuid and t.stream_key is not null",
+        [job.releaseId],
+      );
+      keep = new Set(recorded.map((r) => r.id));
+    } catch (error) {
+      // Without the database it is not safe to choose; the next successful job overwrites it, or a takedown deletes it.
+      log(`job ${job.jobId}: could not check what to remove: ${(error as Error)?.message ?? String(error)}`);
+      return;
+    }
     for (const track of written) {
-      if (track.stream_key) continue;
+      if (keep.has(track.id)) continue;
       const folder = streamFolder(track.artist_id, job.releaseId, track.id);
       try {
         await deps.storage.delete(folder);
       } catch (error) {
-        // Not fatal for the result; takedown and the next job's write cover it.
+        // Not fatal for the result; the next successful job overwrites it, or a takedown deletes it.
         log(`job ${job.jobId}: could not remove ${folder}: ${(error as Error)?.message ?? String(error)}`);
       }
     }

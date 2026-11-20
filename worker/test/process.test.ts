@@ -18,6 +18,7 @@ import {
   streamKey,
   testDb,
   trackRows,
+  type AudioOptions,
   type MasterSpec,
 } from "./helpers.ts";
 
@@ -139,6 +140,37 @@ describe("processing a release (local Postgres, storage in memory)", { skip: NEE
     }
   });
 
+  test("a WAV cut exactly on a packet boundary still fails as damaged (its header declares more)", async () => {
+    // ffmpeg reads WAV in 4096-byte packets (4092 for 24-bit stereo), so a cut there logs no error;
+    // the length the header's data chunk declares is what catches it.
+    const cases: [AudioOptions, number][] = [
+      [{ channels: 2 }, 4096],
+      [{ channels: 1 }, 4096],
+      [{ channels: 2, extra: ["-c:a", "pcm_s24le"] }, 4092],
+    ];
+    for (const [options, packet] of cases) {
+      const whole = makeAudio("wav", { seconds: 3, ...options });
+      const dataStart = Buffer.from(whole).indexOf("data") + 8;
+      const { storage, run } = await setup([{ format: "wav", bytes: whole.slice(0, dataStart + 10 * packet) }]);
+      assert.deepEqual(await run(), {
+        ok: false,
+        message: 'Track 1, "Song 1": this file is damaged or incomplete, so it could not be read all the way through. Export it again and upload it.',
+      }, JSON.stringify(options));
+      assert.deepEqual(storage.puts, []);
+    }
+  });
+
+  test("valid edge cases pass with exact durations: 24-bit, RF64, AIFF-C, and a title that reads [error]", async () => {
+    const { f, run } = await setup([
+      { format: "wav", bytes: makeAudio("wav", { seconds: 1, extra: ["-c:a", "pcm_s24le"] }) },
+      { format: "wav", bytes: makeAudio("wav", { seconds: 1, extra: ["-rf64", "always"] }) },
+      { format: "aiff", bytes: makeAudio("aiff", { seconds: 1, extra: ["-c:a", "pcm_s16le", "-f", "aiff"] }) },
+      { format: "flac", bytes: makeAudio("flac", { seconds: 1, extra: ["-metadata", "title=[error] not really"] }) },
+    ]);
+    assert.deepEqual(await run(), { ok: true });
+    assert.deepEqual((await trackRows(db, f.releaseId)).map((t) => t.duration_ms), [1000, 1000, 1000, 1000]);
+  });
+
   test("an empty file fails", async () => {
     const { storage, run } = await setup([{ format: "wav", bytes: new Uint8Array(0) }]);
     assert.deepEqual(await run(), {
@@ -148,14 +180,15 @@ describe("processing a release (local Postgres, storage in memory)", { skip: NEE
     assert.deepEqual(storage.puts, []);
   });
 
-  test("a FLAC with no samples has no audio", async () => {
+  test("a FLAC with no samples fails: its length cannot be read", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mc-empty-flac-"));
     try {
       execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0", join(dir, "z.flac")]);
       const { run } = await setup([{ format: "flac", bytes: new Uint8Array(readFileSync(join(dir, "z.flac"))) }]);
-      const result = await run();
-      assert.equal(result.ok, false);
-      assert.match((result as { message: string }).message, /has no audio in it|length or sample rate/);
+      assert.deepEqual(await run(), {
+        ok: false,
+        message: 'Track 1, "Song 1": we could not read this file\'s length or sample rate. Export it again and upload it.',
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -245,6 +278,24 @@ describe("processing a release (local Postgres, storage in memory)", { skip: NEE
     assert.deepEqual(await run(), { ok: false, message: "This release changed while it was being processed, so this result was not kept." });
     assert.deepEqual((await trackRows(db, f.releaseId))[0].stream_key, null);
     assert.deepEqual(storage.deletes, [], "the newer job's files are left alone");
+  });
+
+  test("a takedown during the job: nothing is recorded and the copies it wrote are removed", async () => {
+    const { storage, f, run } = await setup([
+      { format: "wav", bytes: makeAudio("wav", { seconds: 1 }) },
+      { format: "wav", bytes: makeAudio("wav", { seconds: 1 }) },
+    ]);
+    const [{ id: adminId }] = await db.query<{ id: string }>(
+      "insert into public.api_accounts (user_id, account_type) values (gen_random_uuid(), 'administrator') returning user_id::text as id",
+    );
+    // An administrator takes the release down while the worker writes track 2's copy.
+    storage.beforePut = async (key) => {
+      if (key !== streamKey(f, 1)) return;
+      await db.query("select 1 from public.api_takedown_release($1::uuid, $2::uuid, 'Test.')", [f.releaseId, adminId]);
+    };
+    assert.deepEqual(await run(), { ok: false, message: "This release changed while it was being processed, so this result was not kept." });
+    assert.deepEqual((await trackRows(db, f.releaseId)).map((t) => t.stream_key), [null, null]);
+    assert.deepEqual(storage.keys("streams/"), [], "no copy outlives the takedown");
   });
 
   test("a release that is no longer processing is left alone", async () => {

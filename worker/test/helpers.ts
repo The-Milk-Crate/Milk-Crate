@@ -22,6 +22,8 @@ export interface AudioOptions {
   channels?: number;
   /** A silent file instead of a tone. */
   silent?: boolean;
+  /** More ffmpeg output options, such as ["-c:a", "pcm_s24le"]. */
+  extra?: string[];
 }
 
 /** A small audio file of the format, made with ffmpeg now. */
@@ -40,6 +42,7 @@ export function makeAudio(format: AudioFormat | "mp3", options: AudioOptions = {
       "-t", String(seconds),
       "-ac", String(options.channels ?? 2),
       ...(format === "mp3" ? ["-c:a", "libmp3lame"] : []),
+      ...(options.extra ?? []),
       file,
     ]);
     return new Uint8Array(readFileSync(file));
@@ -57,6 +60,8 @@ export class MemoryStorage implements WorkerStorage {
   puts: string[] = [];
   deletes: string[] = [];
   failPutAt: number | null = null;
+  /** Runs before each put is stored (to change the database part way through a job). */
+  beforePut: ((key: string) => Promise<void>) | null = null;
 
   async read(key: string): Promise<ReadableStream<Uint8Array>> {
     this.reads.push(key);
@@ -80,6 +85,7 @@ export class MemoryStorage implements WorkerStorage {
       await body.cancel();
       throw new Error("storage is down (test)");
     }
+    if (this.beforePut) await this.beforePut(key);
     const bytes = new Uint8Array(await new Response(body).arrayBuffer());
     if (bytes.length !== options.sizeBytes) throw new Error(`put: ${bytes.length} bytes, not ${options.sizeBytes}`);
     this.objects.set(key, { bytes, contentType: options.contentType });
