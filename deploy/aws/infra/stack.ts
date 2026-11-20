@@ -176,11 +176,21 @@ export class MilkCrateStack extends Stack {
         MC_DB_SECRET_ARN: dbSecret.secretArn,
         MC_DB_NAME: DB_NAME,
         MC_JOB_TIME_LIMIT_MINUTES: "240",
+        // The hourly sweep deletes the files of a takedown whose delete failed (session G).
+        MC_BUCKET: bucket.bucketName,
       },
       // Fargate's own limit backs up the worker's time limit.
       stopTimeout: Duration.seconds(30),
     });
     cluster.grantDataApiAccess(taskDefinition.taskRole);
+    // The sweep's takedown retry: list and delete under a release's prefixes, and abort
+    // unfinished uploads there (storage.delete). Processing's own S3 access is session H's.
+    taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({ actions: ["s3:DeleteObject", "s3:AbortMultipartUpload"], resources: [bucket.arnForObjects("*")] }),
+    );
+    taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({ actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads"], resources: [bucket.bucketArn] }),
+    );
 
     // Schedules: the group, the role one-time runs use (Data API, and the dead-letter queue).
     const scheduleGroup = new scheduler.CfnScheduleGroup(this, "Schedules", { name: SCHEDULE_GROUP });
@@ -319,8 +329,8 @@ export class MilkCrateStack extends Stack {
     });
     sweepSchedule.addResourceDependency(scheduleGroup);
 
-    // The API: an HTTP API with one Lambda per operation (functions/routes.json; empty until
-    // session G's handlers exist). Identity checks the token itself, so routes have no authorizer.
+    // The API: an HTTP API with one Lambda per operation (functions/routes.json, one entry per
+    // operation in session G's core/src/handlers/). Identity checks the token itself, so routes have no authorizer.
     const api = new apigw.HttpApi(this, "Api", { description: "Milk Crate Phase 0 API", createDefaultStage: true });
     const operationEnv: Record<string, string> = {
       MC_BUCKET: bucket.bucketName,
@@ -438,7 +448,7 @@ export class MilkCrateStack extends Stack {
   }
 }
 
-/** functions/routes.json: one entry per operation, once session G's handlers exist. */
+/** functions/routes.json: one entry per operation in session G's handlers. */
 export function readRoutes(): Route[] {
   return JSON.parse(readFileSync(join(PACKAGE_DIR, "functions/routes.json"), "utf8")) as Route[];
 }

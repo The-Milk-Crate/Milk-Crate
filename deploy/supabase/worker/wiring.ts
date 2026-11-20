@@ -1,10 +1,26 @@
-import type { JobResult } from "../src/core.ts";
+// Session G's shared functions for the worker (core/src/handlers/), from the copy in _core/
+// (scripts/copy-core.sh), because the image's build context is deploy/supabase/.
+import type { Database, Jobs, ObjectStorage } from "../src/core.ts";
+import type { ApplyJobResult } from "../src/jobs.ts";
+import { makeApplyJobResult, makeRequeueStuckReleases, makeRetryTakedownDeletes } from "../_core/handlers/index.ts";
+
+/** The job result through api_apply_job_result: success or failure moves the release on. */
+export function applyJobResultWith(database: Database): ApplyJobResult {
+  return makeApplyJobResult({ database });
+}
 
 /**
- * Session G's job-result function, which applies the result through api_apply_job_result and
- * moves the release state. Waiting on G to state its path (an open point); until then the
- * worker cannot report, and the job stays `running`.
+ * The hourly sweep's part from session G, run before the worker's own sweep:
+ *   - queues a job again for a release stuck in processing with no job (a confirm whose enqueue
+ *     failed). Jobs.enqueue starts a machine for it; if that fails, the worker's sweep runs it;
+ *   - deletes again the files of a takedown whose delete failed.
  */
-export async function applyJobResult(jobId: string, _result: JobResult): Promise<void> {
-  throw new Error(`cannot report job ${jobId}: session G's job-result function is not wired yet`);
+export async function coreSweep(
+  modules: { database: Database; jobs: Jobs; storage: ObjectStorage },
+  log: (message: string) => void = (m) => console.log(m),
+): Promise<void> {
+  const requeued = await makeRequeueStuckReleases(modules, { log })();
+  log(`requeued ${requeued.requeued.length} stuck releases (${requeued.failed.length} failed)`);
+  const takedowns = await makeRetryTakedownDeletes(modules, { log })();
+  log(`deleted the files of ${takedowns.deleted.length} takedowns (${takedowns.failed.length} failed)`);
 }

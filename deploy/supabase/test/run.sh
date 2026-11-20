@@ -19,6 +19,7 @@ root="$(cd "$pkg/../.." && pwd)"
 if [[ ! -d "$pkg/node_modules" ]]; then
   (cd "$pkg" && npm ci --no-audit --no-fund)
 fi
+bash "$pkg/scripts/copy-core.sh" >/dev/null
 (cd "$pkg" && npx tsc --noEmit)
 echo "ok - deploy/supabase type-checks"
 

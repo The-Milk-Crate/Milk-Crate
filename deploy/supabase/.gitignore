@@ -4,3 +4,6 @@ node_modules
 .env
 supabase/.temp
 supabase/.branches
+# The copies of core/src/ (scripts/copy-core.sh). Never edit them; edit core/src/.
+_core/
+supabase/functions/_core/

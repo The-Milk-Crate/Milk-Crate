@@ -42,7 +42,8 @@ stack is synthesized offline (esbuild bundles the Lambdas locally).
 | `src/infrastructure.ts`, `scripts/` | `Infrastructure`: stand up, confirm, tear down. |
 | `src/modules.ts` | Builds all the modules from the environment. |
 | `infra/` | The CDK app and stack. |
-| `functions/` | One Lambda entry point per operation (none yet: they wait on session G). |
+| `functions/` | One Lambda entry point per operation, wiring session G's handlers (see its README). |
+| `scripts/copy-core.sh` | Copies `core/src/` into `_core/` for the worker image (not committed). |
 
 ## How each part works
 
@@ -112,7 +113,12 @@ task cannot start the row stays `queued`, enqueue still answers, and the hourly 
 EventBridge schedule that starts the worker with `MC_WORKER_MODE=sweep`) runs it. The worker
 skeleton is session E's, with the same rules and words (a test checks): claim with
 `api_job_started`, 4-hour limit, plain-words failures, and "Processing is not set up yet ..."
-until session H. `reportResult` waits on session G (`worker/wiring.ts`).
+until session H. `reportResult` hands the result to session G's `makeApplyJobResult`
+(`worker/wiring.ts`). The hourly sweep first runs session G's part: a job again for a release
+stuck in `processing` with no job (`makeRequeueStuckReleases`; the sweep then runs it in the
+same task), and the files of a takedown whose delete failed (`makeRetryTakedownDeletes`; the task
+role may list and delete in the bucket for this). The worker imports them from `_core/`, the copy
+of `core/src/` that `scripts/copy-core.sh` makes before CDK builds the image.
 
 **Schedules.** One-time EventBridge schedules (`at(...)`, UTC, rounded up to the minute) whose
 target is the Data API's `ExecuteStatement`: `select public.<fn>(<arg> => :<arg>::<type>)` with

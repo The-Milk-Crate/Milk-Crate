@@ -1,6 +1,8 @@
 // The worker on Fly Machines. One machine per job (MC_JOB_ID), started by Jobs.enqueue, or
-// the hourly sweep (MC_WORKER_MODE=sweep): it fails jobs running past the time limit
-// (MC_JOB_TIME_LIMIT_MINUTES, default 240), then runs jobs whose machine never started.
+// the hourly sweep (MC_WORKER_MODE=sweep): session G's part first (a job again for a release
+// stuck in processing; files of a takedown whose delete failed), then it fails jobs running
+// past the time limit (MC_JOB_TIME_LIMIT_MINUTES, default 240), then runs jobs whose machine
+// never started.
 //
 //   node worker/main.ts
 //
@@ -8,10 +10,14 @@
 // (session pooler or direct, as postgres), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import { createSupabaseModules } from "../src/modules.ts";
 import { processingNotBuilt, runOneJob, sweep } from "./run.ts";
-import { applyJobResult } from "./wiring.ts";
+import { applyJobResultWith, coreSweep } from "./wiring.ts";
 
 const env = (name: string) => process.env[name];
-const modules = createSupabaseModules(env, { applyJobResult, poolSize: 2 });
+// The job result needs the modules' database, so it is looked up when a result comes in.
+const modules = createSupabaseModules(env, {
+  applyJobResult: (jobId, result) => applyJobResultWith(modules.database)(jobId, result),
+  poolSize: 2,
+});
 const minutes = Number(env("MC_JOB_TIME_LIMIT_MINUTES") || 0);
 const deps = {
   database: modules.database,
@@ -22,6 +28,7 @@ const deps = {
 
 try {
   if (env("MC_WORKER_MODE") === "sweep") {
+    await coreSweep(modules);
     console.log(`sweep ran ${await sweep(deps)} jobs`);
   } else {
     await runOneJob(deps, env("MC_JOB_ID") || undefined);

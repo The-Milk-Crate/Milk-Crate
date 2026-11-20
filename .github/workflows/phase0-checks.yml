@@ -63,12 +63,13 @@ jobs:
           if grep -qE '^(db/|milk-crate/supabase/|api/openapi\.yaml$|core/src/platform/types\.ts$|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             db=true
           fi
-          if grep -qE '^(deploy/supabase/|db/|milk-crate/supabase/|core/src/platform/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+          if grep -qE '^(deploy/supabase/|db/|milk-crate/supabase/|core/src/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             supabase=true
           fi
           # Session F's tests also compare against E's email templates and worker skeleton, and
-          # check the aws-sandbox workflow.
-          if grep -qE '^(deploy/aws/|db/|core/src/platform/|deploy/supabase/src/email-templates\.ts$|deploy/supabase/worker/run\.ts$|\.github/workflows/phase0-checks\.yml$|\.github/workflows/aws-sandbox\.yml$)' <<<"$files"; then
+          # check the aws-sandbox workflow. Both deployments run session G's handlers
+          # (core/src/handlers/), so any change under core/src/ runs their tests too.
+          if grep -qE '^(deploy/aws/|db/|core/src/|deploy/supabase/src/email-templates\.ts$|deploy/supabase/worker/run\.ts$|\.github/workflows/phase0-checks\.yml$|\.github/workflows/aws-sandbox\.yml$)' <<<"$files"; then
             aws=true
           fi
           # Session G's handler tests: the handlers, session B's SQL they call, C's fixture

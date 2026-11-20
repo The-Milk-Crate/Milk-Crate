@@ -6,7 +6,7 @@ import { ECSClient } from "@aws-sdk/client-ecs";
 import { SchedulerClient } from "@aws-sdk/client-scheduler";
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
-import type { Database, Modules } from "./core.ts";
+import type { Database, Modules, ObjectStorage } from "./core.ts";
 import { list, required, type Env } from "./env.ts";
 import { dataApiDatabase } from "./database.ts";
 import { cognitoIdentity } from "./identity.ts";
@@ -32,6 +32,26 @@ export function databaseFromEnv(env: Env): Database {
     resourceArn: required(env, "MC_DB_CLUSTER_ARN"),
     secretArn: required(env, "MC_DB_SECRET_ARN"),
     database: env("MC_DB_NAME") || "milk_crate",
+  });
+}
+
+/**
+ * Storage for the worker's sweep, which only deletes a taken-down release's files
+ * (MC_BUCKET; AWS_REGION). It signs no reads: the worker has no CloudFront key.
+ */
+export function workerStorageFromEnv(env: Env): ObjectStorage {
+  const region = required(env, "AWS_REGION");
+  const s3 = s3Client(region);
+  return s3Storage({
+    s3,
+    presign: (command, expiresIn) => getSignedUrl(s3, command, { expiresIn }),
+    bucket: required(env, "MC_BUCKET"),
+    cloudFront: {
+      domain: "worker.invalid",
+      keyPairId: "none",
+      privateKey: () => Promise.reject(new Error("the worker signs no reads")),
+      signCookies: getSignedCookies as unknown as SignCookies,
+    },
   });
 }
 
