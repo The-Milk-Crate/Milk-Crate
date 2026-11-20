@@ -375,11 +375,13 @@ Branch `phase0/h-processing`. Not in the original plan; added because processing
   names inside). The worker checks the client's SHA-256 while streaming the master; a mismatch
   fails the release with a plain reason. Record the streaming key, duration and sample rate in
   B's track columns.
-- Before building, ask K Marcus: streaming format and bitrate, what makes a master bad, sonic
-  analysis and cover sizes in or out, and the storage interface addition.
-- `ObjectStorage` has only `readHead` (small ranged reads), no stream read or write for a worker.
-  With K Marcus's approval only, add the smallest addition in `core/` and in the storage modules
-  of E and F.
+- Settled by K Marcus (20 November 2026; details in the prompt): one 320 kbps MP3 per track at
+  `streams/{artist}/{release}/{track}/mp3-320.mp3`; a master fails on a format mismatch, a
+  decode that breaks, or an unreadable duration or sample rate (no silence check); sonic
+  analysis and smaller cover sizes are out; `mc-streams` allows only `audio/mpeg`.
+- `ObjectStorage` has only `readHead` (small ranged reads). Approved addition, in `core/` and in
+  E's and F's storage modules: `read(key)` returning a `ReadableStream`, and
+  `put(key, body, { contentType, sizeBytes })`.
 - From B (merged): record `stream_key`, `duration_ms` and `sample_rate_hz` on `api_tracks`;
   compare against `api_tracks.master_sha256`; call `api_job_started` when a job is picked up.
 - From F (merged): the Fargate worker's task role has no S3 access yet. Add the least it needs
