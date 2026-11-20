@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 20 November 2026, after three sandbox runs.
+For K Marcus and the next session. Last updated 20 November 2026, after four sandbox runs.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -29,6 +29,14 @@ current state and the next steps. Update it when a step is done.
     failed transactions), S3 uploads (part checksums, resume, CRC64NVME confirm), `readHead`,
     CloudFront signed cookies (streaming copy served, master never served), the Cognito claim
     through the sync, and one Fargate task per job id.
+- Sandbox run 4 (20 November, commit `d0fd318`,
+  https://github.com/The-Milk-Crate/Milk-Crate/actions/runs/43512182763): every check `ok`
+  except SES (skipped: no `MC_SMOKE_EMAIL_TO`). The Scheduler fix (#28) works on real AWS: a
+  go-live run fired through the Data API and the schedule deleted itself, and a failing run
+  reached the dead-letter queue carrying its SQL error (`not_found: no such release; SQLState:
+  MC404`). Tear-down finished (`MilkCratePhase0: destroyed`, CloudFront key secret deleted), so
+  nothing was left in the account. Smoke test about 3 minutes, tear-down about 22. The AWS side
+  is clean except SES.
 - Rule change: each session adds one CI job for its own tests in its own pull request ("D: CI",
   "Adding a test job"). No more session D follow-ups.
 
@@ -47,15 +55,8 @@ current state and the next steps. Update it when a step is done.
      `MC_EMAIL_FROM` and a PEM file in `MC_CLOUDFRONT_PUBLIC_KEY_FILE` (throwaway values are fine);
      set `git config core.autocrlf input` or every file shows as modified.
 
-2. Run 4 of the sandbox, to check the Scheduler fix (#28):
-   https://github.com/The-Milk-Crate/Milk-Crate/actions/runs/43512182763 (commit `d0fd318`).
-   K Marcus approved it on 20 November (approving the queued run worked even though the branch
-   `aws-sandbox-run` had been deleted); it started 18:23 UTC and signed in to AWS. Read the
-   smoke test's `ok -` / `FAIL -` lines (about 12 minutes). If the Schedules line is `ok`, the
-   AWS side is clean except SES: record that here and move on to G1. Another failure goes to
-   `deploy/aws/` before G1, as before. If the run is still going or failed to tear down, check
-   for a leftover `MilkCratePhase0` stack in CloudFormation (`us-east-1`) and use
-   `deploy/aws/scripts/tear-down.sh`.
+2. Done (20 November 2026): run 4 of the sandbox, checking the Scheduler fix (#28). All
+   checks `ok` except SES; torn down cleanly. See "Done" above.
 
 3. Session G1, the shared handlers: `docs/phase0-prompts/g1-core.md`. See "From E and F" in
    G's section of `docs/phase0-sessions.md` (the job-result path, entry points, error mapping,
@@ -77,8 +78,8 @@ current state and the next steps. Update it when a step is done.
 - SES: DKIM records for the sending domain and production access, before email reaches
   unverified addresses. There is no email domain yet; `MC_EMAIL_DOMAIN` is `example.com`. The
   smoke test's email check needs `MC_SMOKE_EMAIL_TO`, which the workflow does not pass yet.
-- Not yet checked against real AWS: Scheduler calling the Data API (run 4), SES sending, and
-  the Fargate worker doing real processing (session H).
+- Not yet checked against real AWS: SES sending, and the Fargate worker doing real processing
+  (session H).
 - The owner and repository ids are written into `deploy/aws/infra/github-oidc.json`. They
   survive a rename; a transfer or a new repository needs new ones.
 
