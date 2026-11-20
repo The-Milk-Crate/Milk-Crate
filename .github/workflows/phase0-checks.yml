@@ -31,6 +31,7 @@ jobs:
       supabase: ${{ steps.filter.outputs.supabase }}
       aws: ${{ steps.filter.outputs.aws }}
       core: ${{ steps.filter.outputs.core }}
+      worker: ${{ steps.filter.outputs.worker }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +47,7 @@ jobs:
             echo "supabase=true" >> "$GITHUB_OUTPUT"
             echo "aws=true" >> "$GITHUB_OUTPUT"
             echo "core=true" >> "$GITHUB_OUTPUT"
+            echo "worker=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # On a pull request HEAD is the test merge commit; its first parent is the base.
@@ -57,6 +59,7 @@ jobs:
           supabase=false
           aws=false
           core=false
+          worker=false
           if grep -qE '^(api/|core/|db/|milk-crate/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             app=true
           fi
@@ -77,11 +80,17 @@ jobs:
           if grep -qE '^(core/|db/|api/openapi\.yaml$|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
             core=true
           fi
+          # Session H's processing tests: the shared step, the storage interface it uses, B's SQL,
+          # and both platforms' workers, storage modules and test fakes it runs through.
+          if grep -qE '^(worker/|core/src/|db/|deploy/supabase/|deploy/aws/|\.github/workflows/phase0-checks\.yml$)' <<<"$files"; then
+            worker=true
+          fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "db=$db" >> "$GITHUB_OUTPUT"
           echo "supabase=$supabase" >> "$GITHUB_OUTPUT"
           echo "aws=$aws" >> "$GITHUB_OUTPUT"
           echo "core=$core" >> "$GITHUB_OUTPUT"
+          echo "worker=$worker" >> "$GITHUB_OUTPUT"
 
   contract:
     name: contract
@@ -317,6 +326,49 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: bash core/test/run.sh
         run: bash core/test/run.sh
+
+  # Session H's processing tests. The script installs the packages of worker/, deploy/supabase/
+  # and deploy/aws/ (the skeleton runs use both platforms' code), and starts its own throwaway
+  # PostgreSQL 16 cluster. Audio is made with ffmpeg at test time; storage is fakes; no keys.
+  worker-processing:
+    name: worker-processing
+    needs: changes
+    if: needs.changes.outputs.worker == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tests run TypeScript directly with Node's type stripping: 22.18 or newer.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '>=22.18 <23'
+          cache: npm
+          cache-dependency-path: |
+            worker/package-lock.json
+            deploy/supabase/package-lock.json
+            deploy/aws/package-lock.json
+      - name: Node version
+        run: |
+          node --version
+          node -e 'const [a, b] = process.versions.node.split(".").map(Number); if (a < 22 || (a === 22 && b < 18)) { console.error("Need Node 22.18 or newer"); process.exit(1); }'
+      - name: PostgreSQL 16 server binaries and ffmpeg
+        run: |
+          sudo apt-get update
+          if [ ! -x /usr/lib/postgresql/16/bin/initdb ]; then
+            sudo apt-get install -y --no-install-recommends postgresql-16
+          fi
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          /usr/lib/postgresql/16/bin/initdb --version
+          ffmpeg -hide_banner -version | head -n1
+      - name: npm ci (worker, deploy/supabase, deploy/aws)
+        run: |
+          (cd worker && npm ci --no-audit --no-fund)
+          (cd deploy/supabase && npm ci --no-audit --no-fund)
+          (cd deploy/aws && npm ci --no-audit --no-fund)
+      - name: bash worker/test/run.sh
+        run: bash worker/test/run.sh
 
   # A session that adds tests adds one job for them here, in the pattern above (see "Adding a
   # test job" in docs/phase0-sessions.md). Session C's checks already run inside `database`.

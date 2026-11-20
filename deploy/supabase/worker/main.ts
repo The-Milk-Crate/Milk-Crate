@@ -2,14 +2,16 @@
 // the hourly sweep (MC_WORKER_MODE=sweep): session G's part first (a job again for a release
 // stuck in processing; files of a takedown whose delete failed), then it fails jobs running
 // past the time limit (MC_JOB_TIME_LIMIT_MINUTES, default 240), then runs jobs whose machine
-// never started.
+// never started. The processing step is session H's shared one (worker/src/, copied into
+// _worker/ by scripts/copy-core.sh); it needs ffmpeg and ffprobe on PATH (the image has them).
 //
 //   node worker/main.ts
 //
 // Node 22.18 or newer runs the TypeScript as is. Settings come from Fly secrets: MC_DB_URL
 // (session pooler or direct, as postgres), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import { createSupabaseModules } from "../src/modules.ts";
-import { processingNotBuilt, runOneJob, sweep } from "./run.ts";
+import { runOneJob, sweep } from "./run.ts";
+import { makeProcessRelease } from "../_worker/index.ts";
 import { applyJobResultWith, coreSweep } from "./wiring.ts";
 
 const env = (name: string) => process.env[name];
@@ -22,7 +24,7 @@ const minutes = Number(env("MC_JOB_TIME_LIMIT_MINUTES") || 0);
 const deps = {
   database: modules.database,
   jobs: modules.jobs,
-  process: processingNotBuilt,
+  process: makeProcessRelease({ database: modules.database, storage: modules.storage }),
   timeLimitMs: minutes > 0 ? minutes * 60_000 : undefined,
 };
 

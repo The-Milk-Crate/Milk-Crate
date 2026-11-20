@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { supabaseStorage, emptyAndDeleteBucket, MASTER_MAX_BYTES } from "../src/storage.ts";
+import { supabaseStorage, emptyAndDeleteBucket, MASTER_MAX_BYTES, TUS_CHUNK_BYTES } from "../src/storage.ts";
 import { BASE, fakeStorage, PUBLISHABLE_KEY, SERVICE_KEY, tusSend } from "./fake-storage.ts";
 import { fakeFetch } from "./helpers.ts";
 
@@ -184,6 +184,76 @@ describe("ObjectStorage on Supabase Storage (mocked at the HTTP edge)", () => {
     for (const p of ["", "masters/", `masters/${A}/`, `masters/${A}/${R}`, `other/${A}/${R}/`, `masters/${A}/../`]) {
       await assert.rejects(storage.delete(p), /release folder/, p);
     }
+  });
+
+  test("read streams a whole stored object, with the secret key, and a missing one is a 404", async () => {
+    const { fake, storage } = setup();
+    const data = bytes(3 * 1024 * 1024 + 5);
+    fake.objects.set(`mc-masters/${MASTER}`, { bytes: data, modified: Date.now(), contentType: "audio/wav" });
+    const body = await storage.read(MASTER);
+    assert.deepEqual(new Uint8Array(await new Response(body).arrayBuffer()), data);
+    const req = fake.requests.find((r) => r.method === "GET")!;
+    assert.equal(req.path, `/object/authenticated/mc-masters/${MASTER}`);
+    assert.equal(req.headers.range, undefined, "the whole object, not a range");
+    await assert.rejects(storage.read(`masters/${A}/${R}/${A}/original`), (e: { status?: number }) => e.status === 404);
+  });
+
+  test("put writes a streaming copy by tus in 6 MiB chunks, replacing an earlier one", async () => {
+    const { fake, storage } = setup();
+    const data = bytes(2 * TUS_CHUNK_BYTES + 123, 7);
+    // Odd-sized pieces, so chunks are cut across them.
+    const body = (d: Uint8Array) => new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let at = 0; at < d.length; at += 1_000_003) c.enqueue(d.slice(at, at + 1_000_003));
+        c.close();
+      },
+    });
+    await storage.put(STREAM, body(data), { contentType: "audio/mpeg", sizeBytes: data.length });
+    const stored = fake.objects.get(`mc-streams/${STREAM}`)!;
+    assert.deepEqual(stored.bytes, data);
+    assert.equal(stored.contentType, "audio/mpeg");
+    const patches = fake.requests.filter((r) => r.method === "PATCH");
+    assert.deepEqual(patches.map((r) => r.headers["upload-offset"]), ["0", String(TUS_CHUNK_BYTES), String(2 * TUS_CHUNK_BYTES)]);
+    const opened = fake.requests.find((r) => r.path === "/upload/resumable/sign")!;
+    assert.equal(opened.headers["x-upsert"], "true");
+    assert.equal(opened.headers["upload-length"], String(data.length));
+
+    const again = bytes(10, 9);
+    await storage.put(STREAM, body(again), { contentType: "audio/mpeg", sizeBytes: again.length });
+    assert.deepEqual(fake.objects.get(`mc-streams/${STREAM}`)!.bytes, again, "a retried job writes the same key again");
+  });
+
+  test("put refuses a body of the wrong size and leaves no object behind", async () => {
+    const { fake, storage } = setup();
+    const body = (n: number) => new ReadableStream<Uint8Array>({ start(c) { c.enqueue(bytes(n)); c.close(); } });
+    await assert.rejects(storage.put(STREAM, body(10), { contentType: "audio/mpeg", sizeBytes: 11 }), /10 bytes, not 11/);
+    await assert.rejects(storage.put(STREAM, body(12), { contentType: "audio/mpeg", sizeBytes: 11 }), /longer than 11/);
+    assert.equal(fake.objects.has(`mc-streams/${STREAM}`), false);
+    // A body that is too long is cancelled, so its source is closed.
+    let cancelled = false;
+    const long = new ReadableStream<Uint8Array>({
+      pull(c) { c.enqueue(bytes(8)); },
+      cancel() { cancelled = true; },
+    });
+    await assert.rejects(storage.put(STREAM, long, { contentType: "audio/mpeg", sizeBytes: 11 }), /longer than 11/);
+    assert.equal(cancelled, true);
+  });
+
+  test("put writes only under streams/, and the mc-streams type limit applies", async () => {
+    const { storage } = setup();
+    const body = () => new ReadableStream<Uint8Array>({ start(c) { c.enqueue(bytes(4)); c.close(); } });
+    await assert.rejects(storage.put(MASTER, body(), { contentType: "audio/wav", sizeBytes: 4 }), /only under streams/);
+    await assert.rejects(storage.put(COVER, body(), { contentType: "image/png", sizeBytes: 4 }), /only under streams/);
+
+    const fake = fakeStorage({
+      "mc-masters": { max: MASTER_MAX_BYTES, mimes: null },
+      "mc-streams": { max: null, mimes: ["audio/mpeg"] },
+      "mc-art": { max: null, mimes: null },
+    });
+    const limited = supabaseStorage({ supabaseUrl: BASE, serviceKey: SERVICE_KEY, fetch: fake.fetch });
+    await assert.rejects(limited.put(STREAM, body(), { contentType: "audio/wav", sizeBytes: 4 }), (e: { status?: number }) => e.status === 415);
+    await limited.put(STREAM, body(), { contentType: "audio/mpeg", sizeBytes: 4 });
+    assert.equal(fake.objects.get(`mc-streams/${STREAM}`)!.contentType, "audio/mpeg");
   });
 
   test("tear-down empties then deletes a bucket", async () => {

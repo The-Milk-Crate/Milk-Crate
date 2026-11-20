@@ -5,6 +5,7 @@ import type {
   ConfirmUploadResult,
   ObjectKey,
   ObjectStorage,
+  PutOptions,
   ReadGrantBody,
   SignReadInput,
   SignedPart,
@@ -23,6 +24,8 @@ const DELETE_PREFIX = new RegExp(`^(masters|streams|art)/${ID}/${ID}/([A-Za-z0-9
 export const MASTER_MAX_BYTES = CONTRACT_MASTER_MAX_BYTES; // 5 GiB
 export const COVER_MAX_BYTES = 20 * 1024 ** 2; // 20 MiB
 const READ_HEAD_MAX_BYTES = 1024 ** 2;
+/** Supabase's TUS chunk size: every chunk but the last is exactly 6 MiB. */
+export const TUS_CHUNK_BYTES = 6 * 1024 ** 2;
 
 const CONTENT_TYPES = {
   wav: "audio/wav",
@@ -319,6 +322,111 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
       }
       await reader.cancel().catch(() => {});
       return out.slice(0, filled);
+    },
+
+    async read(key: ObjectKey): Promise<ReadableStream<Uint8Array>> {
+      const response = await call(
+        `${api}/object/authenticated/${bucketOf(key)}/${encodeKey(key)}`,
+        { method: "GET" },
+        "reading the object",
+      );
+      if (response.status === 404 || response.status === 410 || response.status === 416 || !response.body) {
+        await response.body?.cancel().catch(() => {});
+        throw new StorageError(404, `no object at ${key}`);
+      }
+      return response.body;
+    },
+
+    async put(key: ObjectKey, body: ReadableStream<Uint8Array>, options: PutOptions): Promise<void> {
+      // The worker writes only streaming copies.
+      if (!STREAM_KEY.test(key)) throw new Error(`put writes only under streams/, not ${key}`);
+      const size = options.sizeBytes;
+      if (!Number.isInteger(size) || size < 1) throw new Error("put needs the size in bytes (at least 1)");
+      if (size > masterMax) {
+        throw new StorageError(413, `this deployment takes files up to ${masterMax} bytes (its plan's file size limit)`);
+      }
+      // A TUS upload with the server's own signed token, in 6 MiB chunks, as Supabase advises
+      // above about 6 MB. x-upsert replaces an earlier copy (a retried job).
+      const { token } = await signUpload(key);
+      const created = await call(
+        `${tusApi}/upload/resumable/sign`,
+        {
+          method: "POST",
+          headers: {
+            "tus-resumable": "1.0.0",
+            "upload-length": String(size),
+            "upload-metadata": [
+              `bucketName ${b64(bucketOf(key))}`,
+              `objectName ${b64(key)}`,
+              `contentType ${b64(options.contentType)}`,
+              `cacheControl ${b64("3600")}`,
+            ].join(","),
+            "x-signature": token,
+            "x-upsert": "true",
+          },
+        },
+        "opening the upload",
+      );
+      const location = created.headers.get("location");
+      if (created.status !== 201 || !location) {
+        throw new StorageError(created.status, "opening the upload returned no Location");
+      }
+      const uploadUrl = new URL(location, `${tusApi}/upload/resumable/sign`).toString();
+
+      let offset = 0;
+      const send = async (chunk: Uint8Array) => {
+        const response = await call(
+          uploadUrl,
+          {
+            method: "PATCH",
+            headers: {
+              "tus-resumable": "1.0.0",
+              "upload-offset": String(offset),
+              "content-type": "application/offset+octet-stream",
+              "x-signature": token,
+            },
+            body: chunk as Uint8Array<ArrayBuffer>,
+          },
+          "writing the object",
+        );
+        const next = Number(response.headers.get("upload-offset"));
+        if (response.status !== 204 || next !== offset + chunk.length) {
+          throw new StorageError(response.status === 204 ? 502 : response.status, `writing the object stopped at ${offset} bytes`);
+        }
+        offset = next;
+      };
+
+      const buffer = new Uint8Array(Math.min(TUS_CHUNK_BYTES, size));
+      let filled = 0;
+      let read = 0;
+      const reader = body.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          read += value.length;
+          if (read > size) throw new Error(`put: the body is longer than ${size} bytes`);
+          let at = 0;
+          while (at < value.length) {
+            const take = Math.min(value.length - at, buffer.length - filled);
+            buffer.set(value.subarray(at, at + take), filled);
+            filled += take;
+            at += take;
+            if (filled === buffer.length) {
+              await send(buffer.slice());
+              filled = 0;
+            }
+          }
+        }
+      } catch (error) {
+        // Close the source (the worker's temp file) rather than leave it open.
+        await reader.cancel(error).catch(() => {});
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
+      if (filled > 0) await send(buffer.slice(0, filled));
+      if (read !== size) throw new Error(`put: the body was ${read} bytes, not ${size}`);
     },
 
     async signRead(input: SignReadInput): Promise<ReadGrantBody> {

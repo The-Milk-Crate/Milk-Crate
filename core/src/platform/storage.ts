@@ -56,7 +56,13 @@ export interface SignReadInput {
   userId: string;
 }
 
-/** Start an upload, confirm it, read its first bytes, sign a read, delete. */
+export interface PutOptions {
+  /** Such as `audio/mpeg`. */
+  contentType: string;
+  sizeBytes: number;
+}
+
+/** Start an upload, confirm it, read its first bytes or all of it, write one, sign a read, delete. */
 export interface ObjectStorage {
   startUpload(input: StartUploadInput): Promise<StorageUpload>;
   /** Progress of an upload that was interrupted. */
@@ -69,6 +75,16 @@ export interface ObjectStorage {
    * cover's width and height from its PNG or JPEG header. Not for masters or large reads.
    */
   readHead(key: ObjectKey, maxBytes: number): Promise<Uint8Array>;
+  /**
+   * The whole stored object as a stream, for the worker to read a master without holding it
+   * in memory. Rejects with a not-found error when there is no object at the key.
+   */
+  read(key: ObjectKey): Promise<ReadableStream<Uint8Array>>;
+  /**
+   * Writes one object from a stream (the worker's streaming copy, under `streams/`). The body
+   * must be exactly `sizeBytes` long. Replaces an object already at the key.
+   */
+  put(key: ObjectKey, body: ReadableStream<Uint8Array>, options: PutOptions): Promise<void>;
   /**
    * The core adds the track or release id. Playback signs only a streaming copy under
    * `streams/{artist}/{release}/{track}/`, never a master.

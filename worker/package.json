@@ -1,0 +1,16 @@
+{
+  "name": "@milk-crate/worker",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 0: the processing step both workers run (check, hash and make the streaming copy of each master).",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bash test/run.sh"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "5.9.3"
+  }
+}

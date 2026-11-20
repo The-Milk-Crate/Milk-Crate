@@ -18,3 +18,9 @@ for dest in "$pkg/_core" "$pkg/supabase/functions/_core"; do
   cp -R "$src/." "$dest/"
 done
 echo "copied core/src/ to deploy/supabase/_core/ and deploy/supabase/supabase/functions/_core/"
+# Session H's processing step (worker/src/) for the worker image, in _worker/ next to _core/.
+worker_src="$(cd "$pkg/../../worker/src" && pwd)"
+rm -rf "$pkg/_worker"
+mkdir -p "$pkg/_worker"
+cp -R "$worker_src/." "$pkg/_worker/"
+echo "copied worker/src/ to deploy/supabase/_worker/"

@@ -118,6 +118,32 @@ test("one Lambda and one route per operation from functions/routes.json, matchin
   template.hasResourceProperties("AWS::ECS::TaskDefinition", {
     ContainerDefinitions: [Match.objectLike({ Environment: Match.arrayWith([Match.objectLike({ Name: "MC_BUCKET" })]) })],
   });
+  // Processing (session H): the worker task role reads only masters/* and writes only streams/*.
+  const taskRoles = Object.entries(template.findResources("AWS::IAM::Role"))
+    .filter(([, r]) => JSON.stringify(r.Properties.AssumeRolePolicyDocument).includes("ecs-tasks.amazonaws.com"))
+    .map(([id]) => id)
+    .filter((id) => id.startsWith("WorkerTaskRole"));
+  assert.equal(taskRoles.length, 1);
+  const s3Grants: string[] = [];
+  for (const policy of Object.values(template.findResources("AWS::IAM::Policy"))) {
+    if (!JSON.stringify(policy.Properties.Roles).includes(taskRoles[0])) continue;
+    for (const st of policy.Properties.PolicyDocument.Statement) {
+      for (const action of [st.Action].flat()) {
+        if (!String(action).startsWith("s3:")) continue;
+        const resource = JSON.stringify(st.Resource);
+        const where = /\/masters\/\*/.test(resource) ? "masters/*" : /\/streams\/\*/.test(resource) ? "streams/*" : /\/\*"/.test(resource) ? "*" : "bucket";
+        s3Grants.push(`${action} ${where}`);
+      }
+    }
+  }
+  assert.deepEqual(s3Grants.sort(), [
+    "s3:AbortMultipartUpload *",
+    "s3:DeleteObject *",
+    "s3:GetObject masters/*",
+    "s3:ListBucket bucket",
+    "s3:ListBucketMultipartUploads bucket",
+    "s3:PutObject streams/*",
+  ]);
   assert.throws(() => new MilkCrateStack(new App({ outdir }), "Bad", settings, [{ operationId: "x", route: "GET /other", entry: "x.ts" }]), /bad route/);
   assert.throws(() => new MilkCrateStack(new App(), "Bad2", settings, [{ operationId: "x", route: "GET /v1/x", entry: "../x.ts" }]), /bad route/);
 });

@@ -112,8 +112,10 @@ on E (400 for a confirm without CRC64NVME or parts, 404 for no object).
 task cannot start the row stays `queued`, enqueue still answers, and the hourly sweep (an
 EventBridge schedule that starts the worker with `MC_WORKER_MODE=sweep`) runs it. The worker
 skeleton is session E's, with the same rules and words (a test checks): claim with
-`api_job_started`, 4-hour limit, plain-words failures, and "Processing is not set up yet ..."
-until session H. `reportResult` hands the result to session G's `makeApplyJobResult`
+`api_job_started`, 4-hour limit, plain-words failures. The processing step is session H's
+shared one (`worker/src/`, see `worker/README.md`, copied into `_worker/` by
+`scripts/copy-core.sh`). It needs ffmpeg in the image, and the task role may read `masters/*`
+and write `streams/*` for it. `reportResult` hands the result to session G's `makeApplyJobResult`
 (`worker/wiring.ts`). The hourly sweep first runs session G's part: a job again for a release
 stuck in `processing` with no job (`makeRequeueStuckReleases`; the sweep then runs it in the
 same task), and the files of a takedown whose delete failed (`makeRetryTakedownDeletes`; the task
