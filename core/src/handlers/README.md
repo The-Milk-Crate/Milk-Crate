@@ -11,6 +11,7 @@ One handler per operation in `api/openapi.yaml`, for both deployments. Import ev
 | `makeOperations(options)`, `makeRouter(options)` | The same with your own clock, random source, invite daily limit, minimum cover size or log (`CoreOptions`). |
 | `makeApplyJobResult({ database })` | The worker's result: returns `(jobId: string, result: JobResult) => Promise<void>` for `Jobs.reportResult`. |
 | `makeRequeueStuckReleases({ database, jobs }, options?)` | For each deployment's hourly sweep: returns `() => Promise<{ requeued, failed }>`, which queues a job for every release stuck in `processing` with no queued or running job for 15 minutes (a confirm whose enqueue failed). |
+| `makeRetryTakedownDeletes({ database, storage }, options?)` | For the same sweep: returns `() => Promise<{ deleted, failed }>`, which deletes the files again for every takedown older than 15 minutes whose `files_deleted_at` is still empty, then marks it done. |
 
 The handler sees the contract's path (`/v1/...`). Each handler checks its own method and path,
 so it works behind the router or as a function of its own.
@@ -25,7 +26,8 @@ so it works behind the router or as a function of its own.
 - `Identity.whoIs` gives the user id and the token's account type. Every call that needs the
   type also reads the caller's `api_accounts` row: a missing, changed or suspended row acts as
   `end_user` at once (settled with session C).
-- Email failures and storage deletes after a takedown are logged, never answered as errors.
+- Email failures and storage deletes after a takedown are logged, never answered as errors. The
+  two sweep functions above pick up a missing job and undeleted takedown files.
 - Decided by K Marcus: a cover is at least 1400 pixels a side; invitations are 5 sends per party
   per UTC day; the owner's own share is the party with no email; `respondToSplit` returns only
   the invitee's own party; `putRights` needs both sides at 100.

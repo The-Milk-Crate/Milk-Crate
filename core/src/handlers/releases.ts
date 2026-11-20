@@ -361,7 +361,7 @@ export function releaseOperations(s: Settings) {
     });
 
     // Then the files. A failure leaves files_deleted_at empty on the audit row and is logged;
-    // the release stays taken down either way.
+    // the release stays taken down either way, and makeRetryTakedownDeletes tries again later.
     await deletePrefixes(ctx, done.auditId, done.prefixes);
     await emailOwner(ctx.modules, ctx.settings.log, releaseId, "release_taken_down", {
       releaseTitle: done.title,
@@ -392,4 +392,58 @@ async function deletePrefixes(ctx: Context, auditId: string, prefixes: string[])
       `takedown ${auditId}: deleting the files failed, files_deleted_at stays empty: ${(error as Error)?.message ?? String(error)}`,
     );
   }
+}
+
+export interface RetryTakedownOptions {
+  /** Only takedowns at least this old, so a takedown still deleting is left alone. Default 15 minutes. */
+  olderThanMinutes?: number;
+  /** At most this many per call. Default 50. */
+  limit?: number;
+  /** Where a failed delete is written. Default: `console.error`. */
+  log?: (message: string) => void;
+}
+
+export interface RetryTakedownResult {
+  /** Audit rows whose files are now deleted. */
+  deleted: string[];
+  /** Audit rows whose delete failed again; the next sweep tries them again. */
+  failed: string[];
+}
+
+/**
+ * Finds takedowns whose files were not all deleted (storage failed during takedownRelease, so
+ * the audit row's files_deleted_at is still empty), deletes the release's prefixes again and
+ * marks the row done. Deleting a prefix twice is harmless. Each deployment's hourly sweep calls
+ * this.
+ */
+export function makeRetryTakedownDeletes(
+  modules: Pick<Modules, "database" | "storage">,
+  options: RetryTakedownOptions = {},
+): () => Promise<RetryTakedownResult> {
+  const minutes = options.olderThanMinutes ?? 15;
+  const limit = options.limit ?? 50;
+  const log = options.log ?? ((message: string) => console.error(message));
+  return async () => {
+    const rows = await modules.database.query<{ id: string; prefixes: string }>(
+      `select l.id::text as id, (l.removed -> 'prefixes')::text as prefixes
+         from public.api_audit_log l
+        where l.action = 'takedown' and l.files_deleted_at is null
+          and l.created_at < now() - make_interval(mins => $1::integer)
+        order by l.created_at
+        limit $2::integer`,
+      [minutes, limit],
+    );
+    const result: RetryTakedownResult = { deleted: [], failed: [] };
+    for (const row of rows) {
+      try {
+        for (const prefix of JSON.parse(row.prefixes) as string[]) await modules.storage.delete(prefix);
+        await modules.database.query("select public.api_takedown_files_deleted($1::uuid)", [row.id]);
+        result.deleted.push(row.id);
+      } catch (error) {
+        log(`takedown ${row.id}: deleting the files failed again: ${(error as Error)?.message ?? String(error)}`);
+        result.failed.push(row.id);
+      }
+    }
+    return result;
+  };
 }

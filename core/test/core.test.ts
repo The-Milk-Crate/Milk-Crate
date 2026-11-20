@@ -1,7 +1,7 @@
 // The router, error mapping, image reader, release edits and listing.
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { imageSize, makeRouter, operations } from "../src/handlers/index.ts";
+import { imageSize, makeRetryTakedownDeletes, makeRouter, operations } from "../src/handlers/index.ts";
 import { mapModuleError } from "../src/handlers/http.ts";
 import { account, db, harness, jpegHead, pngHead, releaseState, seedRelease, testOptions, uuid } from "./helpers.ts";
 import { DatabaseError } from "./pg.ts";
@@ -225,5 +225,23 @@ describe("takedown when storage fails", () => {
     assert.ok(h.options.logs.some((l) => l.includes("deleting the files failed")));
     assert.ok(h.options.logs.some((l) => l.includes("release_taken_down")));
     assert.equal((await h.call("takedownRelease", { as: await account("administrator"), params: { releaseId: s.releaseId }, body: { reason: " " } })).status, 400);
+
+    // The sweep: left alone during the grace period, then deleted and marked done once storage is back.
+    h.modules.storage.objects.set(s.coverKey, new Uint8Array([1]));
+    h.modules.storage.objects.set(s.streamKey, new Uint8Array([1]));
+    const retry = makeRetryTakedownDeletes(h.modules, { limit: 1000, log: (m) => h.options.logs.push(m) });
+    assert.ok(!(await retry()).deleted.includes(r.body.auditId));
+    await db.query("update public.api_audit_log set created_at = now() - interval '20 minutes' where id = $1::uuid", [r.body.auditId]);
+    const again = await retry();
+    assert.ok(again.failed.includes(r.body.auditId), "storage still down");
+    assert.ok(h.options.logs.some((l) => l.includes("failed again")));
+    h.modules.storage.failDelete = false;
+    const done = await retry();
+    assert.ok(done.deleted.includes(r.body.auditId));
+    assert.equal(h.modules.storage.objects.has(s.coverKey), false);
+    assert.equal(h.modules.storage.objects.has(s.streamKey), false);
+    const [after] = await db.query<{ deleted: boolean }>("select files_deleted_at is not null as deleted from public.api_audit_log where id = $1::uuid", [r.body.auditId]);
+    assert.equal(after.deleted, true);
+    assert.ok(!(await retry()).deleted.includes(r.body.auditId), "done once");
   });
 });

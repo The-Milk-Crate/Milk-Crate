@@ -15,6 +15,7 @@ export {
   type RequeueResult,
 } from "./jobs.ts";
 export { makeOperations, makeRouter, type OperationId } from "./router.ts";
+export { makeRetryTakedownDeletes, type RetryTakedownOptions, type RetryTakedownResult } from "./releases.ts";
 export type { CoreOptions, Operation } from "./context.ts";
 export { imageSize, type ImageSize } from "./image.ts";
 export { hashInviteCode } from "./rights.ts";
