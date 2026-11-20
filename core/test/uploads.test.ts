@@ -156,11 +156,11 @@ describe("cover art", () => {
     assert.equal((await h.call("getCover", { as: artist, params: { releaseId } })).status, 404, "no cover");
   });
 
-  it("a minimum size can be set (an open point)", async () => {
-    const h = harness("tus", { minCoverPixels: 1400 });
+  it("a cover under 1400 pixels a side is 422 too_small (decided by K Marcus)", async () => {
+    const h = harness();
     const artist = await account("artist");
     const { releaseId } = await draft(h, artist);
-    const id = await coverUpload(h, artist, releaseId, "png", pngHead(1000, 1000));
+    const id = await coverUpload(h, artist, releaseId, "png", pngHead(1399, 1399));
     const r = await h.call("confirmUpload", { as: artist, params: { uploadId: id }, body: { sha256: "c".repeat(64) } });
     assert.equal(r.status, 422);
     assert.equal(r.body.code, "too_small");

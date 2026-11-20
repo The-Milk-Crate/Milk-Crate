@@ -11,7 +11,7 @@ export interface CoreOptions {
   newRequestId?: () => string;
   /** Invitations sent per party per UTC day, the first one included. Default 5. */
   inviteDailyLimit?: number;
-  /** Smallest cover side in pixels. Default 1 (any square image); an open point. */
+  /** Smallest cover side in pixels. Default 1400 (decided by K Marcus). */
   minCoverPixels?: number;
   /** Where unexpected errors are written. Default: `console.error`. */
   log?: (message: string) => void;
@@ -38,7 +38,7 @@ export function settings(options: CoreOptions = {}): Settings {
       }),
     newRequestId: options.newRequestId ?? (() => crypto.randomUUID()),
     inviteDailyLimit: options.inviteDailyLimit ?? 5,
-    minCoverPixels: options.minCoverPixels ?? 1,
+    minCoverPixels: options.minCoverPixels ?? 1400,
     log: options.log ?? ((message) => console.error(message)),
   };
 }

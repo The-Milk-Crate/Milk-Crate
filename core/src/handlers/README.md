@@ -25,6 +25,9 @@ so it works behind the router or as a function of its own.
   type also reads the caller's `api_accounts` row: a missing, changed or suspended row acts as
   `end_user` at once (settled with session C).
 - Email failures and storage deletes after a takedown are logged, never answered as errors.
+- Decided by K Marcus: a cover is at least 1400 pixels a side; invitations are 5 sends per party
+  per UTC day; the owner's own share is the party with no email; `respondToSplit` returns only
+  the invitee's own party; `putRights` needs both sides at 100.
 
 ## Tests
 
