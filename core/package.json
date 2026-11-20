@@ -2,12 +2,18 @@
   "name": "@milk-crate/core",
   "private": true,
   "version": "0.0.0",
-  "description": "Shared types and platform interfaces. No runtime dependencies.",
+  "description": "Shared types, platform interfaces and the handlers. No runtime dependencies.",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "bash test/run.sh"
   },
   "devDependencies": {
+    "@types/node": "22.18.0",
+    "postgres": "3.4.9",
     "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

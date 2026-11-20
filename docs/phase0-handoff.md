@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 20 November 2026, after four sandbox runs.
+For K Marcus and the next session. Last updated 20 November 2026, after four sandbox runs and session G1.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -37,6 +37,18 @@ current state and the next steps. Update it when a step is done.
   MC404`). Tear-down finished (`MilkCratePhase0: destroyed`, CloudFront key secret deleted), so
   nothing was left in the account. Smoke test about 3 minutes, tear-down about 22. The AWS side
   is clean except SES.
+- G1, the shared handlers (#31): every operation in `core/src/handlers/`, exported from
+  `core/src/handlers/index.ts` (the 21 handlers, `operations` with each route, `router`), plus
+  `makeApplyJobResult` for the workers and two sweep functions, `makeRequeueStuckReleases` and
+  `makeRetryTakedownDeletes`. Tests: `bash core/test/run.sh` (also on Deno with `DENO=...`),
+  CI job `core-handlers`. Decided by K Marcus on 20 November (details in #31):
+  - covers at least 1400 pixels a side;
+  - invite limits as built: 10 wrong codes per party an hour (B's), 5 sends per party a day;
+  - the owner's own share is the party with no email (no `isOwner` field until Phase 1);
+  - `respondToSplit` returns only the invitee's own party (a contract wording fix for later);
+  - `putRights` needs both sides at 100;
+  - `createRelease` and `recordPlays` stay without a rate limit in Phase 0 (for session I to
+    flag, and a later session to add on both clouds).
 - Rule change: each session adds one CI job for its own tests in its own pull request ("D: CI",
   "Adding a test job"). No more session D follow-ups.
 
@@ -58,28 +70,40 @@ current state and the next steps. Update it when a step is done.
 2. Done (20 November 2026): run 4 of the sandbox, checking the Scheduler fix (#28). All
    checks `ok` except SES; torn down cleanly. See "Done" above.
 
-3. Session G1, the shared handlers: `docs/phase0-prompts/g1-core.md`. See "From E and F" in
-   G's section of `docs/phase0-sessions.md` (the job-result path, entry points, error mapping,
-   the `s3_multipart` confirm check).
+3. Done (20 November 2026): session G1, the shared handlers (#31). See "Done" above.
+   K Marcus adds `core-handlers` to the required checks on `milk-crate-backend-poc`.
 
-4. Session H, processing: `docs/phase0-prompts/h-processing.md`. See "From F" in H's section
+4. Wire G1 into E and F (a small follow-up session, before H, because H's worker must report its
+   result). Code goes in `deploy/supabase/` and `deploy/aws/` only:
+   - one entry point per operation: `deploy/supabase/supabase/functions/<op>/index.ts` with
+     `serveOperation`, and `deploy/aws/functions/<op>.ts` plus a line in `routes.json`. Take the
+     routes from `operations` in `core/src/handlers/index.ts`;
+   - replace both `worker/wiring.ts` stubs with `makeApplyJobResult(modules)`;
+   - call `makeRequeueStuckReleases(modules)()` and `makeRetryTakedownDeletes(modules)()` from
+     each worker's hourly sweep.
+   Then a sandbox run (step 8's workflow) can call the real API for the first time.
+
+5. Session H, processing: `docs/phase0-prompts/h-processing.md`. See "From F" in H's section
    (the worker's S3 access).
 
-5. Session G2, the cross-cloud check, best after H (its scenario plays a track, which needs a
+6. Session G2, the cross-cloud check, best after H (its scenario plays a track, which needs a
    streaming copy). Its real-deployment script can use a sandbox run kept with
    `MC_SANDBOX_KEEP=true`.
 
-6. Session I, the security review.
+7. Session I, the security review. Include the missing rate limits on `createRelease` and
+   `recordPlays` (decided: not in Phase 0).
 
-7. A larger sandbox run after I, with the same workflow.
+8. A larger sandbox run after I, with the same workflow.
 
 ## Still open
 
 - SES: DKIM records for the sending domain and production access, before email reaches
   unverified addresses. There is no email domain yet; `MC_EMAIL_DOMAIN` is `example.com`. The
   smoke test's email check needs `MC_SMOKE_EMAIL_TO`, which the workflow does not pass yet.
-- Not yet checked against real AWS: SES sending, and the Fargate worker doing real processing
-  (session H).
+- Not yet checked against real AWS: SES sending, the Fargate worker doing real processing
+  (session H), and the handlers behind API Gateway and Lambda (after step 4).
+- Two handler limits noted in #31: a failed email is only logged (the owner can resend an
+  invitation), and two sweeps at the same moment could queue an extra, harmless job.
 - The owner and repository ids are written into `deploy/aws/infra/github-oidc.json`. They
   survive a rename; a transfer or a new repository needs new ones.
 
