@@ -1,0 +1,19 @@
+{
+  "name": "@milk-crate/cross-cloud",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 0: one scenario run on the Supabase and the AWS module sets, compared; and the same scenario for real deployments (run-live.ts).",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bash run.sh",
+    "live": "node run-live.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "jose": "6.2.3",
+    "typescript": "5.9.3",
+    "yaml": "2.8.4"
+  }
+}

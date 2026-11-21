@@ -67,7 +67,8 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | E (done) | `docs/phase0-prompts/e-supabase.md`. Merged; see "E: Supabase deployment" below and `deploy/supabase/README.md`. |
 | F (done) | `docs/phase0-prompts/f-aws.md`. Merged (#23, #24); see "F: AWS deployment" below and `deploy/aws/README.md`. |
 | G stage 1 (done) | `docs/phase0-prompts/g1-core.md`. Merged (#31), and wired into E and F (#32); see `docs/phase0-handoff.md`. |
-| G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md` |
+| G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md`. Pull request open; see `tests/cross-cloud/README.md`. |
+| G3 | `docs/phase0-prompts/g3-fixes.md`. The fixes K Marcus decided from G2's findings; runs before I. |
 | H | `docs/phase0-prompts/h-processing.md` |
 | I | `docs/phase0-prompts/i-security-review.md` |
 
