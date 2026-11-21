@@ -179,8 +179,19 @@ current state and the next steps. Update it when a step is done.
    - `tests/cross-cloud/lib/findings.ts` is empty. Not run for real yet: the late pass on a real
      sweep, and Supabase's real TUS token lifetime.
 
-8. Session I, the security review. Include the missing rate limits on `createRelease` and
-   `recordPlays` (decided: not in Phase 0).
+8. Done (21 November 2026, merged #38): session I, the security review,
+   `docs/security/review-phase0.md`: 16 findings (2 high, 5 medium, 9 low), each with K Marcus's
+   decision. The rate limits on `createRelease` and `recordPlays` are now in Phase 0 (this
+   replaces the earlier "not in Phase 0"). `build.yml`'s actions were pinned by commit
+   separately (#39, merged into `main`).
+
+8a. Sessions J1 to J4, the fixes from session I, by owner. They can run at the same time:
+   - J1 `docs/phase0-prompts/j1-core-fixes.md`: database, handlers, email templates;
+   - J2 `docs/phase0-prompts/j2-supabase-fixes.md`: Supabase deployment;
+   - J3 `docs/phase0-prompts/j3-aws-fixes.md`: AWS deployment;
+   - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
+   J2 and J3 each add a few lines to this file (different sections); merge one, then update the
+   other's branch.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the

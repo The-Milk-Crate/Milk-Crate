@@ -70,7 +70,11 @@ E, F and G stage 1 merged. I runs after everything else is merged and before the
 | G stage 2 | `docs/phase0-prompts/g2-cross-cloud.md`. Pull request open; see `tests/cross-cloud/README.md`. |
 | G3 | `docs/phase0-prompts/g3-fixes.md`. The fixes K Marcus decided from G2's findings; runs before I. |
 | H | `docs/phase0-prompts/h-processing.md` |
-| I | `docs/phase0-prompts/i-security-review.md` |
+| I (done) | `docs/phase0-prompts/i-security-review.md`. Merged (#38); the report and K Marcus's decisions are in `docs/security/review-phase0.md`. |
+| J1 | `docs/phase0-prompts/j1-core-fixes.md`. Session I's fixes in the database, the handlers and the email templates (B's and G's code). |
+| J2 | `docs/phase0-prompts/j2-supabase-fixes.md`. Session I's fixes in the Supabase deployment (E's code). |
+| J3 | `docs/phase0-prompts/j3-aws-fixes.md`. Session I's fixes in the AWS deployment (F's code). |
+| J4 | `docs/phase0-prompts/j4-worker-fixes.md`. Session I's fix in the worker (H's code). |
 
 If a prompt and a section below disagree, the prompt is newer; tell K Marcus.
 
