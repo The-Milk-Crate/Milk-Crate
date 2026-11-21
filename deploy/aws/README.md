@@ -118,7 +118,7 @@ shared one (`worker/src/`, see `worker/README.md`, copied into `_worker/` by
 and write `streams/*` for it. `reportResult` hands the result to session G's `makeApplyJobResult`
 (`worker/wiring.ts`). The hourly sweep first runs session G's part: a job again for a release
 stuck in `processing` with no job (`makeRequeueStuckReleases`; the sweep then runs it in the
-same task), and the files of a takedown whose delete failed (`makeRetryTakedownDeletes`; the task
+same task), and a takedown's files once more, also at least 2 hours after it (`makeRetryTakedownDeletes`; the task
 role may list and delete in the bucket for this). The worker imports them from `_core/`, the copy
 of `core/src/` that `scripts/copy-core.sh` makes before CDK builds the image.
 

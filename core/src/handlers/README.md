@@ -11,7 +11,7 @@ One handler per operation in `api/openapi.yaml`, for both deployments. Import ev
 | `makeOperations(options)`, `makeRouter(options)` | The same with your own clock, random source, invite daily limit, minimum cover size or log (`CoreOptions`). |
 | `makeApplyJobResult({ database })` | The worker's result: returns `(jobId: string, result: JobResult) => Promise<void>` for `Jobs.reportResult`. |
 | `makeRequeueStuckReleases({ database, jobs }, options?)` | For each deployment's hourly sweep: returns `() => Promise<{ requeued, failed }>`, which queues a job for every release stuck in `processing` with no queued or running job for 15 minutes (a confirm whose enqueue failed). |
-| `makeRetryTakedownDeletes({ database, storage }, options?)` | For the same sweep: returns `() => Promise<{ deleted, failed }>`, which deletes the files again for every takedown older than 15 minutes whose `files_deleted_at` is still empty, then marks it done. |
+| `makeRetryTakedownDeletes({ database, storage }, options?)` | For the same sweep: returns `() => Promise<{ deleted, waiting, failed }>`, which deletes the files again for every takedown older than 15 minutes whose `files_deleted_at` is still empty. Only a delete that starts 2 hours or more after the takedown (`latePassMinutes`, the late pass) marks it done, so a file an upload stored after the takedown is deleted too; `takedownRelease` itself never marks it. |
 
 The handler sees the contract's path (`/v1/...`). Each handler checks its own method and path,
 so it works behind the router or as a function of its own.

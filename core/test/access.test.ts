@@ -64,7 +64,7 @@ async function outcome(op: string, as: Account, s: Seeded, state: ReleaseState):
     case "getCover":
       return String((await h.call("getCover", { as, params: { releaseId: s.releaseId } })).status);
     case "getUpload":
-      return String((await h.call("getUpload", { as, params: { uploadId: s.uploadId } })).status);
+      return String((await h.call("getUpload", { as, params: { uploadId: s.openUploadId } })).status);
     case "listReleases": {
       const r = await listed(as, state, s.releaseId);
       return r === true ? "listed" : r === false ? "not_listed" : String(r);
@@ -126,7 +126,7 @@ describe("read access from db/test/access-expected.json", () => {
       ["getPublicRelease", { releaseId: s.releaseId }],
       ["getPlayback", { trackId: s.trackIds[0] }],
       ["getCover", { releaseId: s.releaseId }],
-      ["getUpload", { uploadId: s.uploadId }],
+      ["getUpload", { uploadId: s.openUploadId }],
       ["listReleases", {}],
     ] as const) {
       const r = await h.call(op, { params });

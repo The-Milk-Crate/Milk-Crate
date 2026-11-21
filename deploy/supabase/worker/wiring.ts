@@ -13,7 +13,7 @@ export function applyJobResultWith(database: Database): ApplyJobResult {
  * The hourly sweep's part from session G, run before the worker's own sweep:
  *   - queues a job again for a release stuck in processing with no job (a confirm whose enqueue
  *     failed). Jobs.enqueue starts a machine for it; if that fails, the worker's sweep runs it;
- *   - deletes again the files of a takedown whose delete failed.
+ *   - deletes a takedown's files again, and once more at least 2 hours after it (the late pass).
  */
 export async function coreSweep(
   modules: { database: Database; jobs: Jobs; storage: ObjectStorage },
@@ -22,5 +22,7 @@ export async function coreSweep(
   const requeued = await makeRequeueStuckReleases(modules, { log })();
   log(`requeued ${requeued.requeued.length} stuck releases (${requeued.failed.length} failed)`);
   const takedowns = await makeRetryTakedownDeletes(modules, { log })();
-  log(`deleted the files of ${takedowns.deleted.length} takedowns (${takedowns.failed.length} failed)`);
+  log(
+    `deleted the files of ${takedowns.deleted.length} takedowns, ${takedowns.waiting.length} waiting for the late pass (${takedowns.failed.length} failed)`,
+  );
 }

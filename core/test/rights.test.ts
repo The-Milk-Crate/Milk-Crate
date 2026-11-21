@@ -129,6 +129,37 @@ describe("putRights", () => {
     assert.equal(dropped.body.parties.length, 2);
   });
 
+  it("getRelease lists the parties in the order sent, also after a reorder (position)", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const s = await seedRelease(artist, "draft");
+    const sent = [
+      { side: "composition", role: "publisher", name: "P", email: "p@example.invalid", percent: 10 },
+      { side: "recording", role: "artist", name: "Me", percent: 25 },
+      ...Array.from({ length: 6 }, (_, i) => ({ side: "recording", role: "player", name: `R${i}`, email: `r${i}@example.invalid`, percent: 12.5 })),
+      { side: "composition", role: "songwriter", name: "Me", percent: 90 },
+    ];
+    const put = await h.call("putRights", { as: artist, params: { releaseId: s.releaseId }, body: { parties: sent } });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    const names = (parties: { name: string }[]) => parties.map((p) => p.name);
+    assert.deepEqual(names(put.body.parties), sent.map((p) => p.name));
+    const read = await h.call("getRelease", { as: artist, params: { releaseId: s.releaseId } });
+    assert.deepEqual(names(read.body.rights.parties), sent.map((p) => p.name));
+
+    // The same parties, reversed: only the order changes, so states and codes are kept.
+    const reversed = [...put.body.parties].reverse().map((p: Record<string, unknown>) => ({
+      id: p.id, side: p.side, role: p.role, name: p.name, percent: p.percent, ...(p.email ? { email: p.email } : {}),
+    }));
+    const codes = async () =>
+      (await db.query<{ id: string; hash: string | null }>("select id::text as id, invite_code_hash as hash from public.api_parties where release_id = $1::uuid order by id", [s.releaseId]));
+    const before = await codes();
+    const again = await h.call("putRights", { as: artist, params: { releaseId: s.releaseId }, body: { parties: reversed } });
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    const reread = await h.call("getRelease", { as: artist, params: { releaseId: s.releaseId } });
+    assert.deepEqual(names(reread.body.rights.parties), reversed.map((p) => p.name as string));
+    assert.deepEqual(await codes(), before, "a reorder voids no code");
+  });
+
   it("a party needs an email, and the owner's share has none", async () => {
     const h = harness();
     const artist = await account("artist");

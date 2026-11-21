@@ -223,7 +223,7 @@ for (const method of ["tus", "s3_multipart"] as const) {
            from public.api_audit_log where id = $1::uuid`,
         [down.body.auditId],
       );
-      assert.equal(audit.deleted, true);
+      assert.equal(audit.deleted, false, "marked done only by the sweep's late pass");
       assert.equal(audit.actor, admin.userId);
       assert.equal(audit.reason, "Not their music.");
       assert.deepEqual(JSON.parse(audit.removed).prefixes, h.modules.storage.deleted);

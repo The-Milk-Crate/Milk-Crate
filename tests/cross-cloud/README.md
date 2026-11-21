@@ -22,7 +22,7 @@ CI job: `cross-cloud` in `.github/workflows/phase0-checks.yml`.
 
 | | Supabase (session E) | AWS (session F) |
 |---|---|---|
-| Modules | `createSupabaseModules` itself, from settings, with `MC_FILE_SIZE_LIMIT=50MiB` as on the free project | wired as `createAwsModules` does, with each SDK client replaced at its `send` edge |
+| Modules | `createSupabaseModules` itself, from settings, with `MC_FILE_SIZE_LIMIT=50MiB` as on the free project | `createAwsModules` itself, from settings, with each SDK client, the presigner, the cookie signer and the key lookup passed in as fakes |
 | HTTP | the one `api` Edge Function: `edgeFunctions(...).handle("*", router, ...)` | one Lambda per `functions/routes.json` entry (`lambdaFunctions`), behind API Gateway's route match |
 | Database | local Postgres with C's Supabase stand-in and E's pg_cron stand-in, set up by E's `scripts/apply-sql.sh` | F's Data API stand-in (`test/fake-data-api.ts`) over local Postgres, migrations applied F's way (`test/apply-split.ts`) |
 | Identity | ES256 tokens checked against the project's JWKS (served to E's module), `account_type` claim | RS256 Cognito access tokens with `cognito:groups` (`cognitoIdentity`) |
@@ -31,7 +31,8 @@ CI job: `cross-cloud` in `.github/workflows/phase0-checks.yml`.
 | Email | Resend's HTTP API, faked | SES `SendEmail`, faked |
 | Worker | `deploy/supabase/worker/run.ts` with session H's step (`worker/src/`) and ffmpeg | `deploy/aws/worker/run.ts` with the same step |
 
-Both use session G's `makeApplyJobResult` for job results, as each `worker/main.ts` does.
+Both use session G's `makeApplyJobResult` for job results, as each `worker/main.ts` does, and each
+worker's `coreSweep` (`worker/wiring.ts`) for the hourly sweep's late pass after a takedown.
 
 ## What "behave the same" means here
 
@@ -55,7 +56,8 @@ Every answer is also checked against the contract's response schema.
 - `test/access.test.ts`: every cell of `db/test/access-expected.json` on both sides, the
   invitation cases and callers, and the staff row check (settled with session C).
 - `test/live.test.ts`: `run-live.ts` against the mocks only.
-- `lib/findings.ts`: what the check found and does not fix (listed in the pull request).
+- `lib/findings.ts`: what the check found and does not fix (listed in the pull request). Empty since
+  session G3 fixed G2's three findings; a test checks it stays empty until a new one is listed.
 
 ## run-live.ts: real deployments
 
@@ -102,8 +104,8 @@ How it stays safe:
 What it cannot check on a real deployment, and skips with the reason: accepting invitations (the
 codes are only in the emails), firing the go-live schedule (it runs at 00:00 UTC on the release
 date; the first release stays `scheduled` and is taken down), counting qualified streams, the
-storage and audit rows after a takedown, and the suspended or removed accounts. The mocks check
-all of those.
+storage and audit rows after a takedown, the sweep's late pass (it runs 2 hours or more after the
+takedown), and the suspended or removed accounts. The mocks check all of those.
 
 Needs Node 22.18 or newer, ffmpeg, and `npm ci` in `tests/cross-cloud/` (it reads the contract
 with `yaml`).

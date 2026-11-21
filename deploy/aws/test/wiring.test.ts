@@ -64,8 +64,16 @@ describe("worker wiring to session G (Data API stand-in)", { skip: NEEDS_DB }, (
       `streams/${down.artistId}/${down.releaseId}/`,
       `art/${down.artistId}/${down.releaseId}/`,
     ]);
-    const [{ done }] = await db.query<{ done: boolean }>("select files_deleted_at is not null as done from public.api_audit_log where id = $1::uuid", [audit_id]);
-    assert.equal(done, true);
+    const isDone = async () =>
+      (await db.query<{ done: boolean }>("select files_deleted_at is not null as done from public.api_audit_log where id = $1::uuid", [audit_id]))[0].done;
+    assert.equal(await isDone(), false, "an hour on: deleted, but the late pass waits for 2 hours");
+
+    // The late pass, 2 hours or more after the takedown, deletes once more and marks it done.
+    await db.query("update public.api_audit_log set created_at = now() - interval '3 hours' where id = $1::uuid", [audit_id]);
+    deleted.length = 0;
+    await coreSweep({ database: db, jobs, storage }, (m) => logs.push(m));
+    assert.equal(deleted.length, 3);
+    assert.equal(await isDone(), true);
     assert.ok(logs.some((l) => /requeued [1-9]/.test(l)));
   });
 });

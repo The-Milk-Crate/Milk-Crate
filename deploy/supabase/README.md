@@ -99,8 +99,9 @@ sweep does the same for any job still `running` past the limit (its machine died
 moves to `failed` and the artist uploads again. A late report from the old machine changes
 nothing, because a finished job is left alone. `reportResult` hands the result to session G's
 `makeApplyJobResult` (`worker/wiring.ts`). The hourly sweep first runs session G's part: a job
-again for a release stuck in `processing` with no job (`makeRequeueStuckReleases`), and the
-files of a takedown whose delete failed (`makeRetryTakedownDeletes`). The worker imports them
+again for a release stuck in `processing` with no job (`makeRequeueStuckReleases`), and a
+takedown's files once more, also at least 2 hours after it, when the upload tokens signed before it
+have expired (`makeRetryTakedownDeletes`). The worker imports them
 from `_core/`, the copy of `core/src/` that `scripts/copy-core.sh` makes before the image is built.
 
 **Processing.** Session H's shared step (`worker/src/`, see `worker/README.md`), copied into

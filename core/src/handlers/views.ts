@@ -69,11 +69,12 @@ export async function trackRows(db: Queryable, releaseId: string): Promise<Track
   );
 }
 
+/** A release's parties in the order the artist sent them (position, from putRights). */
 export async function partyRows(db: Queryable, releaseId: string): Promise<PartyRow[]> {
   return db.query<PartyRow>(
     `select p.id::text as id, p.side, p.role, p.name, p.email, p.percent::text as percent, p.state, p.is_owner,
             (p.invite_code_hash is not null) as has_code
-       from public.api_parties p where p.release_id = $1::uuid order by p.created_at, p.id`,
+       from public.api_parties p where p.release_id = $1::uuid order by p.position, p.created_at, p.id`,
     [releaseId],
   );
 }

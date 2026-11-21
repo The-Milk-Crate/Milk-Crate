@@ -6,6 +6,7 @@
   "settled": {
     "staffRowCheck": "Settled by K Marcus: on staff endpoints and staff reads (reviewRelease, takedownRelease, and the administrator and internal rows of getRelease, listReleases, getPlayback and getCover), the handler checks the caller's api_accounts row as well as the token. The row must exist, have the token's account_type and not be suspended; otherwise the caller is treated as end_user (so 403 on the staff-only calls). A new role still waits for the token refresh; a removed or suspended staff role stops at once.",
     "otherArtistRelease": "Settled by K Marcus: an artist asking for another artist's release gets 404 (hidden), not 403. 403 is for an account type that may not call the operation.",
+    "getUploadClosed": "Settled by K Marcus (session G3): getUpload answers 409 upload_closed for an upload that is not open, before it calls storage, so Supabase signs no fresh upload token for it. The owner's cell is checked on an open upload, which takedown cancels: 200 in every state but taken_down, 409 there. 409 still means the owner can read the api_uploads row, so C's row level checks count 200 and 409 both as visible.",
     "recordPlaysHiddenTrack": "Settled by K Marcus: recordPlays accepts events for a track whose release is not live (202, kept, never qualified), the same for every account type. Only an unknown track id is refused (422)."
   },
   "operations": {
@@ -221,7 +222,7 @@
       }
     },
     "getUpload": {
-      "about": "An upload session. The release owner only; staff do not read uploads. 403: the account type may not call it. 404: not the owner's.",
+      "about": "An open upload session. The release owner only; staff do not read uploads. 403: the account type may not call it. 404: not the owner's. 409: the owner may read the row, but the upload is not open (takedown cancels open uploads; settled).",
       "byAccountType": {
         "end_user": {
           "other": {
@@ -230,7 +231,8 @@
         },
         "artist": {
           "own": {
-            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]
+            "200": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed"],
+            "409": ["taken_down"]
           },
           "other": {
             "404": ["draft", "uploading", "processing", "awaiting_splits", "awaiting_review", "needs_changes", "scheduled", "live", "failed", "taken_down"]

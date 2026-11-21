@@ -106,6 +106,8 @@ export interface Seeded {
   trackIds: string[];
   artistId: string;
   uploadId: string;
+  /** A second master upload for track 1: open, or cancelled in taken_down (as takedown leaves it). */
+  openUploadId: string;
   streamKey: string;
   coverKey: string;
 }
@@ -113,7 +115,8 @@ export interface Seeded {
 /**
  * A release in any state, written straight in with session B's triggers off (test only), with
  * a confirmed master, a streaming copy key, a cover and an upload row, so read access can be
- * checked in every state. Real moves are tested through the handlers.
+ * checked in every state. Plus an open upload (cancelled in taken_down) for getUpload, which
+ * answers 409 for any upload that is not open. Real moves are tested through the handlers.
  */
 export async function seedRelease(owner: Account, state: ReleaseState, opts: { tracks?: number } = {}): Promise<Seeded> {
   const tracks = opts.tracks ?? 1;
@@ -122,6 +125,7 @@ export async function seedRelease(owner: Account, state: ReleaseState, opts: { t
   const trackIds = Array.from({ length: tracks }, () => randomUUID());
   const uploadId = randomUUID();
   const coverUploadId = randomUUID();
+  const openUploadId = randomUUID();
   const streamKey = `streams/${artistId}/${releaseId}/${trackIds[0]}/stream.m4a`;
   const coverKey = `art/${artistId}/${releaseId}/cover/original`;
   await db.transaction(async (tx) => {
@@ -165,8 +169,15 @@ export async function seedRelease(owner: Account, state: ReleaseState, opts: { t
        values ($1::uuid, $2::uuid, $3::text, 'png', 100, 3000, 3000)`,
       [releaseId, coverUploadId, coverKey],
     );
+    await tx.query(
+      `insert into public.api_uploads (id, release_id, track_id, kind, method, provider_upload_id, object_key, format,
+                                       size_bytes, state)
+       values ($1::uuid, $2::uuid, $3::uuid, 'master', 'tus', 'seeded-open', format('masters/%s/%s/%s/original', $4::text, $2::text, $3::text),
+               'wav', 1000, $5::text)`,
+      [openUploadId, releaseId, trackIds[0], artistId, state === "taken_down" ? "cancelled" : "open"],
+    );
   });
-  return { releaseId, trackIds, artistId, uploadId, streamKey, coverKey };
+  return { releaseId, trackIds, artistId, uploadId, openUploadId, streamKey, coverKey };
 }
 
 /** Moves a release straight to a state with triggers off (test only). */

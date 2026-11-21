@@ -42,6 +42,13 @@ export async function mockTarget(d: MockDeployment): Promise<Target> {
     fireSchedule: (name) => d.fireSchedule(name),
     scheduledAt: (name) => d.scheduledAt(name),
     storageKeys: (prefix) => d.keys(prefix),
+    async lateTakedownPass(auditId) {
+      // The takedown, 2 hours and a minute ago (as core's tests move the time back), then the sweep.
+      await d.db.query("update public.api_audit_log set created_at = now() - interval '121 minutes' where id = $1::uuid", [auditId]);
+      await d.sweep();
+      const [row] = await d.db.query<{ done: boolean }>("select files_deleted_at is not null as done from public.api_audit_log where id = $1::uuid", [auditId]);
+      return row.done;
+    },
     async auditRow(auditId) {
       const [row] = await d.db.query<{ reason: string; removed: unknown }>(
         "select reason, removed from public.api_audit_log where id = $1::uuid",

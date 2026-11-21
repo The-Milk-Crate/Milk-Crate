@@ -188,29 +188,27 @@ export function rightsOperations(s: Settings) {
         [releaseId, JSON.stringify(keptIds)],
       );
 
-      const ids: string[] = [];
-      for (const p of parties) {
+      // Each party's place in the request is its position, so getRelease keeps the order sent.
+      for (const [position, p] of parties.entries()) {
         const percent = (p.hundredths / 100).toFixed(2);
         if (p.id !== null) {
           // Session B's trigger sends a changed party back to invited and voids its code. An
-          // unchanged party keeps its state and code.
+          // unchanged party keeps its state and code; a new position alone changes neither.
           await tx.query(
             `update public.api_parties p
-                set side = $2::text, role = $3::text, name = $4::text, email = $5::text, percent = $6::numeric
+                set side = $2::text, role = $3::text, name = $4::text, email = $5::text, percent = $6::numeric,
+                    position = $7::integer
               where p.id = $1::uuid
-                and (p.side, p.role, p.name, p.email, p.percent)
-                    is distinct from ($2::text, $3::text, $4::text, $5::text, $6::numeric)`,
-            [p.id, p.side, p.role, p.name, p.email, percent],
+                and (p.side, p.role, p.name, p.email, p.percent, p.position)
+                    is distinct from ($2::text, $3::text, $4::text, $5::text, $6::numeric, $7::integer)`,
+            [p.id, p.side, p.role, p.name, p.email, percent, position],
           );
-          ids.push(p.id);
         } else {
-          const [row] = await tx.query<{ id: string }>(
-            `insert into public.api_parties (release_id, side, role, name, email, percent, is_owner)
-             values ($1::uuid, $2::text, $3::text, $4::text, $5::text, $6::numeric, $7::boolean)
-             returning id::text as id`,
-            [releaseId, p.side, p.role, p.name, p.email, percent, p.email === null],
+          await tx.query(
+            `insert into public.api_parties (release_id, side, role, name, email, percent, is_owner, position)
+             values ($1::uuid, $2::text, $3::text, $4::text, $5::text, $6::numeric, $7::boolean, $8::integer)`,
+            [releaseId, p.side, p.role, p.name, p.email, percent, p.email === null, position],
           );
-          ids.push(row.id);
         }
       }
 
@@ -238,8 +236,7 @@ export function rightsOperations(s: Settings) {
         );
       }
 
-      const order = new Map(ids.map((id, i) => [id, i]));
-      const saved = (await partyRows(tx, releaseId)).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+      const saved = await partyRows(tx, releaseId);
       return { invites, saved, title: release.title, artistName: who.row?.artist_name ?? "" };
     });
 

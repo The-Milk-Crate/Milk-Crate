@@ -1,6 +1,8 @@
 // Test only: a release in any state, written straight in through the side's own Database
 // module with session B's triggers off, with a confirmed master, its streaming copy and a
 // cover stored in the side's storage, and an upload row the side's storage module can read.
+// Plus an open upload (cancelled in taken_down, as takedown leaves it) for getUpload, which
+// answers 409 for an upload that is not open.
 // The same approach as session G's core tests (core/test/helpers.ts), so session C's fixture
 // can be checked in every state. Real state moves are tested through the scenario.
 import { randomUUID } from "node:crypto";
@@ -12,6 +14,8 @@ export interface Seeded {
   releaseId: string;
   trackIds: string[];
   uploadId: string;
+  /** A second master upload: open, or cancelled in taken_down. */
+  openUploadId: string;
   streamKey: string;
   coverKey: string;
 }
@@ -23,6 +27,7 @@ export async function seedRelease(d: MockDeployment, owner: Account, state: Rele
   const trackId = randomUUID();
   const uploadId = randomUUID();
   const coverUploadId = randomUUID();
+  const openUploadId = randomUUID();
   const artistId = owner.artistId!;
   const streamKey = `streams/${artistId}/${releaseId}/${trackId}/mp3-320.mp3`;
   const coverKey = `art/${artistId}/${releaseId}/cover/original`;
@@ -32,6 +37,7 @@ export async function seedRelease(d: MockDeployment, owner: Account, state: Rele
   const provider = d.side === "supabase"
     ? `${BASE}/storage/v1/upload/resumable/sign/seeded-${uploadId}#mc_started=0&mc_size=1000`
     : `seeded-${uploadId}#mc_started=0&mc_size=1000`;
+  const openProvider = provider.replace(`seeded-${uploadId}`, `seeded-open-${openUploadId}`);
   const approved = state === "scheduled" || state === "live";
   await d.db.transaction(async (tx) => {
     await tx.query("set local session_replication_role = replica");
@@ -68,13 +74,19 @@ export async function seedRelease(d: MockDeployment, owner: Account, state: Rele
        values ($1::uuid, $2::uuid, $3::text, 'png', 100, 3000, 3000)`,
       [releaseId, coverUploadId, coverKey],
     );
+    await tx.query(
+      `insert into public.api_uploads (id, release_id, track_id, kind, method, provider_upload_id, object_key, format,
+                                       size_bytes, state)
+       values ($1::uuid, $2::uuid, $3::uuid, 'master', $4::text, $5::text, $6::text, 'wav', 1000, $7::text)`,
+      [openUploadId, releaseId, trackId, method, openProvider, masterKey, state === "taken_down" ? "cancelled" : "open"],
+    );
   });
   // A taken-down release's files are deleted by the takedown.
   if (state !== "taken_down") {
     d.putObject(streamKey, SMALL_MP3, "audio/mpeg");
     d.putObject(coverKey, new Uint8Array(100), "image/png");
   }
-  return { releaseId, trackIds: [trackId], uploadId, streamKey, coverKey };
+  return { releaseId, trackIds: [trackId], uploadId, openUploadId, streamKey, coverKey };
 }
 
 /** Moves a party's invitation 15 days back, so its code has expired (test only). */

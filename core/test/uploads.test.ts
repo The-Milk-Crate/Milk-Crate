@@ -102,6 +102,41 @@ describe("master uploads", () => {
     assert.equal(r.body.code, "upload_closed");
   });
 
+  it("getUpload answers 409 upload_closed for a replaced, confirmed or cancelled upload, before storage", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const storageCalls: string[] = [];
+    const real = h.modules.storage.getUpload.bind(h.modules.storage);
+    h.modules.storage.getUpload = async (key, id) => {
+      storageCalls.push(id);
+      return real(key, id);
+    };
+    const { releaseId, trackIds } = await draft(h, artist);
+    const first = await h.call("startUpload", { as: artist, params: { releaseId, trackId: trackIds[0] }, body: { format: "wav", sizeBytes: 10 } });
+    assert.equal((await h.call("getUpload", { as: artist, params: { uploadId: first.body.uploadId } })).status, 200, "open");
+    await h.call("startUpload", { as: artist, params: { releaseId, trackId: trackIds[0] }, body: { format: "wav", sizeBytes: 20 } });
+    storageCalls.length = 0;
+    const replaced = await h.call("getUpload", { as: artist, params: { uploadId: first.body.uploadId } });
+    assert.equal(replaced.status, 409);
+    assert.equal(replaced.body.code, "upload_closed");
+
+    const s = await seedRelease(artist, "live");
+    const confirmed = await h.call("getUpload", { as: artist, params: { uploadId: s.uploadId } });
+    assert.equal(confirmed.status, 409);
+    assert.equal(confirmed.body.code, "upload_closed");
+
+    const open = await seedRelease(artist, "draft");
+    assert.equal((await h.call("getUpload", { as: artist, params: { uploadId: open.openUploadId } })).status, 200);
+    const admin = await account("administrator");
+    const down = await h.call("takedownRelease", { as: admin, params: { releaseId: open.releaseId }, body: { reason: "Test." } });
+    assert.equal(down.status, 200);
+    storageCalls.length = 0;
+    const cancelled = await h.call("getUpload", { as: artist, params: { uploadId: open.openUploadId } });
+    assert.equal(cancelled.status, 409);
+    assert.equal(cancelled.body.code, "upload_closed");
+    assert.deepEqual(storageCalls, [], "storage is not asked (Supabase would sign a fresh token)");
+  });
+
   it("someone else's upload is 404", async () => {
     const h = harness();
     const artist = await account("artist");

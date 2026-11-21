@@ -6,7 +6,7 @@ import { makeDeployment, SIDES, type MockDeployment, type Side } from "../lib/mo
 import { mockTarget } from "../lib/mock-target.ts";
 import { contractProblems, differences, unexpected, type Recorder } from "../lib/observe.ts";
 import { runScenario } from "../lib/scenario.ts";
-import { CONTRACT_GAPS, KNOWN_DIFFERENCES } from "../lib/findings.ts";
+import { CONTRACT_GAPS, KNOWN_DIFFERENCES, SHARED_FINDINGS } from "../lib/findings.ts";
 import { coverage, stateTable } from "../lib/coverage.ts";
 import { loadContract } from "../lib/contract.ts";
 
@@ -44,6 +44,10 @@ describe("the scenario", () => {
     assert.deepEqual(found, []);
   });
 
+  test("no finding is left open (session G3 fixed G2's three)", () => {
+    assert.deepEqual({ KNOWN_DIFFERENCES, CONTRACT_GAPS, SHARED_FINDINGS }, { KNOWN_DIFFERENCES: [], CONTRACT_GAPS: [], SHARED_FINDINGS: [] });
+  });
+
   test("each difference listed as a finding is still there (remove the entry with its fix)", () => {
     for (const k of KNOWN_DIFFERENCES) {
       for (const side of SIDES) {
@@ -79,6 +83,7 @@ describe("the scenario", () => {
         "5 a reviewer asks for changes / the owner is emailed": 1,
         "5 the artist lists one release a page / every release once, newest first": true,
         "5 the rights are kept / party states": ["accepted", "accepted", "accepted", "accepted", "accepted"],
+        "5 the rights are kept / parties in the order sent": true,
         "5 a reviewer approves / decision": "approved",
         "6 publish / the go-live run is set for the release date": true,
         "7 another artist lists releases / the release is left out": false,
@@ -91,6 +96,8 @@ describe("the scenario", () => {
         "9 the files are gone / masters, streams and art": { masters: [], streams: [], art: [] },
         "9 the audit row / exists with the reason": "Cross-cloud check: rights claim.",
         "9 an administrator takes it down / the owner is emailed": 3,
+        "9 the sweep's late pass / marks the takedown done": true,
+        "9 the sweep's late pass / masters left for the taken-down release": 0,
       };
       for (const [k, v] of Object.entries(want)) assert.deepEqual(facts[k], v, `${side}: ${k}`);
     }
