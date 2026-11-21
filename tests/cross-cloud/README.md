@@ -12,7 +12,8 @@ bash tests/cross-cloud/run.sh
 ```
 
 From a clean checkout. It installs the packages of `tests/cross-cloud/`, `deploy/supabase/` and
-`deploy/aws/` (`npm ci`) if needed, type-checks, starts a throwaway PostgreSQL 16 cluster in a
+`deploy/aws/` (`npm ci`) if needed, makes each deployment's `_core/` copy (`scripts/copy-core.sh`),
+type-checks, starts a throwaway PostgreSQL 16 cluster in a
 temp directory, runs every test, then stops the cluster and removes the directory, also when a
 test fails. No keys, no Docker, no network beyond the package installs. Needs Node 22.18 or newer,
 ffmpeg and ffprobe, and PostgreSQL 16 server binaries (set `PG_BIN` to pick them). About a minute.
