@@ -125,9 +125,16 @@ current state and the next steps. Update it when a step is done.
        recorded. The next successful job overwrites them, or a takedown deletes them;
      - the deployment READMEs now describe the real step.
 
-6. Next: session G2, the cross-cloud check (its scenario plays a track; the streaming copy now
-   exists once H is merged). Its real-deployment script can use a sandbox run kept with
-   `MC_SANDBOX_KEEP=true`.
+6. Done (21 November 2026, pull request open): session G2, the cross-cloud check, in
+   `tests/cross-cloud/` (see its README). One scenario on E's and F's module sets through each
+   deployment's own adapter, compared step by step; C's fixture on both; a coverage check from
+   the contract's `x-account-types`, `x-state-moves` and state table. Tests:
+   `bash tests/cross-cloud/run.sh` (CI job `cross-cloud`, not yet a required check).
+   - One difference found (in `tests/cross-cloud/lib/findings.ts` and the pull request): on
+     Supabase an upload left open at a takedown can still finish and store a master.
+   - `tests/cross-cloud/run-live.ts` runs the same scenario against a real deployment from
+     environment variables. Tested only against the mocks; not run for real yet. It can use a
+     sandbox run kept with `MC_SANDBOX_KEEP=true`.
 
 7. Session I, the security review. Include the missing rate limits on `createRelease` and
    `recordPlays` (decided: not in Phase 0).
