@@ -425,7 +425,7 @@ Each finding's fix, as decided after the review. Owners as in each finding.
 | M2 rate limits | Database counters: `recordPlays` 60 batches per user per minute plus a daily cap on stored events per user; `createRelease` 20 per artist per day; at most 2 running processing jobs per artist (the rest queue). API Gateway stage throttling on AWS (50 per second, burst 100). No 429 added to endpoints whose contract has none. |
 | M3 AWS parts | Fix as proposed: each part URL signed with its size, the S3 upload aborted when an upload is replaced, the lifecycle rule down to 1 day. Check on the next sandbox run. |
 | M4 ffmpeg | `-f` from the declared format, `-protocol_whitelist file`, and an environment with only `PATH`, for both commands. A separate user with no network later. |
-| M5 `build.yml` | A separate small pull request into `main` that only pins the actions by commit. Outside Phase 0. |
+| M5 `build.yml` | A separate small pull request into `main` that only pins the actions by commit. Outside Phase 0. Opened as The-Milk-Crate/Milk-Crate#39. |
 | L1 lockout | A correct code is checked before the lock, so only wrong codes are slowed down. |
 | L2 owner shares | At most one owner share (no email) per side; the server sets its name from the artist profile and ignores the name sent; otherwise 422. |
 | L3 cover size | At most 6000 x 6000 pixels (422 above it); the contract's `startCoverUpload` description says so (wording only). |
@@ -435,7 +435,7 @@ Each finding's fix, as decided after the review. Owners as in each finding.
 | L7 Resend | Setup only: a sending-only Resend key, 2FA on the account, shorter body retention if offered. Into E's stand-up notes and the checks after stand-up. |
 | L8 sandbox role | Process only: `milkcrate-dev` holds nothing else, and the run's commit is checked before approving. Into the handoff notes. |
 | L9 dependencies | A `deno.lock` for the Edge Function (E) and `aws-cdk-lib` 2.278.0 or later (F) now; `vitest` 5 for the app later. |
-| Invitation link | The email gets a link holding the release id and party id (never the code; it stays in the body). E's templates, G passes the ids. The app opens the link in Phase 1. The link's address (app scheme or web) is still to choose. |
+| Invitation link | The email gets a link holding the release id and party id (never the code; it stays in the body). E's templates, G passes the ids. The app opens the link in Phase 1. The link's address (app scheme or web) is decided in Phase 1, with the invitation screen. |
 
 ## Other observations (not security)
 
