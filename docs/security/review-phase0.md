@@ -413,6 +413,30 @@ K Marcus should check these by hand after the stand-up:
 4. **Owner shares (L2).** One owner party per side, named from the artist profile?
 5. **`build.yml` (M5).** Pin its actions by SHA, outside Phase 0.
 
+### Decided by K Marcus (21 November 2026)
+
+Each finding's fix, as decided after the review. Owners as in each finding.
+
+| Finding | Decision |
+|---|---|
+| H1 streams | Tighten now (reopens the settled rule): listened time from the server's receive times, `positionMs` capped at the track's `duration_ms`, overlapping plays by one user refused. A recent playback grant and per-user limits are left for later (per-user limits come with M2). |
+| H2 Supabase uploads | Now: `submitRelease` cancels open uploads, and `getUpload` refuses when the release state no longer allows that kind of upload (B and G, no contract change). Phase 1: staging files per upload, moved to the final key by the server at confirm. |
+| M1 invitation email | Caps: 20 invited parties per release, 50 invitations per artist per day, 3 per recipient address per day. Over a cap the party is saved, no email goes, and the artist resends later (as the daily limit works today). No contract change. |
+| M2 rate limits | Database counters: `recordPlays` 60 batches per user per minute plus a daily cap on stored events per user; `createRelease` 20 per artist per day; at most 2 running processing jobs per artist (the rest queue). API Gateway stage throttling on AWS (50 per second, burst 100). No 429 added to endpoints whose contract has none. |
+| M3 AWS parts | Fix as proposed: each part URL signed with its size, the S3 upload aborted when an upload is replaced, the lifecycle rule down to 1 day. Check on the next sandbox run. |
+| M4 ffmpeg | `-f` from the declared format, `-protocol_whitelist file`, and an environment with only `PATH`, for both commands. A separate user with no network later. |
+| M5 `build.yml` | A separate small pull request into `main` that only pins the actions by commit. Outside Phase 0. |
+| L1 lockout | A correct code is checked before the lock, so only wrong codes are slowed down. |
+| L2 owner shares | At most one owner share (no email) per side; the server sets its name from the artist profile and ignores the name sent; otherwise 422. |
+| L3 cover size | At most 6000 x 6000 pixels (422 above it); the contract's `startCoverUpload` description says so (wording only). |
+| L4 AWS roles | A narrow listener role for `getPublicRelease`, `getPlayback`, `getCover` and `recordPlays` (Data API; `s3:GetObject` on `streams/*` and `art/*` and the CloudFront key only for the two read grants). The full role stays for the rest. |
+| L5 Supabase auth | `minimum_password_length = 12` with lower, upper and digits in `config.toml` now. Staff MFA in Phase 1. |
+| L6 error text | A fixed message for storage 400s; the detail goes to the log. |
+| L7 Resend | Setup only: a sending-only Resend key, 2FA on the account, shorter body retention if offered. Into E's stand-up notes and the checks after stand-up. |
+| L8 sandbox role | Process only: `milkcrate-dev` holds nothing else, and the run's commit is checked before approving. Into the handoff notes. |
+| L9 dependencies | A `deno.lock` for the Edge Function (E) and `aws-cdk-lib` 2.278.0 or later (F) now; `vitest` 5 for the app later. |
+| Invitation link | The email gets a link holding the release id and party id (never the code; it stays in the body). E's templates, G passes the ids. The app opens the link in Phase 1. The link's address (app scheme or web) is still to choose. |
+
 ## Other observations (not security)
 
 - The invitation email carries the code but not the release id or the party id, which
