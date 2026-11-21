@@ -135,6 +135,29 @@ current state and the next steps. Update it when a step is done.
    - `tests/cross-cloud/run-live.ts` runs the same scenario against a real deployment from
      environment variables. Tested only against the mocks; not run for real yet. It can use a
      sandbox run kept with `MC_SANDBOX_KEEP=true`.
+   - Decided by K Marcus on 21 November, from the pull request's open points (not done yet;
+     which session does 2 to 5 is still open):
+     1. `cross-cloud` becomes a required check on `milk-crate-backend-poc` (K Marcus, in the
+        ruleset).
+     2. The open upload at a takedown (finding 1): the hourly sweep
+        (`makeRetryTakedownDeletes`) deletes a taken-down release's files once more, at least
+        2 hours after the takedown, when the upload tokens have expired. No interface change.
+     3. A path id that is not a uuid (finding 3): add the 400 response to `getRelease`,
+        `getPublicRelease`, `getCover`, `getUpload`, `submitRelease`, `publishRelease`,
+        `resendInvitation` and `getPlayback` in the contract, and regenerate the client. A
+        contract change K Marcus approved.
+     4. The order of rights parties (finding 2): a new migration adds a `position` column to
+        `api_parties`; `putRights` writes each party's place in the request and `getRelease`
+        orders by it.
+     5. `createAwsModules` gets an optional argument for the SDK clients (the real ones by
+        default), so the cross-cloud suite uses the real function instead of its copy of the
+        wiring in `tests/cross-cloud/lib/mocks.ts`.
+     6. The first real run of `run-live.ts` is part of the larger sandbox run (step 8): a helper,
+        written by a later session, makes throwaway accounts of each type on the kept sandbox
+        and writes their tokens to a file outside the repository; run on AWS and on Supabase,
+        then `--compare`.
+     When 2 to 5 land, update `tests/cross-cloud/lib/findings.ts` (2 and 3 remove an entry; 4
+     lets the party order be checked exactly; 5 removes the copied wiring).
 
 7. Session I, the security review. Include the missing rate limits on `createRelease` and
    `recordPlays` (decided: not in Phase 0).
