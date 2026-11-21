@@ -119,7 +119,7 @@ current state and the next steps. Update it when a step is done.
      - `processingNotBuilt` removed from both skeletons, with E's and F's tests changed to a
        test-only step;
      - Debian's ffmpeg 5.1 in the images (6.1 in the tests): check it in the next sandbox run
-       (see step 8);
+       (see step 9);
      - keep it strict: any error ffmpeg logs fails the track;
      - copies left by a worker that dies mid-job are accepted for Phase 0. They are never
        recorded. The next successful job overwrites them, or a takedown deletes them;
@@ -136,12 +136,15 @@ current state and the next steps. Update it when a step is done.
      environment variables. Tested only against the mocks; not run for real yet. It can use a
      sandbox run kept with `MC_SANDBOX_KEEP=true`.
    - Decided by K Marcus on 21 November, from the pull request's open points (not done yet;
-     which session does 2 to 5 is still open):
+     2 to 5 go to session G3, `docs/phase0-prompts/g3-fixes.md`, before session I):
      1. `cross-cloud` becomes a required check on `milk-crate-backend-poc` (K Marcus, in the
         ruleset).
      2. The open upload at a takedown (finding 1): the hourly sweep
         (`makeRetryTakedownDeletes`) deletes a taken-down release's files once more, at least
         2 hours after the takedown, when the upload tokens have expired. No interface change.
+        With it, `getUpload` answers 409 `upload_closed` for an upload that is not open, so
+        Supabase stops signing fresh upload tokens for a cancelled upload (the contract adds
+        the 409, with 3). C's fixture expects 200 there; G3 asks K Marcus how it changes.
      3. A path id that is not a uuid (finding 3): add the 400 response to `getRelease`,
         `getPublicRelease`, `getCover`, `getUpload`, `submitRelease`, `publishRelease`,
         `resendInvitation` and `getPlayback` in the contract, and regenerate the client. A
@@ -152,17 +155,19 @@ current state and the next steps. Update it when a step is done.
      5. `createAwsModules` gets an optional argument for the SDK clients (the real ones by
         default), so the cross-cloud suite uses the real function instead of its copy of the
         wiring in `tests/cross-cloud/lib/mocks.ts`.
-     6. The first real run of `run-live.ts` is part of the larger sandbox run (step 8): a helper,
+     6. The first real run of `run-live.ts` is part of the larger sandbox run (step 9): a helper,
         written by a later session, makes throwaway accounts of each type on the kept sandbox
         and writes their tokens to a file outside the repository; run on AWS and on Supabase,
         then `--compare`.
      When 2 to 5 land, update `tests/cross-cloud/lib/findings.ts` (2 and 3 remove an entry; 4
      lets the party order be checked exactly; 5 removes the copied wiring).
 
-7. Session I, the security review. Include the missing rate limits on `createRelease` and
+7. Session G3, the fixes from G2 (`docs/phase0-prompts/g3-fixes.md`): decisions 2 to 5 above.
+
+8. Session I, the security review. Include the missing rate limits on `createRelease` and
    `recordPlays` (decided: not in Phase 0).
 
-8. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
+9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
    tests use 6.1; decided by K Marcus with session H). Note the real time per job, for the
    4-hour limit.
