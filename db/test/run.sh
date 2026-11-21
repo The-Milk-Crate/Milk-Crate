@@ -120,6 +120,39 @@ if ! diff -u "$work/schema-1.sql" "$work/schema-2.sql" >"$work/schema.diff"; the
 fi
 echo "ok - the second run changed nothing"
 
+# 3b. 0008 (session G3) numbers the parties written before it, per release, by created_at, id.
+"$PG_BIN/psql" -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$port" -U postgres -d postgres \
+  -c "create database milk_crate_fill_test"
+run_fill() {
+  PGOPTIONS="-c client_min_messages=warning" \
+    "$PG_BIN/psql" -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$port" -U postgres -d milk_crate_fill_test "$@"
+}
+for f in "${files[@]}"; do
+  [[ "$(basename "$f")" < "0008" ]] && run_fill --single-transaction -f "$f"
+done
+run_fill --single-transaction <<'SQL'
+set local session_replication_role = replica;
+insert into public.api_releases (id, owner_id, artist_id, title, release_date)
+  values ('00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), gen_random_uuid(), 'Fill', date '2026-01-01'),
+         ('00000000-0000-0000-0000-0000000000a2', gen_random_uuid(), gen_random_uuid(), 'Fill', date '2026-01-01');
+insert into public.api_parties (id, release_id, side, role, name, percent, created_at) values
+  ('00000000-0000-0000-0000-0000000000c3', '00000000-0000-0000-0000-0000000000a1', 'recording', 'r', 'third', 10, '2026-01-01 00:00:02+00'),
+  ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000a1', 'recording', 'r', 'second', 10, '2026-01-01 00:00:01+00'),
+  ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a1', 'recording', 'r', 'first', 10, '2026-01-01 00:00:01+00'),
+  ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-0000000000a2', 'recording', 'r', 'only', 10, '2026-01-01 00:00:00+00');
+SQL
+for pass in 1 2; do
+  for f in "${files[@]}"; do
+    [[ "$(basename "$f")" < "0008" ]] || run_fill --single-transaction -f "$f"
+  done
+  got="$(run_fill -At -c "select string_agg(name || '=' || position, ',' order by release_id, position) from public.api_parties")"
+  if [[ "$got" != "first=0,second=1,third=2,only=0" ]]; then
+    echo "FAIL - 0008's fill (pass $pass): got $got, wanted first=0,second=1,third=2,only=0" >&2
+    exit 1
+  fi
+done
+echo "ok - 0008 numbers existing parties per release by created_at, id, once"
+
 # 4. The checks. Each prints "ok - ..."; the first failure stops the run.
 run_psql -f "$here/checks.sql" 2>&1 | sed -E 's/^psql:[^ ]+ NOTICE: +//'
 

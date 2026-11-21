@@ -66,7 +66,7 @@ async function outcome(w: World, op: string, as: Account, s: Seeded, state: Rele
     case "getCover":
       return String((await api.call(op, { token: t, params: { releaseId: s.releaseId } })).status);
     case "getUpload":
-      return String((await api.call(op, { token: t, params: { uploadId: s.uploadId } })).status);
+      return String((await api.call(op, { token: t, params: { uploadId: s.openUploadId } })).status);
     case "listReleases":
       return listed(w, as, state, s.releaseId);
     case "recordPlays": {

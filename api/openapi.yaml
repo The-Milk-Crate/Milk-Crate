@@ -164,6 +164,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Release"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -187,6 +188,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicRelease"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/releases/{releaseId}/tracks/{trackId}/uploads:
@@ -284,6 +286,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CoverGrant"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -300,6 +303,8 @@ paths:
         After an interruption, call this to learn what was stored, then continue from there.
         For `tus` the client resumes from `offset`. For `s3_multipart` it re-sends the
         parts not listed in `completedParts`.
+        An upload that is not open (confirmed, replaced, or cancelled by a takedown) answers
+        409 `upload_closed`.
       responses:
         "200":
           description: Upload session with progress.
@@ -307,9 +312,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UploadSession"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/uploads/{uploadId}/parts:
     parameters:
       - $ref: "#/components/parameters/UploadId"
@@ -446,6 +453,7 @@ paths:
       responses:
         "204":
           description: A new invitation was sent.
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -569,6 +577,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Release"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -630,6 +639,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Release"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -697,6 +707,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlaybackGrant"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }

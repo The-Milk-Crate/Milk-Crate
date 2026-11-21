@@ -31,6 +31,11 @@ for dir in "$here" "$root/deploy/supabase" "$root/deploy/aws"; do
     (cd "$dir" && npm ci --no-audit --no-fund)
   fi
 done
+# Each worker's wiring.ts (its hourly sweep, used for the takedown's late pass) imports the
+# core from ../_core/, the uncommitted copy the deployments make: make it fresh, as
+# worker/test/run.sh does.
+bash "$root/deploy/supabase/scripts/copy-core.sh" >/dev/null
+bash "$root/deploy/aws/scripts/copy-core.sh" >/dev/null
 (cd "$here" && npx tsc --noEmit)
 echo "ok - tests/cross-cloud type-checks"
 

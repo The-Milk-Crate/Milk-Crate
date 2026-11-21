@@ -145,6 +145,9 @@ export function uploadOperations(s: Settings) {
     const who = await whoIsCalling(ctx);
     allow(who, ["artist"]);
     const upload = await ownUpload(ctx.modules.database, who, uploadId);
+    // Before storage: on Supabase getUpload signs a fresh upload token, which a closed upload
+    // (confirmed, replaced, or cancelled by a takedown) must not get.
+    if (upload.state !== "open") throw conflict("upload_closed", `This upload is ${upload.state}.`);
     const stored = await ctx.modules.storage.getUpload(upload.object_key, upload.provider_upload_id);
     return json(200, sessionView({ ...upload, size_bytes: Number(upload.size_bytes) }, stored), ctx.requestId);
   });

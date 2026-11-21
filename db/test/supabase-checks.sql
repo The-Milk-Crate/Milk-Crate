@@ -686,7 +686,8 @@ begin
     if (v_exp = '200') <> (r.release_id = any (v_public_tracks)) then v_bad := v_bad || format('public tracks %s/%s', v_rel, r.state); end if;
 
     v_exp := ct.expect('getUpload', p_type, v_rel, r.state);
-    if (v_exp = '200') <> (r.release_id = any (v_uploads)) then v_bad := v_bad || format('getUpload %s/%s', v_rel, r.state); end if;
+    -- 409: the owner reads the row, but the upload is closed (settled: getUploadClosed).
+    if (v_exp in ('200', '409')) <> (r.release_id = any (v_uploads)) then v_bad := v_bad || format('getUpload %s/%s', v_rel, r.state); end if;
 
     v_play := (ct.read_as(p_user, format('select public.api_can_play_track(%L) as ok', r.track_id)) -> 0 ->> 'ok')::boolean;
     if (ct.expect('getPlayback', p_type, v_rel, r.state) = '200') <> v_play then v_bad := v_bad || format('getPlayback %s/%s', v_rel, r.state); end if;

@@ -128,6 +128,7 @@ describe("run-live against the mocks, through plain HTTP calls", () => {
         "9 the files are gone",
         "9 the audit row",
         "9 an invitation after the takedown",
+        "9 the sweep's late pass",
       ]);
     });
 
@@ -144,7 +145,7 @@ describe("run-live against the mocks, through plain HTTP calls", () => {
   test("the two reports compare the same, also through --compare", () => {
     const { found, known } = compareReports(reports.get("supabase")!, reports.get("aws")!);
     assert.deepEqual(found, []);
-    assert.deepEqual(known.map((k) => k.split(":")[0]), ["9 an upload open at the takedown / the rest of the file, sent after the takedown, is"]);
+    assert.deepEqual(known, [], "no known difference left (session G3)");
     const dir = mkdtempSync(join(tmpdir(), "mc-xc-live-"));
     try {
       const a = join(dir, "supabase.json");
@@ -154,7 +155,7 @@ describe("run-live against the mocks, through plain HTTP calls", () => {
       const r = cli({}, ["--compare", a, b]);
       assert.equal(r.status, 0, r.stdout + r.stderr);
       assert.match(r.stdout, /The two runs behave the same, apart from the known findings\./);
-      assert.match(r.stdout, /known \(already reported/);
+      assert.doesNotMatch(r.stdout, /known \(already reported/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

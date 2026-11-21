@@ -360,8 +360,10 @@ export function releaseOperations(s: Settings) {
       return { auditId: row.audit_id, prefixes: JSON.parse(row.prefixes) as string[], title: release?.title ?? "" };
     });
 
-    // Then the files. A failure leaves files_deleted_at empty on the audit row and is logged;
-    // the release stays taken down either way, and makeRetryTakedownDeletes tries again later.
+    // Then the files. The audit row is not marked done here: an upload open at the takedown
+    // can still finish on Supabase while its upload token lasts (about 2 hours), so
+    // makeRetryTakedownDeletes deletes again after that and marks the row then. A failure here
+    // is logged; the release stays taken down either way.
     await deletePrefixes(ctx, done.auditId, done.prefixes);
     await emailOwner(ctx.modules, ctx.settings.log, releaseId, "release_taken_down", {
       releaseTitle: done.title,
@@ -386,17 +388,25 @@ export function releaseOperations(s: Settings) {
 async function deletePrefixes(ctx: Context, auditId: string, prefixes: string[]): Promise<void> {
   try {
     for (const prefix of prefixes) await ctx.modules.storage.delete(prefix);
-    await ctx.modules.database.query("select public.api_takedown_files_deleted($1::uuid)", [auditId]);
   } catch (error) {
     ctx.settings.log(
-      `takedown ${auditId}: deleting the files failed, files_deleted_at stays empty: ${(error as Error)?.message ?? String(error)}`,
+      `takedown ${auditId}: deleting the files failed, the sweep tries again: ${(error as Error)?.message ?? String(error)}`,
     );
   }
 }
 
+/** How long an upload token signed before a takedown can still work (Supabase: about 2 hours). */
+export const TAKEDOWN_LATE_PASS_MINUTES = 120;
+
 export interface RetryTakedownOptions {
   /** Only takedowns at least this old, so a takedown still deleting is left alone. Default 15 minutes. */
   olderThanMinutes?: number;
+  /**
+   * The late pass: a delete that starts at least this long after the takedown marks the audit
+   * row done (files_deleted_at). Earlier deletes run but leave it empty. Default 120 minutes,
+   * when upload tokens signed before the takedown have expired.
+   */
+  latePassMinutes?: number;
   /** At most this many per call. Default 50. */
   limit?: number;
   /** Where a failed delete is written. Default: `console.error`. */
@@ -404,41 +414,51 @@ export interface RetryTakedownOptions {
 }
 
 export interface RetryTakedownResult {
-  /** Audit rows whose files are now deleted. */
+  /** Audit rows whose late pass ran: files deleted and the row marked done. */
   deleted: string[];
+  /** Audit rows deleted again before the late pass; a later sweep deletes them once more. */
+  waiting: string[];
   /** Audit rows whose delete failed again; the next sweep tries them again. */
   failed: string[];
 }
 
 /**
- * Finds takedowns whose files were not all deleted (storage failed during takedownRelease, so
- * the audit row's files_deleted_at is still empty), deletes the release's prefixes again and
- * marks the row done. Deleting a prefix twice is harmless. Each deployment's hourly sweep calls
- * this.
+ * Finds takedowns not yet marked done (files_deleted_at empty) and deletes the release's
+ * prefixes again. The row is marked done only by a delete that starts at least
+ * `latePassMinutes` after the takedown, so a file an upload stored after the takedown is
+ * deleted too. A takedown is marked done only by this sweep, never by takedownRelease.
+ * Deleting a prefix twice is harmless. Each deployment's hourly sweep calls this.
  */
 export function makeRetryTakedownDeletes(
   modules: Pick<Modules, "database" | "storage">,
   options: RetryTakedownOptions = {},
 ): () => Promise<RetryTakedownResult> {
   const minutes = options.olderThanMinutes ?? 15;
+  const lateMinutes = options.latePassMinutes ?? TAKEDOWN_LATE_PASS_MINUTES;
   const limit = options.limit ?? 50;
   const log = options.log ?? ((message: string) => console.error(message));
   return async () => {
-    const rows = await modules.database.query<{ id: string; prefixes: string }>(
-      `select l.id::text as id, (l.removed -> 'prefixes')::text as prefixes
+    // "late" is decided by the database clock before the delete starts.
+    const rows = await modules.database.query<{ id: string; prefixes: string; late: boolean }>(
+      `select l.id::text as id, (l.removed -> 'prefixes')::text as prefixes,
+              l.created_at <= now() - make_interval(mins => $2::integer) as late
          from public.api_audit_log l
         where l.action = 'takedown' and l.files_deleted_at is null
           and l.created_at < now() - make_interval(mins => $1::integer)
         order by l.created_at
-        limit $2::integer`,
-      [minutes, limit],
+        limit $3::integer`,
+      [minutes, lateMinutes, limit],
     );
-    const result: RetryTakedownResult = { deleted: [], failed: [] };
+    const result: RetryTakedownResult = { deleted: [], waiting: [], failed: [] };
     for (const row of rows) {
       try {
         for (const prefix of JSON.parse(row.prefixes) as string[]) await modules.storage.delete(prefix);
-        await modules.database.query("select public.api_takedown_files_deleted($1::uuid)", [row.id]);
-        result.deleted.push(row.id);
+        if (row.late) {
+          await modules.database.query("select public.api_takedown_files_deleted($1::uuid)", [row.id]);
+          result.deleted.push(row.id);
+        } else {
+          result.waiting.push(row.id);
+        }
       } catch (error) {
         log(`takedown ${row.id}: deleting the files failed again: ${(error as Error)?.message ?? String(error)}`);
         result.failed.push(row.id);

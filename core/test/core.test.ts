@@ -226,22 +226,73 @@ describe("takedown when storage fails", () => {
     assert.ok(h.options.logs.some((l) => l.includes("release_taken_down")));
     assert.equal((await h.call("takedownRelease", { as: await account("administrator"), params: { releaseId: s.releaseId }, body: { reason: " " } })).status, 400);
 
-    // The sweep: left alone during the grace period, then deleted and marked done once storage is back.
+    // The sweep: left alone during the grace period, then deleted once storage is back, and
+    // marked done only by the late pass, 2 hours or more after the takedown.
     h.modules.storage.objects.set(s.coverKey, new Uint8Array([1]));
     h.modules.storage.objects.set(s.streamKey, new Uint8Array([1]));
     const retry = makeRetryTakedownDeletes(h.modules, { limit: 1000, log: (m) => h.options.logs.push(m) });
-    assert.ok(!(await retry()).deleted.includes(r.body.auditId));
-    await db.query("update public.api_audit_log set created_at = now() - interval '20 minutes' where id = $1::uuid", [r.body.auditId]);
+    const early = await retry();
+    assert.ok(![...early.deleted, ...early.waiting, ...early.failed].includes(r.body.auditId));
+    await setTakedownAge(r.body.auditId, "20 minutes");
     const again = await retry();
     assert.ok(again.failed.includes(r.body.auditId), "storage still down");
     assert.ok(h.options.logs.some((l) => l.includes("failed again")));
     h.modules.storage.failDelete = false;
-    const done = await retry();
-    assert.ok(done.deleted.includes(r.body.auditId));
+    const first = await retry();
+    assert.ok(first.waiting.includes(r.body.auditId), "deleted, but before the late pass");
     assert.equal(h.modules.storage.objects.has(s.coverKey), false);
     assert.equal(h.modules.storage.objects.has(s.streamKey), false);
-    const [after] = await db.query<{ deleted: boolean }>("select files_deleted_at is not null as deleted from public.api_audit_log where id = $1::uuid", [r.body.auditId]);
-    assert.equal(after.deleted, true);
-    assert.ok(!(await retry()).deleted.includes(r.body.auditId), "done once");
+    assert.equal(await filesDeleted(r.body.auditId), false);
+    await setTakedownAge(r.body.auditId, "2 hours");
+    const done = await retry();
+    assert.ok(done.deleted.includes(r.body.auditId));
+    assert.equal(await filesDeleted(r.body.auditId), true);
+    const last = await retry();
+    assert.ok(![...last.deleted, ...last.waiting].includes(r.body.auditId), "done once");
+  });
+});
+
+async function setTakedownAge(auditId: string, age: string): Promise<void> {
+  await db.query("update public.api_audit_log set created_at = now() - $2::interval where id = $1::uuid", [auditId, age]);
+}
+
+async function filesDeleted(auditId: string): Promise<boolean> {
+  const [row] = await db.query<{ deleted: boolean }>("select files_deleted_at is not null as deleted from public.api_audit_log where id = $1::uuid", [auditId]);
+  return row.deleted;
+}
+
+describe("takedown's late pass (an upload open at the takedown)", () => {
+  it("a master stored after the takedown is deleted by the late pass, and only that marks the row done", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const s = await seedRelease(artist, "live");
+    const r = await h.call("takedownRelease", { as: await account("administrator"), params: { releaseId: s.releaseId }, body: { reason: "Test." } });
+    assert.equal(r.status, 200);
+    assert.equal(await filesDeleted(r.body.auditId), false, "takedown deletes but does not mark done");
+
+    // The open upload finishes after the takedown, as an unexpired Supabase token allows.
+    const lateKey = `masters/${artist.artistId}/${s.releaseId}/${s.trackIds[0]}/original`;
+    h.modules.storage.objects.set(lateKey, new Uint8Array([1]));
+    const retry = makeRetryTakedownDeletes(h.modules, { limit: 1000 });
+
+    await setTakedownAge(r.body.auditId, "1 hour");
+    assert.ok((await retry()).waiting.includes(r.body.auditId));
+    assert.equal(h.modules.storage.objects.has(lateKey), false);
+    assert.equal(await filesDeleted(r.body.auditId), false, "an hour on, the late pass has not run");
+
+    h.modules.storage.objects.set(lateKey, new Uint8Array([1]));
+    await setTakedownAge(r.body.auditId, "2 hours 1 minute");
+    assert.ok((await retry()).deleted.includes(r.body.auditId));
+    assert.equal(h.modules.storage.objects.has(lateKey), false, "no master left");
+    assert.equal(await filesDeleted(r.body.auditId), true);
+  });
+
+  it("latePassMinutes sets the window", async () => {
+    const h = harness();
+    const s = await seedRelease(await account("artist"), "live");
+    const r = await h.call("takedownRelease", { as: await account("administrator"), params: { releaseId: s.releaseId }, body: { reason: "Test." } });
+    await setTakedownAge(r.body.auditId, "31 minutes");
+    assert.ok((await makeRetryTakedownDeletes(h.modules, { limit: 1000 })()).waiting.includes(r.body.auditId));
+    assert.ok((await makeRetryTakedownDeletes(h.modules, { limit: 1000, latePassMinutes: 30 })()).deleted.includes(r.body.auditId));
   });
 });

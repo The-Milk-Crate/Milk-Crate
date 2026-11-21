@@ -44,6 +44,8 @@ export interface Target {
   scheduledAt?: (name: string) => Promise<string | null>;
   storageKeys?: (prefix: string) => string[];
   auditRow?: (auditId: string) => Promise<{ reason: string; removed: unknown } | undefined>;
+  /** Runs the hourly sweep's late pass for this takedown (at least 2 hours on); true when it is marked done. */
+  lateTakedownPass?: (auditId: string) => Promise<boolean>;
   plays?: (playId: string) => Promise<{ events: number; qualified: number }>;
   /** Accounts a real deployment's tokens cannot stand for. */
   accounts?: {
@@ -400,8 +402,10 @@ export async function runScenario(t: Target): Promise<ScenarioResult> {
   await t.processing(r1);
   rec.move("worker success", before, await t.stateOf(r1));
   const current = await rec.call("5 the rights are kept", "getRelease", A, { params: { releaseId: r1 } }, 200, { release: r1 });
-  // Sorted: the order of rights.parties is not stable (see lib/findings.ts).
-  rec.fact("5 the rights are kept", "party states", current.body.rights?.parties?.map((p: { state: string }) => p.state).sort());
+  // In the order sent (putRights writes each party's position).
+  rec.fact("5 the rights are kept", "party states", current.body.rights?.parties?.map((p: { state: string }) => p.state));
+  rec.fact("5 the rights are kept", "parties in the order sent",
+    current.body.rights?.parties?.map((p: { id: string }) => p.id).join(",") === parties.map((p) => p.id).join(","));
   await rec.call("5 resubmit", "submitRelease", A, { params: { releaseId: r1 } }, 200, { release: r1 });
   const approved = await rec.call("5 a reviewer approves", "reviewRelease", X, { params: { releaseId: r1 }, body: { decision: "approve" } }, 200, { release: r1 });
   rec.fact("5 a reviewer approves", "decision", approved.body.review?.decision);
@@ -563,22 +567,32 @@ export async function runScenario(t: Target): Promise<ScenarioResult> {
     const openSent = await sendFile(t.api, B.token, t.uploadFetch, open.body, files.other, new Map(), {
       stopAfter: { bytes: Math.floor(files.other.length / 2), parts: 0 },
     });
-    await rec.call("9 the other artist's release is taken down", "takedownRelease", X, {
+    const downB = await rec.call("9 the other artist's release is taken down", "takedownRelease", X, {
       params: { releaseId: rB }, body: { reason: "Cross-cloud check: clean up." },
     }, 200, { release: rB });
+    // A cancelled upload gets no fresh session (on Supabase, no fresh upload token).
+    await rec.call("9 read the upload after the takedown", "getUpload", B, { params: { uploadId: open.body.uploadId } }, 409);
+    // The app sends the rest with the session it already holds. Supabase may still accept it
+    // while that token lasts (up to 2 hours; decided by K Marcus, no interface change), AWS
+    // refuses it. Not compared: what counts is that nothing is left after the late pass.
+    // The app knows how far it got (tus: the bytes it sent; S3: the parts in openSent).
+    const half = Math.floor(files.other.length / 2);
+    const held = open.body.method === "tus" ? { ...open.body, offset: half } : open.body;
     let rest = "accepted";
     try {
-      const progress = await t.api.call("getUpload", { token: B.token, params: { uploadId: open.body.uploadId } });
-      await sendFile(t.api, B.token, t.uploadFetch, progress.status === 200 ? progress.body : open.body, files.other, openSent);
+      await sendFile(t.api, B.token, t.uploadFetch, held, files.other, openSent);
     } catch (error) {
       rest = "refused";
     }
-    rec.fact("9 an upload open at the takedown", "the rest of the file, sent after the takedown, is", rest);
+    log(`9 the rest of the file, sent after the takedown, is ${rest} on ${t.side}`);
     await rec.call("9 confirm the upload after the takedown", "confirmUpload", B, {
       params: { uploadId: open.body.uploadId }, body: await confirmBody(open.body.method, files.other, openSent),
     }, 409, { release: rB });
-    if (t.storageKeys) {
-      rec.fact("9 an upload open at the takedown", "masters stored for the taken-down release", t.storageKeys("masters/").filter((k) => k.includes(rB!)).length);
+    if (has(t.lateTakedownPass, "9 the sweep's late pass", "the sweep cannot be run, or the clock moved, through the API")) {
+      rec.fact("9 the sweep's late pass", "marks the takedown done", await t.lateTakedownPass!(downB.body.auditId));
+      if (t.storageKeys) {
+        rec.fact("9 the sweep's late pass", "masters left for the taken-down release", t.storageKeys("masters/").filter((k) => k.includes(rB!)).length);
+      }
     }
   }
   return { run: rec, ids };

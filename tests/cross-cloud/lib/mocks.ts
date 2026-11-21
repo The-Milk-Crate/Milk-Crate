@@ -8,10 +8,10 @@
 // by E's own apply-sql.sh. Requests go through E's Edge Function adapter (edgeFunctions) and the
 // one `api` function's router, as deployed.
 //
-// AWS (session F): the modules as createAwsModules wires them, with each SDK client replaced
-// at its `send` edge: F's Data API stand-in over a local Postgres (migrations applied F's way),
-// an in-memory S3 and CloudFront (fake-s3.ts, on F's FakeAws), FakeAws for Scheduler, Secrets
-// Manager and SES. Requests go through F's Lambda adapter, one function per routes.json entry,
+// AWS (session F): createAwsModules itself, from settings, with each SDK client passed in as a
+// fake at its `send` edge: F's Data API stand-in over a local Postgres (migrations applied F's
+// way), an in-memory S3 and CloudFront (fake-s3.ts, on F's FakeAws), FakeAws for Scheduler,
+// Secrets Manager and SES, a local presigner and a local JWKS. Requests go through F's Lambda adapter, one function per routes.json entry,
 // behind a stand-in for API Gateway's route matching.
 //
 // Both use session H's processing step (worker/src/) through each worker's skeleton
@@ -27,18 +27,15 @@ import { makeProcessRelease } from "../../../worker/src/index.ts";
 import { createSupabaseModules } from "../../../deploy/supabase/src/modules.ts";
 import { edgeFunctions } from "../../../deploy/supabase/src/functions.ts";
 import { runOneJob as runOnFly } from "../../../deploy/supabase/worker/run.ts";
+import { coreSweep as sweepOnFly } from "../../../deploy/supabase/worker/wiring.ts";
 import { BASE, PUBLISHABLE_KEY, SERVICE_KEY, fakeStorage } from "../../../deploy/supabase/test/fake-storage.ts";
 import type { ClosableDatabase } from "../../../deploy/supabase/src/database.ts";
 // Session F.
-import { dataApiDatabase } from "../../../deploy/aws/src/database.ts";
-import { cognitoIdentity } from "../../../deploy/aws/src/identity.ts";
-import { s3Storage, type SignCookies } from "../../../deploy/aws/src/storage.ts";
-import { awsJobs } from "../../../deploy/aws/src/jobs.ts";
-import { eventBridgeSchedules } from "../../../deploy/aws/src/schedules.ts";
-import { awsSecretsAndEmail } from "../../../deploy/aws/src/secrets-email.ts";
+import type { SignCookies } from "../../../deploy/aws/src/storage.ts";
 import { lambdaFunctions, type HttpApiEvent, type LambdaHandler } from "../../../deploy/aws/src/functions.ts";
-import { CLOUDFRONT_KEY_SECRET } from "../../../deploy/aws/src/modules.ts";
+import { CLOUDFRONT_KEY_SECRET, createAwsModules } from "../../../deploy/aws/src/modules.ts";
 import { runOneJob as runOnFargate } from "../../../deploy/aws/worker/run.ts";
+import { coreSweep as sweepOnFargate } from "../../../deploy/aws/worker/wiring.ts";
 import { FakeAws } from "../../../deploy/aws/test/fake-aws.ts";
 import { FakeDataApi } from "../../../deploy/aws/test/fake-data-api.ts";
 import { Api } from "./client.ts";
@@ -78,6 +75,8 @@ export interface MockDeployment {
   token(userId: string, type: AccountType): Promise<string>;
   /** Runs every queued job through the worker skeleton and H's processing step. */
   runJobs(): Promise<string[]>;
+  /** The core part of the worker's hourly sweep (worker/wiring.ts coreSweep), as deployed. */
+  sweep(): Promise<void>;
   /** Moves the clock to the schedule's time and fires it as pg_cron or Scheduler would. */
   fireSchedule(name: string): Promise<void>;
   /** When the schedule of this name is set to run (UTC, ISO), or null. */
@@ -194,6 +193,7 @@ export async function supabaseDeployment(dbUrl: string): Promise<MockDeployment>
       for (let id = await runOnFly(deps); id; id = await runOnFly(deps)) ran.push(id);
       return ran;
     },
+    sweep: () => sweepOnFly({ database, jobs: modules.jobs, storage: modules.storage }, log),
     async fireSchedule(name) {
       // The release date arrives: the run is due, and pg_cron runs its job's command.
       await database.query("update public.api_schedules set run_at = now() where name = $1::text", [name]);
@@ -245,7 +245,6 @@ export async function awsDeployment(dbUrl: string): Promise<MockDeployment> {
   });
 
   const dataApi = new FakeDataApi(dbUrl);
-  const database = dataApiDatabase({ client: dataApi, resourceArn: "arn:aws:rds:cluster", secretArn: "arn:aws:secret:db", database: "milk_crate" });
 
   const secrets = new FakeAws().on({ name: "GetSecretValueCommand" }, (input) => {
     if (input.SecretId === `milk-crate/phase0/${CLOUDFRONT_KEY_SECRET}`) return { SecretString: pem };
@@ -291,36 +290,40 @@ export async function awsDeployment(dbUrl: string): Promise<MockDeployment> {
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk: JWK = { ...(await exportJWK(publicKey)), kid: "cognito-test", alg: "RS256", use: "sig" };
 
-  // As createAwsModules wires them (src/modules.ts), with the SDK clients replaced.
-  const secretsAndEmail = awsSecretsAndEmail({ secrets, ses, from: "Milk Crate <noreply@example.com>" });
-  const modules: Modules = {
-    database,
-    identity: cognitoIdentity({ region: REGION, userPoolId: POOL, clientIds: [CLIENT_ID], keys: createLocalJWKSet({ keys: [jwk] }) }),
-    storage: s3Storage({
+  // createAwsModules itself, with the stack's settings (infra/stack.ts) and the clients faked.
+  const settings: Record<string, string> = {
+    AWS_REGION: REGION,
+    MC_DB_CLUSTER_ARN: "arn:aws:rds:cluster",
+    MC_DB_SECRET_ARN: "arn:aws:secret:db",
+    MC_DB_NAME: "milk_crate",
+    MC_COGNITO_USER_POOL_ID: POOL,
+    MC_COGNITO_CLIENT_IDS: CLIENT_ID,
+    MC_BUCKET: BUCKET,
+    MC_CLOUDFRONT_DOMAIN: CLOUDFRONT,
+    MC_CLOUDFRONT_KEY_PAIR_ID: KEY_PAIR_ID,
+    MC_READ_TTL_SECONDS: "600",
+    MC_SCHEDULE_GROUP: "milk-crate-phase0",
+    MC_SCHEDULER_ROLE_ARN: "arn:aws:iam::role/scheduler",
+    MC_SCHEDULER_DLQ_ARN: "arn:aws:sqs:dlq",
+    MC_EMAIL_FROM: "Milk Crate <noreply@example.com>",
+  };
+  let database!: Database;
+  const modules = createAwsModules(
+    (n) => settings[n],
+    // As worker/main.ts does it: G's job-result function on the same database.
+    { applyJobResult: (jobId, result) => makeApplyJobResult({ database })(jobId, result) },
+    {
+      rdsData: dataApi,
       s3: s3.s3,
       presign: (command, expiresIn) => getSignedUrl(presigner, command, { expiresIn }),
-      bucket: BUCKET,
-      cloudFront: {
-        domain: CLOUDFRONT,
-        keyPairId: KEY_PAIR_ID,
-        privateKey: () => secretsAndEmail.getSecret(CLOUDFRONT_KEY_SECRET),
-        signCookies: getSignedCookies as SignCookies,
-      },
-      readTtlSeconds: 600,
-    }),
-    jobs: awsJobs({ database, applyResult: makeApplyJobResult({ database }), log }),
-    schedules: eventBridgeSchedules({
       scheduler,
-      database,
-      group: "milk-crate-phase0",
-      roleArn: "arn:aws:iam::role/scheduler",
-      deadLetterArn: "arn:aws:sqs:dlq",
-      resourceArn: "arn:aws:rds:cluster",
-      secretArn: "arn:aws:secret:db",
-      databaseName: "milk_crate",
-    }),
-    secretsAndEmail,
-  };
+      secrets,
+      ses,
+      signCookies: getSignedCookies as SignCookies,
+      identityKeys: createLocalJWKSet({ keys: [jwk] }),
+    },
+  );
+  database = modules.database;
 
   // One Lambda per routes.json entry, each serving its operation's shared handler, as
   // functions/<op>.ts does; API Gateway picks the route.
@@ -385,6 +388,7 @@ export async function awsDeployment(dbUrl: string): Promise<MockDeployment> {
       for (let id = await runOnFargate(deps); id; id = await runOnFargate(deps)) ran.push(id);
       return ran;
     },
+    sweep: () => sweepOnFargate({ database, jobs: modules.jobs, storage: modules.storage }, log),
     async fireSchedule(name) {
       const { scheduleName } = await import("../../../deploy/aws/src/schedules.ts");
       const schedule = schedules.get(scheduleName(name));

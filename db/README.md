@@ -56,7 +56,7 @@ Every table and function starts with `api_`, because the app already has `public
 | `api_uploads` | Master and cover uploads: `kind` (`master` or `cover`), `method`, the storage module's `provider_upload_id`, `object_key`, `state` (`open`, `confirmed`, `replaced`, `cancelled`). |
 | `api_covers` | The confirmed cover, one per release (format, size, width, height). No row means no cover. |
 | `api_review_decisions` | Every review decision, with the reviewer. |
-| `api_parties` | Rights: side, role, name, email, percent, state (`invited`, `accepted`, `declined`), `is_owner` (the owner's own share), the invite code hash, sent, expiry and used times, and the account that replied. |
+| `api_parties` | Rights: side, role, name, email, percent, state (`invited`, `accepted`, `declined`), `is_owner` (the owner's own share), the invite code hash, sent, expiry and used times, the account that replied, and `position` (the party's place in the `putRights` request, from 0; added by `0008`). |
 | `api_invite_sends` | Invitations sent per party per day (UTC). |
 | `api_invite_wrong_codes` | Wrong invite codes per party, with times. |
 | `api_jobs` | Jobs: release, kind (`process_release`), state (`queued`, `running`, `succeeded`, `failed`), times, failure message. |
@@ -115,7 +115,7 @@ Handlers (session G), workers and schedules call these. Each returns a few rows 
 | `api_publish_release(release)` | `publishRelease`. Returns `scheduled` (release date after today, UTC) or `live`. |
 | `api_release_go_live(release)` | The schedule on the release date. Moves only `scheduled` to `live`; does nothing otherwise. Call with the named argument `p_release_id`. |
 | `api_takedown_release(release, actor, reason)` | `takedownRelease`. Administrator only. Writes the audit row, clears streaming keys and the cover row, cancels open uploads, moves to `taken_down`, and returns the prefixes to delete. |
-| `api_takedown_files_deleted(audit)` | Storage deleted the prefixes. |
+| `api_takedown_files_deleted(audit)` | Storage deleted the prefixes. Called by the sweep's late pass, 2 hours or more after the takedown. |
 | `api_list_releases(caller, state, limit, after_created_at, after_id)` | `listReleases`. Newest first. Staff see all, an artist their own, others nothing. Keyset paging; ask for limit + 1 to learn if there is a next page (at most 101). |
 | `api_issue_invite(party, code_hash, daily_limit)` | Send or resend an invitation. Status `issued`, `not_found`, `not_invited`, `taken_down` or `rate_limited`. |
 | `api_invite_wrong_count(party, window_seconds)` | Wrong codes in the window, if G wants a stricter limit than the built-in 10 an hour. |

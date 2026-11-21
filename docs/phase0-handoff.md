@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 20 November 2026, after five sandbox runs, session G1, its wiring and session H. Next: session G2.
+For K Marcus and the next session. Last updated 21 November 2026, after five sandbox runs, sessions G1, H, G2 and G3. Next: session I.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -162,7 +162,22 @@ current state and the next steps. Update it when a step is done.
      When 2 to 5 land, update `tests/cross-cloud/lib/findings.ts` (2 and 3 remove an entry; 4
      lets the party order be checked exactly; 5 removes the copied wiring).
 
-7. Session G3, the fixes from G2 (`docs/phase0-prompts/g3-fixes.md`): decisions 2 to 5 above.
+7. Done (21 November 2026, pull request open): session G3, the fixes from G2
+   (`docs/phase0-prompts/g3-fixes.md`), decisions 2 to 5 above.
+   - Takedown: `takedownRelease` deletes the files but no longer marks the audit row done. The
+     hourly sweep deletes again, and only a delete that starts 2 hours or more after the
+     takedown sets `files_deleted_at` (the late pass). No migration and no interface change.
+   - `getUpload` answers 409 `upload_closed` for an upload that is not open, before storage.
+     Decided by K Marcus for C's fixture: the owner's `getUpload` cell is 200 in every state but
+     `taken_down`, 409 there; the seeds add an open upload (cancelled in `taken_down`); C's row
+     check counts 200 and 409 both as readable (`settled.getUploadClosed`).
+   - Contract: 400 on the eight operations, 409 on `getUpload`; client regenerated.
+   - `0008_party_position.sql`: `api_parties.position`; `putRights` writes it, `getRelease` orders
+     by it. Existing rows numbered per release by `created_at, id`.
+   - `createAwsModules(env, extra, clients)`: the clients are optional (real ones by default);
+     the cross-cloud suite builds its AWS side with it.
+   - `tests/cross-cloud/lib/findings.ts` is empty. Not run for real yet: the late pass on a real
+     sweep, and Supabase's real TUS token lifetime.
 
 8. Session I, the security review. Include the missing rate limits on `createRelease` and
    `recordPlays` (decided: not in Phase 0).

@@ -186,6 +186,8 @@ export interface paths {
          * @description After an interruption, call this to learn what was stored, then continue from there.
          *     For `tus` the client resumes from `offset`. For `s3_multipart` it re-sends the
          *     parts not listed in `completedParts`.
+         *     An upload that is not open (confirmed, replaced, or cancelled by a takedown) answers
+         *     409 `upload_closed`.
          */
         get: operations["getUpload"];
         put?: never;
@@ -1052,6 +1054,7 @@ export interface operations {
                     "application/json": components["schemas"]["Release"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1109,6 +1112,7 @@ export interface operations {
                     "application/json": components["schemas"]["PublicRelease"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -1198,6 +1202,7 @@ export interface operations {
                     "application/json": components["schemas"]["CoverGrant"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1223,9 +1228,11 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     signUploadParts: {
@@ -1346,6 +1353,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1447,6 +1455,7 @@ export interface operations {
                     "application/json": components["schemas"]["Release"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1506,6 +1515,7 @@ export interface operations {
                     "application/json": components["schemas"]["Release"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1569,6 +1579,7 @@ export interface operations {
                     "application/json": components["schemas"]["PlaybackGrant"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
