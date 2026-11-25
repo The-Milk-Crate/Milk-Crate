@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 25 November 2026, after sessions J1 (#41), J2 (#43) and J3 (#45). Next: J4, then step 9.
+For K Marcus and the next session. Last updated 25 November 2026, after sessions J1 (#41), J2 (#43), J3 (#45) and J4 (#47). Next: step 9, and K Marcus's Supabase stand-up.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -190,7 +190,7 @@ current state and the next steps. Update it when a step is done.
    - J2 `docs/phase0-prompts/j2-supabase-fixes.md`: Supabase deployment;
    - J3 `docs/phase0-prompts/j3-aws-fixes.md`: AWS deployment;
    - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
-   J1, J2 and J3 are merged; J4 is next.
+   J1 to J4 are merged.
    - J1: done (25 November 2026, merged #41). Migrations `0009` to `0014` and the handler fixes
      for H1, H2 (part a), M1, M2, L1, L2, L3, L6 and the invitation email; details in #41,
      `db/README.md` ("Rate limits") and `core/src/handlers/README.md`. The invitation email now
@@ -236,6 +236,19 @@ current state and the next steps. Update it when a step is done.
      - For later changes to `start(...)`: keep the abort after every step that can still refuse
        a start (a refused start must not end the upload it would have replaced), and give any
        new `ObjectStorage` fake the method.
+   - J4: done (25 November 2026, merged #47). Worker fix for M4; details in #47 and
+     `worker/README.md`. ffprobe and ffmpeg read a master only as its declared format
+     (`-f wav|aiff|flac`), only from local files (`-protocol_whitelist file`), and get only `PATH`
+     from the worker's environment. Tests: `worker/test/untrusted.test.ts`. They pass on ffmpeg
+     6.1 with or without the fix (6.1 already refuses both trick files), so only ffmpeg 5.1 shows
+     the fix works (step 9). Decided by K Marcus with J4:
+     - the step also checks that a FLAC starts with `fLaC`, after any ID3v2 tags: once the format
+       is forced, ffmpeg's FLAC reader no longer checks it, and a WAV declared as FLAC would fail
+       with the wrong words ("could not read this file's length") instead of "not a valid FLAC";
+     - if `PATH` is unset, the tools get an empty environment (both images set it);
+     - no `file:` prefix on the temp paths: the worker makes them, always absolute and local.
+     Not run for real yet: neither image was built with the change (Debian's package servers were
+     out of reach from J4's session). Later: a separate user and no network for ffmpeg.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
@@ -250,6 +263,47 @@ current state and the next steps. Update it when a step is done.
      by hand: `getPlayback` and `getCover` give cookies that open the stream and the cover, a
      missing stream is a 404, `getPublicRelease` and `recordPlays` answer, and their logs show
      no `AccessDenied`.
+
+   From J4 (#47), the worker on ffmpeg 5.1:
+   - In the smoke check above, the WAV, AIFF and FLAC still reach `awaiting_splits` (they now run
+     with `-f`, `-protocol_whitelist file` and only `PATH`).
+   - Add a fourth release with one master declared `wav` whose bytes are this text (an HLS
+     playlist; the address is never meant to answer):
+     ```
+     #EXTM3U
+     #EXT-X-TARGETDURATION:2
+     #EXTINF:2.0,
+     http://127.0.0.1:9/seg.wav
+     #EXT-X-ENDLIST
+     ```
+     Expected: the release is `failed` with the reason
+     `Track 1, "<title>": this file is not a valid WAV. Export it again and upload it.`
+     Any other reason (such as "damaged") means ffmpeg read it as something else: stop and
+     bring it to a session.
+   - The run cannot see whether ffmpeg tried to open the address. The new tests can: they start
+     a local HTTP server and fail if it gets a request. Run them once on Debian's ffmpeg 5.1,
+     before or after the sandbox run, on K Marcus's machine with Docker running, from the
+     repository root. First, if `deploy/supabase/node_modules` is missing (the tests load its
+     `postgres` package):
+     ```bash
+     (cd deploy/supabase && npm ci)
+     ```
+     Then build the worker images' base with their ffmpeg line (a few minutes the first time):
+     ```bash
+     docker build -t mc-ffmpeg51 - <<'EOF'
+     FROM node:22.23.5-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
+     RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+     EOF
+     ```
+     Then run the tests in it with the checkout mounted:
+     ```bash
+     docker run --rm -v "$PWD":/repo -w /repo/worker mc-ffmpeg51 sh -c 'ffmpeg -hide_banner -version | head -n1 && node --test --test-reporter=spec test/untrusted.test.ts'
+     ```
+     Expected: `ffmpeg version 5.1...`, then `tests 3`, `pass 3`, `fail 0`, and one suite
+     skipped ("needs MC_TEST_DB_URL": it needs the test database, and it is the same check
+     through the whole step). A failure means 5.1 behaves differently from 6.1: stop and bring
+     the output to a session. Checked in J4 on the base image without ffmpeg: the mount and the
+     imports work, and the only failures were "ffmpeg not found".
 
 ## Still open
 
