@@ -179,33 +179,41 @@ function operationGrants(operationId: string): { action: string; resource: strin
   return grants;
 }
 
-test("listener operations get a narrow role: Data API, s3:GetObject on streams/* and art/*, the CloudFront key only for read grants", () => {
+test("listener operations get a narrow role: the Data API; the read grants also read streams/* and art/*, list the bucket and read the CloudFront key", () => {
   assert.deepEqual([...LISTENER_OPERATIONS].sort(), ["getCover", "getPlayback", "getPublicRelease", "recordPlays"]);
+  assert.deepEqual([...READ_GRANT_OPERATIONS].sort(), ["getCover", "getPlayback"]);
   for (const op of LISTENER_OPERATIONS) {
+    const readGrant = (READ_GRANT_OPERATIONS as readonly string[]).includes(op);
     const grants = operationGrants(op);
     const actions = [...new Set(grants.map((g) => g.action))].sort();
     for (const g of grants) {
-      const ok =
+      const dataApi =
         g.action.startsWith("rds-data:") ||
         // grantDataApiAccess: the Data API reads the database secret with the caller's credentials.
-        ((g.action === "secretsmanager:GetSecretValue" || g.action === "secretsmanager:DescribeSecret") && /DatabaseSecret/.test(g.resource)) ||
+        ((g.action === "secretsmanager:GetSecretValue" || g.action === "secretsmanager:DescribeSecret") && /DatabaseSecret/.test(g.resource));
+      const read =
         (g.action === "s3:GetObject" && /"\/(streams|art)\/\*"/.test(g.resource)) ||
+        // On the bucket itself, so a missing object is a 404 (no "/" path after the bucket).
+        (g.action === "s3:ListBucket" && /^\{"Fn::GetAtt":\["Files[0-9A-F]+","Arn"\]\}$/.test(g.resource)) ||
         (g.action === "secretsmanager:GetSecretValue" && g.resource.includes("milk-crate/phase0/MC_CLOUDFRONT_PRIVATE_KEY-??????"));
-      assert.ok(ok, `${op}: ${g.action} on ${g.resource}`);
+      assert.ok(dataApi || (readGrant && read), `${op}: ${g.action} on ${g.resource}`);
     }
-    // Nothing that writes, deletes, lists, runs tasks, passes roles, schedules or sends email.
+    // Nothing that writes, deletes, lists uploads, runs tasks, passes roles, schedules or sends email.
     for (const a of actions) {
       assert.ok(!/^(ecs|iam|scheduler|ses|sqs|cognito-idp):/.test(a), `${op}: ${a}`);
-      assert.ok(!/^s3:(Put|Delete|Abort|List)/.test(a), `${op}: ${a}`);
+      assert.ok(!/^s3:(Put|Delete|Abort|ListBucketMultipartUploads|ListMultipartUploadParts)/.test(a), `${op}: ${a}`);
     }
-    const s3 = grants.filter((g) => g.action.startsWith("s3:"));
-    assert.equal(s3.length, 2, op);
-    assert.ok(s3.some((g) => /\/streams\/\*/.test(g.resource)) && s3.some((g) => /\/art\/\*/.test(g.resource)), op);
-    // No secret under milk-crate/phase0/* as a whole; the CloudFront key only where cookies are signed.
     assert.ok(!grants.some((g) => g.resource.includes("milk-crate/phase0/*")), op);
-    const readsKey = grants.some((g) => g.resource.includes("MC_CLOUDFRONT_PRIVATE_KEY"));
-    assert.equal(readsKey, (READ_GRANT_OPERATIONS as readonly string[]).includes(op), op);
     assert.ok(actions.includes("rds-data:ExecuteStatement"), op);
+    const s3 = grants.filter((g) => g.action.startsWith("s3:")).map((g) => g.action).sort();
+    if (readGrant) {
+      assert.deepEqual(s3, ["s3:GetObject", "s3:GetObject", "s3:ListBucket"], op);
+      assert.ok(grants.some((g) => g.resource.includes("MC_CLOUDFRONT_PRIVATE_KEY")), op);
+    } else {
+      // getPublicRelease and recordPlays use only the database.
+      assert.deepEqual(s3, [], op);
+      assert.ok(!grants.some((g) => g.resource.includes("MC_CLOUDFRONT_PRIVATE_KEY")), op);
+    }
   }
 });
 

@@ -58,12 +58,12 @@ export const SWEEP_SCHEDULE = "mc-worker-sweep";
 export const ACCOUNT_SYNC_SCHEDULE = "mc-account-sync";
 
 /**
- * Listener operations (decided by K Marcus, finding L4): their Lambdas get only the Data API
- * and s3:GetObject on streams/* and art/*; the two read grants also read the CloudFront key.
- * Every other operation in functions/routes.json gets the full set.
+ * Listener operations (decided by K Marcus, finding L4): their Lambdas get only the Data API.
+ * The two read grants (READ_GRANT_OPERATIONS) also read streaming copies and covers and the
+ * CloudFront key. Every other operation in functions/routes.json gets the full set.
  */
 export const LISTENER_OPERATIONS = ["getPublicRelease", "getPlayback", "getCover", "recordPlays"] as const;
-/** The listener operations that sign CloudFront cookies, so read the CloudFront private key. */
+/** The listener operations that sign CloudFront cookies (storage.signRead). */
 export const READ_GRANT_OPERATIONS = ["getPlayback", "getCover"] as const;
 
 /** Stage throttling on the HTTP API (decided by K Marcus, finding M2): the platform backstop. */
@@ -441,18 +441,20 @@ export class MilkCrateStack extends Stack {
         timeout: Duration.seconds(29),
       });
       // Each function has its own role (CDK makes one per function). The database secret is
-      // read by the Data API with the caller's credentials, so every one needs this.
+      // read by the Data API with the caller's credentials, so every one needs this. The other
+      // listener operations (getPublicRelease, recordPlays) get nothing more.
       cluster.grantDataApiAccess(fn);
-      if ((LISTENER_OPERATIONS as readonly string[]).includes(r.operationId)) {
-        // Listener role: read streaming copies and covers (signRead checks the object exists
-        // first). No writes, deletes, ECS, PassRole, Scheduler, SES or other secret.
+      if ((READ_GRANT_OPERATIONS as readonly string[]).includes(r.operationId)) {
+        // Read grants: signRead checks the object exists (a HEAD), then signs cookies with the
+        // CloudFront key. ListBucket lets S3 answer 404, not 403, for a missing object (decided
+        // by K Marcus); it shows key names, never contents. No writes, deletes, ECS, PassRole,
+        // Scheduler, SES or other secret.
         fn.addToRolePolicy(
           new iam.PolicyStatement({ actions: ["s3:GetObject"], resources: [bucket.arnForObjects("streams/*"), bucket.arnForObjects("art/*")] }),
         );
-        if ((READ_GRANT_OPERATIONS as readonly string[]).includes(r.operationId)) {
-          fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [cloudFrontKeySecret] }));
-        }
-      } else {
+        fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:ListBucket"], resources: [bucket.bucketArn] }));
+        fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [cloudFrontKeySecret] }));
+      } else if (!(LISTENER_OPERATIONS as readonly string[]).includes(r.operationId)) {
         addFullOperationPolicy(fn);
       }
       api.addRoutes({

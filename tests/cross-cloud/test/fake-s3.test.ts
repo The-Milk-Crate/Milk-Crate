@@ -1,6 +1,6 @@
 // The fake S3 behaves as S3 does for session F's part URLs (session J3, finding M3): a part
-// URL is signed with that part's size, so a body of another length is refused, and a new
-// upload for a key aborts the old one. F's own storage module, against the fake.
+// URL is signed with that part's size, so a body of another length is refused, and
+// abortOtherUploads ends a replaced upload. F's own storage module, against the fake.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -65,14 +65,17 @@ test("a part URL takes only its planned size; the last part is smaller", async (
   assert.equal([...s3.uploads.values()][0].parts.size, 2);
 });
 
-test("a new upload for the same key aborts the old one; other keys keep theirs", async () => {
+test("abortOtherUploads ends the replaced upload for that key only, and keeps the new one", async () => {
   const { s3, storage } = setup();
   const other = MASTER.replace(/\/[^/]+\/original$/, "/22222222-2222-4222-8222-222222222222/original");
   const old = await storage.startUpload({ key: MASTER, format: "wav", sizeBytes: MIB });
   await storage.startUpload({ key: other, format: "wav", sizeBytes: MIB });
   if (old.method !== "s3_multipart") throw new Error("method");
   assert.equal((await put(s3.clientFetch, old.parts[0].url, MIB)).status, 200);
-  await storage.startUpload({ key: MASTER, format: "flac", sizeBytes: 2 * MIB });
+  const next = await storage.startUpload({ key: MASTER, format: "flac", sizeBytes: 2 * MIB });
+  // Starting alone ends nothing: the core ends the old one once the new one is recorded.
+  assert.equal(s3.uploads.size, 3);
+  await storage.abortOtherUploads(MASTER, next.providerUploadId);
   assert.deepEqual([...s3.uploads.values()].map((u) => u.key).sort(), [MASTER, other].sort());
   // The old upload's part URL now finds no upload, and its parts are gone.
   assert.equal((await put(s3.clientFetch, old.parts[0].url, MIB)).status, 404);

@@ -143,7 +143,8 @@ function unquote(etag: string | undefined): string {
  * Uploads (`s3_multipart`): the server opens a multipart upload with a full-object CRC64NVME
  * checksum and gives the client presigned part URLs. The client never gets AWS credentials,
  * and each URL allows only that one part of that one upload, at its planned size, for an
- * hour. Starting an upload aborts any other unfinished upload to the same key.
+ * hour. Once the core has recorded a new upload, `abortOtherUploads` aborts every other
+ * unfinished upload to the same key.
  *
  * Reads: CloudFront signed cookies for one track's streaming folder (or one release's cover
  * folder), valid 600 seconds, plus the address to read. Never a master.
@@ -180,9 +181,9 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
 
   /**
    * Aborts every unfinished multipart upload under the prefix; with `exactKey`, only those
-   * for that one key (a prefix also matches longer keys).
+   * for that one key (a prefix also matches longer keys), and never the S3 upload `keep`.
    */
-  async function abortUploads(prefix: string, exactKey?: string): Promise<void> {
+  async function abortUploads(prefix: string, exactKey?: string, keep?: string): Promise<void> {
     let keyMarker: string | undefined;
     let idMarker: string | undefined;
     for (;;) {
@@ -191,6 +192,7 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       );
       for (const u of out.Uploads ?? []) {
         if (exactKey !== undefined && u.Key !== exactKey) continue;
+        if (keep !== undefined && u.UploadId === keep) continue;
         try {
           await s3.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: u.Key, UploadId: u.UploadId }));
         } catch (error) {
@@ -289,9 +291,6 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       } else {
         throw new Error(`uploads go only to a master or cover key, not ${key}`);
       }
-      // A new upload for a key replaces the old one (session B marks it replaced), so the
-      // old one's parts go now rather than when the lifecycle rule aborts them.
-      await abortUploads(key, key);
       const started = now();
       const created = await s3.send(
         new CreateMultipartUploadCommand({
@@ -305,6 +304,12 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       );
       if (!created.UploadId) throw new StorageError(502, "S3 returned no upload id");
       return session(key, packUploadId(created.UploadId, started, sizeBytes), []);
+    },
+
+    async abortOtherUploads(key: ObjectKey, keepProviderUploadId: string): Promise<void> {
+      if (!MASTER_KEY.test(key) && !COVER_KEY.test(key)) throw new Error(`uploads go only to a master or cover key, not ${key}`);
+      // A replaced upload's parts go now rather than when the lifecycle rule aborts them.
+      await abortUploads(key, key, unpackUploadId(keepProviderUploadId).s3UploadId);
     },
 
     getUpload,

@@ -9,8 +9,8 @@
 #     and jsonb, session B's MC404 error text, and a rolled-back transaction;
 #   - S3: presigned parts with no part checksum on a full-object CRC64NVME upload, a part of
 #     the wrong length refused (the URL signs its size), resume, a wrong CRC64NVME (refused,
-#     upload stays open), the right one, a repeat confirm, readHead, and a new upload for a key
-#     aborting the old one;
+#     upload stays open), the right one, a repeat confirm, readHead, and abortOtherUploads ending a
+#     replaced upload but not the new one;
 #   - CloudFront: signed cookies read one track's streaming copy, and not another track's, not
 #     without cookies, and never a master;
 #   - Cognito: a real access token checked against the pool's JWKS, the claim following

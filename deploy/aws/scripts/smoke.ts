@@ -212,13 +212,16 @@ if (uploaded) {
   });
 }
 
-await check("upload: a new upload for the same key aborts the old one", async () => {
+await check("upload: abortOtherUploads ends the replaced upload and keeps the new one", async () => {
   const key = `masters/${artist}/${release}/${otherTrack}/original`;
   const first = await storage.startUpload({ key, format: "wav", sizeBytes: MIB });
-  await storage.startUpload({ key, format: "wav", sizeBytes: MIB });
+  const second = await storage.startUpload({ key, format: "wav", sizeBytes: MIB });
+  await storage.abortOtherUploads(key, second.providerUploadId);
   const old = await storage.getUpload(key, first.providerUploadId);
-  if (old.method !== "s3_multipart") throw new Error("method");
+  const kept = await storage.getUpload(key, second.providerUploadId);
+  if (old.method !== "s3_multipart" || kept.method !== "s3_multipart") throw new Error("method");
   expect(old.parts.length === 0 && old.completedParts.length === 0, "the old upload is still open");
+  expect(kept.parts.length === 1, "the new upload was ended too");
 });
 
 // 3. Reads through CloudFront with signed cookies.

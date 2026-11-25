@@ -60,6 +60,10 @@ export class FakeStorage implements ObjectStorage {
   deleted: string[] = [];
   signedReads: SignReadInput[] = [];
   confirms: ConfirmUploadInput[] = [];
+  /** Each abortOtherUploads call. */
+  aborts: { key: ObjectKey; keep: string }[] = [];
+  /** When set, abortOtherUploads throws it. */
+  abortError?: Error;
   /** Over this, startUpload throws status 413, as on a free Supabase project. */
   sizeLimit = Number.POSITIVE_INFINITY;
   /** What the next confirmUpload says. */
@@ -110,6 +114,11 @@ export class FakeStorage implements ObjectStorage {
     const u = { key: input.key, sizeBytes: input.sizeBytes, format: input.format, expiresAt: "2030-01-01T00:00:00.000Z" };
     this.uploads.set(id, u);
     return this.session(id, u, 0);
+  }
+
+  async abortOtherUploads(key: ObjectKey, keep: string): Promise<void> {
+    this.aborts.push({ key, keep });
+    if (this.abortError) throw this.abortError;
   }
 
   async getUpload(key: ObjectKey, providerUploadId: string): Promise<StorageUpload> {

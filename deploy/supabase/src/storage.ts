@@ -268,6 +268,12 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
       return tusSession(packUploadId(uploadUrl, started, sizeBytes), token, 0, expiresMs);
     },
 
+    async abortOtherUploads(): Promise<void> {
+      // A no-op for now (decided by K Marcus). A replaced TUS upload is left open; it gets no
+      // new token, because the core's getUpload answers 409 for it, and its token expires in
+      // about two hours. Ending it (a TUS DELETE) would be session J2's (finding H2).
+    },
+
     async getUpload(key: ObjectKey, providerUploadId: string): Promise<StorageUpload> {
       const { uploadUrl, startedMs, sizeBytes } = unpackUploadId(providerUploadId);
       const { token, expiresMs } = await signUpload(key);

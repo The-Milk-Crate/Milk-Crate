@@ -68,10 +68,8 @@ test("upload id packs the S3 id, start and size", () => {
   assert.throws(() => unpackUploadId("abc"), /not an upload id/);
 });
 
-const noUploads = () => ({ IsTruncated: false });
-
 test("startUpload opens a multipart upload with a full-object CRC64NVME and signs the first parts", async () => {
-  const s3 = new FakeAws().on(ListMultipartUploadsCommand, noUploads).on(CreateMultipartUploadCommand, () => ({ UploadId: "up-1" }));
+  const s3 = new FakeAws().on(CreateMultipartUploadCommand, () => ({ UploadId: "up-1" }));
   const size = 5 * 1024 ** 3;
   const session = await storage(s3).startUpload({ key: MASTER, format: "wav", sizeBytes: size });
   assert.deepEqual(s3.inputs(CreateMultipartUploadCommand)[0], {
@@ -135,11 +133,17 @@ test("each part URL is signed with that part's planned size; the last part is sm
   assert.notEqual(a.searchParams.get("X-Amz-Signature"), b.searchParams.get("X-Amz-Signature"));
 });
 
-test("startUpload first aborts every other unfinished upload for the same key (paged), and only that key", async () => {
+test("startUpload opens the new upload and aborts nothing (the core calls abortOtherUploads after recording it)", async () => {
+  const s3 = new FakeAws().on(CreateMultipartUploadCommand, () => ({ UploadId: "up-new" }));
+  await storage(s3).startUpload({ key: MASTER, format: "flac", sizeBytes: 9 * MIB });
+  assert.deepEqual(s3.names(), ["CreateMultipartUploadCommand"]);
+});
+
+test("abortOtherUploads aborts every other unfinished upload for that exact key (paged), keeping the new one", async () => {
   const s3 = new FakeAws()
     .on(ListMultipartUploadsCommand, (input) =>
       input.KeyMarker
-        ? { Uploads: [{ Key: MASTER, UploadId: "old-2" }], IsTruncated: false }
+        ? { Uploads: [{ Key: MASTER, UploadId: "old-2" }, { Key: MASTER, UploadId: "up-new" }], IsTruncated: false }
         : {
             Uploads: [
               { Key: MASTER, UploadId: "old-1" },
@@ -154,9 +158,8 @@ test("startUpload first aborts every other unfinished upload for the same key (p
     .on(AbortMultipartUploadCommand, (input) => {
       if (input.UploadId === "old-2") throw awsError("NoSuchUpload", "already gone", 404);
       return {};
-    })
-    .on(CreateMultipartUploadCommand, () => ({ UploadId: "up-new" }));
-  await storage(s3).startUpload({ key: MASTER, format: "flac", sizeBytes: 9 * MIB });
+    });
+  await storage(s3).abortOtherUploads(MASTER, packUploadId("up-new", NOW, 9 * MIB));
   assert.deepEqual(s3.inputs(ListMultipartUploadsCommand), [
     { Bucket: "mc-files", Prefix: MASTER, KeyMarker: undefined, UploadIdMarker: undefined },
     { Bucket: "mc-files", Prefix: MASTER, KeyMarker: MASTER, UploadIdMarker: "old-1" },
@@ -165,18 +168,15 @@ test("startUpload first aborts every other unfinished upload for the same key (p
     { Bucket: "mc-files", Key: MASTER, UploadId: "old-1" },
     { Bucket: "mc-files", Key: MASTER, UploadId: "old-2" },
   ]);
-  // The aborts come before the new upload is opened.
-  const names = s3.names();
-  assert.ok(names.lastIndexOf("AbortMultipartUploadCommand") < names.indexOf("CreateMultipartUploadCommand"));
 });
 
-test("startUpload stops when an abort fails for another reason, and opens nothing", async () => {
+test("abortOtherUploads passes on an abort failure, and takes only a master or cover key", async () => {
   const s3 = new FakeAws()
     .on(ListMultipartUploadsCommand, () => ({ Uploads: [{ Key: COVER, UploadId: "old" }], IsTruncated: false }))
-    .on(AbortMultipartUploadCommand, () => { throw awsError("AccessDenied", "no", 403); })
-    .on(CreateMultipartUploadCommand, () => ({ UploadId: "never" }));
-  await assert.rejects(storage(s3).startUpload({ key: COVER, format: "jpeg", sizeBytes: MIB }), /no/);
-  assert.equal(s3.inputs(CreateMultipartUploadCommand).length, 0);
+    .on(AbortMultipartUploadCommand, () => { throw awsError("AccessDenied", "no", 403); });
+  await assert.rejects(storage(s3).abortOtherUploads(COVER, packUploadId("new", NOW, MIB)), /no/);
+  await assert.rejects(storage(new FakeAws()).abortOtherUploads(STREAM, packUploadId("new", NOW, MIB)), /only to a master or cover/);
+  await assert.rejects(storage(new FakeAws()).abortOtherUploads(MASTER, "not-ours"), /not an upload id/);
 });
 
 test("startUpload refuses what the contract does not allow", async () => {
@@ -189,7 +189,7 @@ test("startUpload refuses what the contract does not allow", async () => {
 });
 
 test("a cover uses the same s3_multipart session", async () => {
-  const s3 = new FakeAws().on(ListMultipartUploadsCommand, noUploads).on(CreateMultipartUploadCommand, () => ({ UploadId: "up-c" }));
+  const s3 = new FakeAws().on(CreateMultipartUploadCommand, () => ({ UploadId: "up-c" }));
   const session = await storage(s3).startUpload({ key: COVER, format: "png", sizeBytes: 3 * MIB });
   assert.equal(session.method, "s3_multipart");
   assert.equal(s3.inputs(CreateMultipartUploadCommand)[0].ContentType, "image/png");
