@@ -123,6 +123,7 @@ describe("run-live against the mocks, through plain HTTP calls", () => {
         "4b the right code while locked",
         "6 the schedule fires",
         "7 a listener reads the first release once it is live",
+        "8 server time passes",
         "8 counts",
         "refused: suspended and removed accounts",
         "9 the files are gone",

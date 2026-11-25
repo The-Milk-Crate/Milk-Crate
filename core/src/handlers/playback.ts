@@ -1,7 +1,7 @@
 // getPlayback, getCover and recordPlays.
 import type { ReleaseState } from "../platform/index.ts";
 import { operation, STAFF_READERS, whoIsCalling, type Settings, type Who } from "./context.ts";
-import { badRequest, conflict, json, notFound } from "./http.ts";
+import { badRequest, conflict, json, notFound, tooMany } from "./http.ts";
 import {
   arrayField,
   dateTimeField,
@@ -79,12 +79,26 @@ export function playbackOperations(s: Settings) {
       };
     });
     const who = await whoIsCalling(ctx);
-    // Session B decides what qualifies (30 seconds or more, on a live release). Events for a
-    // release that is not live are kept and never count; an unknown track is 422.
-    const [row] = await ctx.modules.database.query<{ status: "ok" | "duplicate" | "conflict" }>(
-      "select b.status from public.api_record_play_batch($1::uuid, $2::text, $3::jsonb) b",
-      [who.userId, key, JSON.stringify(events)],
+    // Session B's rule decides what qualifies (finding H1, session J1): 30 seconds of position
+    // and device time, at least 15 seconds of server receive time, no position past the track's
+    // length, no overlap with another counted play by this account, on a live release. Events
+    // that do not qualify are kept; an unknown track is 422. The same statement counts the
+    // limits: 60 batches a minute and 10,000 stored events a UTC day per account.
+    const receivedAt = ctx.settings.playsReceivedAt ? ctx.settings.playsReceivedAt().toISOString() : null;
+    const [row] = await ctx.modules.database.query<{
+      status: "ok" | "duplicate" | "conflict" | "too_many_batches" | "too_many_events";
+      retry_after: string | null;
+    }>(
+      `select b.status, b.retry_after_seconds::text as retry_after
+         from public.api_record_play_batch($1::uuid, $2::text, $3::jsonb, $4::timestamptz) b`,
+      [who.userId, key, JSON.stringify(events), receivedAt],
     );
+    if (row.status === "too_many_batches") {
+      throw tooMany("rate_limited", "Too many play batches from this account this minute. Send them again shortly.", Number(row.retry_after));
+    }
+    if (row.status === "too_many_events") {
+      throw tooMany("rate_limited", "This account sent too many play events today. Try again tomorrow (UTC).", Number(row.retry_after));
+    }
     if (row.status === "conflict") {
       throw conflict("idempotency_conflict", "This Idempotency-Key was already used for a different batch.");
     }

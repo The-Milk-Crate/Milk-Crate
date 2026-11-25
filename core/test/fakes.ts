@@ -226,7 +226,7 @@ export class FakeEmail implements SecretsAndEmail {
     if (this.fail) throw new Error("email is down");
     // Session E's templates refuse a missing field; so does this fake.
     const needs: Record<EmailTemplate, string[]> = {
-      split_invitation: ["releaseTitle", "artistName", "inviteCode", "expiresAt"],
+      split_invitation: ["releaseTitle", "artistName", "inviteCode", "expiresAt", "releaseId", "partyId"],
       review_needs_changes: ["releaseTitle", "reason"],
       release_taken_down: ["releaseTitle", "reason"],
     };

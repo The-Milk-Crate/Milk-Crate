@@ -153,6 +153,32 @@ for pass in 1 2; do
 done
 echo "ok - 0008 numbers existing parties per release by created_at, id, once"
 
+# 3c. 0013 (session J1) stops, changing nothing, when a release already has two owner shares
+#     on one side. Uses the fill database above, which has every migration now; the unique
+#     index is dropped to stand for a database from before 0013.
+run_fill --single-transaction <<'SQL'
+drop index public.api_parties_one_owner;
+set local session_replication_role = replica;
+insert into public.api_parties (release_id, side, role, name, percent, is_owner, state, responded_at) values
+  ('00000000-0000-0000-0000-0000000000a2', 'composition', 'r', 'owner one', 50, true, 'accepted', now()),
+  ('00000000-0000-0000-0000-0000000000a2', 'composition', 'r', 'owner two', 50, true, 'accepted', now());
+SQL
+f0013="$(ls "$migrations"/0013_*.sql)"
+if out="$(run_fill --single-transaction -f "$f0013" 2>&1)"; then
+  echo "FAIL - 0013 ran over a release with two owner shares on one side" >&2
+  exit 1
+fi
+if ! grep -q "two_owner_shares: .*00000000-0000-0000-0000-0000000000a2 composition" <<<"$out"; then
+  echo "$out" >&2
+  echo "FAIL - 0013's error does not name the release and side" >&2
+  exit 1
+fi
+if [[ "$(run_fill -At -c "select count(*) from pg_indexes where indexname = 'api_parties_one_owner'")" != "0" ]]; then
+  echo "FAIL - 0013 changed something before it stopped" >&2
+  exit 1
+fi
+echo "ok - 0013 stops with the release named when a side already has two owner shares"
+
 # 4. The checks. Each prints "ok - ..."; the first failure stops the run.
 run_psql -f "$here/checks.sql" 2>&1 | sed -E 's/^psql:[^ ]+ NOTICE: +//'
 

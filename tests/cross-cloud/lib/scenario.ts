@@ -47,6 +47,12 @@ export interface Target {
   /** Runs the hourly sweep's late pass for this takedown (at least 2 hours on); true when it is marked done. */
   lateTakedownPass?: (auditId: string) => Promise<boolean>;
   plays?: (playId: string) => Promise<{ events: number; qualified: number }>;
+  /**
+   * Lets `seconds` of server time pass for these plays' events so far: the mocks move their
+   * receive times back. A play qualifies only over 15 seconds or more of server time (session
+   * J1). A real deployment has no such step (and its counts are not readable either).
+   */
+  serverTimePasses?: (playIds: string[], seconds: number) => Promise<void>;
   /** Accounts a real deployment's tokens cannot stand for. */
   accounts?: {
     /** A suspended artist: `token` says end_user (after the refresh), `staleToken` still says artist. */
@@ -85,10 +91,14 @@ const TITLE = "Cross-cloud one: Café “Ünïcode” 🎵 – \\ ' %";
 const utcDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
 const uuidLike = () => crypto.randomUUID();
 
-/** Masters and covers, made once per process and shared by every run. */
+/**
+ * Masters and covers, made once per process and shared by every run. `other` (the second
+ * release, which is played in step 8) lasts 40 seconds: a play counts only up to the track's
+ * length (session J1).
+ */
 let media: { long: Uint8Array; short: Uint8Array; other: Uint8Array; cover: Uint8Array; tall: Uint8Array } | undefined;
 export function scenarioMedia() {
-  media ??= { long: wav(50), short: wav(2, 660), other: wav(3, 550), cover: png(1400, 1400), tall: png(1400, 1500) };
+  media ??= { long: wav(50), short: wav(2, 660), other: wav(40, 550), cover: png(1400, 1400), tall: png(1400, 1500) };
   return media;
 }
 
@@ -338,25 +348,35 @@ export async function runScenario(t: Target): Promise<ScenarioResult> {
     params: { releaseId: r2, partyId: p4 }, body: { inviteCode: "wrong-code-11-0123456789" },
   }, 429);
   rec.fact("4b the 11th wrong code", "Retry-After is set", Number(limited.headers.get("retry-after")) > 0);
+  // Only wrong codes meet the lock (session J1): the right code still works. Viewed, not
+  // answered, so the party stays invited for the resends below.
   if (has(t.inviteCode, "4b the right code while locked", "the invite codes are only in the emails")) {
-    await rec.call("4b the right code while locked", "respondToSplit", L, {
-      params: { releaseId: r2, partyId: p4 }, body: { response: "accept", inviteCode: t.inviteCode!(t.inviteeEmail(4)) },
-    }, 429);
+    await rec.call("4b the right code while locked", "getInvitation", L, {
+      params: { releaseId: r2, partyId: p4 }, body: { inviteCode: t.inviteCode!(t.inviteeEmail(4)) },
+    }, 200);
   }
   await rec.call("4b a listener cannot resend", "resendInvitation", L, { params: { releaseId: r2, partyId: p4 } }, 403);
   if (B) {
     await rec.call("4b another artist cannot resend", "resendInvitation", B, { params: { releaseId: r2, partyId: p4 } }, 404);
   }
-  // putRights sent the first; four resends reach the limit of five a day.
-  for (let i = 2; i <= 5; i++) {
-    await rec.call(`4b resend ${i} of 5`, "resendInvitation", A, { params: { releaseId: r2, partyId: p4 } }, 204, { release: r2 });
+  // putRights sent the first; two resends reach the limit of three a day per party (and per
+  // address; both 3 since session J1).
+  for (let i = 2; i <= 3; i++) {
+    await rec.call(`4b resend ${i} of 3`, "resendInvitation", A, { params: { releaseId: r2, partyId: p4 } }, 204, { release: r2 });
   }
-  await rec.call("4b resend 6 of 5", "resendInvitation", A, { params: { releaseId: r2, partyId: p4 } }, 429);
-  if (t.emailSubjects) rec.fact("4b invitation emails", "five sent to invitee four", t.emailSubjects(t.inviteeEmail(4)).length);
+  const capped = await rec.call("4b resend 4 of 3", "resendInvitation", A, { params: { releaseId: r2, partyId: p4 } }, 429);
+  rec.fact("4b resend 4 of 3", "Retry-After is set", Number(capped.headers.get("retry-after")) > 0);
+  if (t.emailSubjects) rec.fact("4b invitation emails", "three sent to invitee four", t.emailSubjects(t.inviteeEmail(4)).length);
 
   // ---- 5. Submit, needs changes, fix, resubmit, approve ----
   log("5. review");
+  // A cover upload left open: submit cancels it, and getUpload signs nothing for it after
+  // (finding H2, session J1).
+  const leftOpen = await rec.call("5 a cover upload left open", "startCoverUpload", A, {
+    params: { releaseId: r1 }, body: { format: "png", sizeBytes: files.cover.length },
+  }, 201, { release: r1 });
   await rec.call("5 submit", "submitRelease", A, { params: { releaseId: r1 } }, 200, { release: r1 });
+  await rec.call("5 the upload left open, after submit", "getUpload", A, { params: { uploadId: leftOpen.body.uploadId } }, 409, { release: r1 });
   await rec.call("5 submit again", "submitRelease", A, { params: { releaseId: r1 } }, 409, { release: r1 });
   await rec.call("5 edit while in review", "updateRelease", A, { params: { releaseId: r1 }, body: { title: "No" } }, 409, { release: r1 });
   await rec.call("5 a new master while in review", "startUpload", A, {
@@ -483,13 +503,23 @@ export async function runScenario(t: Target): Promise<ScenarioResult> {
   const long = uuidLike();
   const short = uuidLike();
   const at = (s: number) => new Date(Date.UTC(2026, 10, 20, 12, 0, s)).toISOString();
-  const batch = {
+  // Each play starts in one batch and goes on in a later one: a whole play in one request
+  // never qualifies (session J1).
+  const starts = {
     events: [
       { type: "start", trackId: r2t, playId: long, positionMs: 0, occurredAt: at(0) },
+      { type: "start", trackId: r2t, playId: short, positionMs: 0, occurredAt: at(0) },
+    ],
+  };
+  await rec.call("8 the start of two plays", "recordPlays", L, { headers: { "idempotency-key": `xc-${uuidLike()}` }, body: starts }, 202);
+  if (has(t.serverTimePasses, "8 server time passes", "a real deployment's receive times cannot be moved")) {
+    await t.serverTimePasses!([long, short], 31);
+  }
+  const batch = {
+    events: [
       { type: "progress", trackId: r2t, playId: long, positionMs: 15000, occurredAt: at(15) },
       { type: "end", trackId: r2t, playId: long, positionMs: 31000, occurredAt: at(31) },
-      { type: "start", trackId: r2t, playId: short, positionMs: 0, occurredAt: at(40) },
-      { type: "end", trackId: r2t, playId: short, positionMs: 12000, occurredAt: at(52) },
+      { type: "end", trackId: r2t, playId: short, positionMs: 12000, occurredAt: at(12) },
     ],
   };
   const key = `xc-${uuidLike()}`;
@@ -498,7 +528,7 @@ export async function runScenario(t: Target): Promise<ScenarioResult> {
   const dup = await rec.call("8 the same batch again", "recordPlays", L, { headers: { "idempotency-key": key }, body: batch }, 202);
   rec.fact("8 the same batch again", "duplicate", dup.body?.duplicate);
   if (has(t.plays, "8 counts", "play rows are not readable through the API")) {
-    rec.fact("8 counts", "30 s or more qualifies, shorter does not, a repeat counts once", {
+    rec.fact("8 counts", "30 s or more over two batches qualifies, shorter does not, a repeat counts once", {
       long: await t.plays!(long),
       short: await t.plays!(short),
     });

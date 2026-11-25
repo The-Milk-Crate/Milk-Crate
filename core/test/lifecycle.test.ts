@@ -124,7 +124,9 @@ for (const method of ["tus", "s3_multipart"] as const) {
         [releaseId, artist.artistId!],
       );
 
-      // putRights: the owner's share is accepted at once; the other party is invited by email
+      // putRights: the owner's share is accepted at once; the other party is invited by email.
+      // A new address per run: invitations are counted per address per day (session J1).
+      const coEmail = `co-${crypto.randomUUID().slice(0, 8)}@example.invalid`;
       const rights = await h.call("putRights", {
         as: artist,
         params: { releaseId },
@@ -132,7 +134,7 @@ for (const method of ["tus", "s3_multipart"] as const) {
           parties: [
             { side: "recording", role: "artist", name: "Me", percent: 100 },
             { side: "composition", role: "songwriter", name: "Me", percent: 60 },
-            { side: "composition", role: "songwriter", name: "Co", email: "co@example.invalid", percent: 40 },
+            { side: "composition", role: "songwriter", name: "Co", email: coEmail, percent: 40 },
           ],
         },
       });
@@ -140,18 +142,22 @@ for (const method of ["tus", "s3_multipart"] as const) {
       assert.deepEqual(
         rights.body.parties.map((p: { name: string; state: string; percent: number }) => [p.name, p.state, p.percent]),
         [
-          ["Me", "accepted", 100],
-          ["Me", "accepted", 60],
+          // The owner's shares are named from the artist profile, whatever name was sent.
+          ["Test Artist", "accepted", 100],
+          ["Test Artist", "accepted", 60],
           ["Co", "invited", 40],
         ],
       );
       const invites = h.modules.secretsAndEmail.sent.filter((m) => m.template === "split_invitation");
       assert.equal(invites.length, 1);
-      assert.equal(invites[0].to, "co@example.invalid");
+      assert.equal(invites[0].to, coEmail);
       assert.equal(invites[0].data.releaseTitle, "First");
       assert.equal(invites[0].data.artistName, "Test Artist");
       const code = invites[0].data.inviteCode;
       const coParty = rights.body.parties[2].id;
+      // The email names the invitation (release and party ids) for the invitee to find it.
+      assert.equal(invites[0].data.releaseId, releaseId);
+      assert.equal(invites[0].data.partyId, coParty);
       assert.ok(!JSON.stringify(rights.body).includes(code), "the code is never returned");
 
       // submit with a party still invited is allowed; a declined one is not. Accept first.

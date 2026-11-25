@@ -35,6 +35,7 @@ interface UploadRow {
   size_bytes: string;
   state: "open" | "confirmed" | "replaced" | "cancelled";
   owner_id: string;
+  release_state: ReleaseState;
 }
 
 /** The caller's own upload. Someone else's, or none, is 404. */
@@ -42,7 +43,7 @@ async function ownUpload(db: Queryable, who: Who, uploadId: string): Promise<Upl
   const rows = await db.query<UploadRow>(
     `select u.id::text as id, u.release_id::text as release_id, u.track_id::text as track_id, u.kind, u.method,
             u.provider_upload_id, u.object_key, u.format, u.size_bytes::text as size_bytes, u.state,
-            r.owner_id::text as owner_id
+            r.owner_id::text as owner_id, r.state as release_state
        from public.api_uploads u join public.api_releases r on r.id = u.release_id
       where u.id = $1::uuid`,
     [uploadId],
@@ -148,6 +149,12 @@ export function uploadOperations(s: Settings) {
     // Before storage: on Supabase getUpload signs a fresh upload token, which a closed upload
     // (confirmed, replaced, or cancelled by a takedown) must not get.
     if (upload.state !== "open") throw conflict("upload_closed", `This upload is ${upload.state}.`);
+    // Also before storage: an upload the release's state no longer allows gets no token
+    // either (finding H2), for example a cover left open after submit, review or publish.
+    const allowed = upload.kind === "master" ? MASTER_ALLOWED : COVER_ALLOWED;
+    if (!allowed.includes(upload.release_state)) {
+      throw conflict("upload_closed", `No ${upload.kind} upload while the release is ${upload.release_state}.`);
+    }
     const stored = await ctx.modules.storage.getUpload(upload.object_key, upload.provider_upload_id);
     return json(200, sessionView({ ...upload, size_bytes: Number(upload.size_bytes) }, stored), ctx.requestId);
   });
@@ -235,6 +242,12 @@ export function uploadOperations(s: Settings) {
       }
       if (size.width < ctx.settings.minCoverPixels) {
         throw unprocessable("too_small", `The cover must be at least ${ctx.settings.minCoverPixels} pixels on each side.`);
+      }
+      if (size.width > ctx.settings.maxCoverPixels) {
+        throw unprocessable(
+          "too_large_image",
+          `The cover must be at most ${ctx.settings.maxCoverPixels} pixels on each side; this one is ${size.width}.`,
+        );
       }
       width = size.width;
       height = size.height;

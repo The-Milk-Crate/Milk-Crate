@@ -192,6 +192,15 @@ current state and the next steps. Update it when a step is done.
    - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
    J2 and J3 each add a few lines to this file (different sections); merge one, then update the
    other's branch.
+   - J1 (pull request open): migrations `0009` to `0014` and the handler fixes for H1, H2 (part
+     a), M1, M2, L1, L2, L3, L6 and the invitation email; details in the pull request,
+     `db/README.md` ("Rate limits") and `core/src/handlers/README.md`. Decided by K Marcus with
+     J1: the owner's `getUpload` fixture cells (409 where the release's state no longer allows
+     that kind of upload); the release cap counts distinct parties; a job running over 4 hours
+     does not count toward the 2 per artist, and a refused job waits aside (`waiting`) so the
+     sweep runs other artists' jobs; invitations per party default to 3 a day; every
+     `recordPlays` call counts toward 60 a minute; wrong codes are not recorded while locked.
+     Offline listening sent later in one batch no longer counts as a stream.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the

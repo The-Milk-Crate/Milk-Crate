@@ -2,7 +2,7 @@
 // reviewRelease, publishRelease and takedownRelease.
 import type { Modules, Queryable, ReleaseState } from "../platform/index.ts";
 import { allow, operation, STAFF_READERS, whoIsCalling, type Context, type Settings, type Who } from "./context.ts";
-import { badRequest, conflict, json, notFound, unprocessable } from "./http.ts";
+import { badRequest, conflict, json, notFound, tooMany, unprocessable } from "./http.ts";
 import {
   arrayField,
   dateField,
@@ -111,6 +111,16 @@ export function releaseOperations(s: Settings) {
     const id = await ctx.modules.database.transaction(async (tx) => {
       const who = await whoIsCalling(ctx, tx);
       allow(who, ["artist"]);
+      // At most 20 a UTC day per artist (finding M2). Counted in this transaction, so a release
+      // that is not created is not counted.
+      const [hit] = await tx.query<{ allowed: boolean; cap: string; retry_after: string }>(
+        `select h.allowed, h.cap::text as cap, h.retry_after_seconds::text as retry_after
+           from public.api_rate_hit('releases_day', $1::text, 1, null) h`,
+        [who.userId],
+      );
+      if (!hit.allowed) {
+        throw tooMany("rate_limited", `An artist can create ${hit.cap} releases a day. Try again tomorrow (UTC).`, Number(hit.retry_after));
+      }
       const [created] = await tx.query<{ id: string }>(
         `insert into public.api_releases (owner_id, title, release_date)
          values ($1::uuid, $2::text, $3::date) returning id::text as id`,

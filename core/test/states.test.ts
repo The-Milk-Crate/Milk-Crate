@@ -303,6 +303,18 @@ describe("releases stuck in processing", () => {
     assert.equal(await releaseState(releaseId), "awaiting_splits");
   });
 
+  it("a release whose job is waiting (its artist has 2 running) is not queued again", async () => {
+    const h = harness();
+    const releaseId = await stuck(h);
+    await age(releaseId, 20);
+    const requeue = makeRequeueStuckReleases(h.modules, { limit: 1000 });
+    assert.ok((await requeue()).requeued.includes(releaseId));
+    await db.query("update public.api_jobs set state = 'waiting' where release_id = $1::uuid", [releaseId]);
+    await age(releaseId, 20);
+    assert.ok(!(await requeue()).requeued.includes(releaseId));
+    assert.equal(await jobs(releaseId), 1);
+  });
+
   it("a release whose requeue fails again is reported and tried on the next sweep", async () => {
     const h = harness();
     const releaseId = await stuck(h);

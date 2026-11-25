@@ -56,11 +56,28 @@ function secondsToNextUtcDay(now: Date): number {
 }
 
 interface Invite {
+  releaseId: string;
   partyId: string;
   to: string;
   code: string;
   expiresAt: string;
 }
+
+/**
+ * What `api_issue_invite` answers. Besides the per-party daily limit (`rate_limited`), three
+ * caps (finding M1, session J1): 20 parties invited per release, all time (`release_limited`);
+ * 50 invitations per artist per UTC day (`artist_limited`); 3 per recipient address per UTC
+ * day (`address_limited`).
+ */
+type IssueStatus =
+  | "issued"
+  | "not_found"
+  | "not_invited"
+  | "taken_down"
+  | "rate_limited"
+  | "release_limited"
+  | "artist_limited"
+  | "address_limited";
 
 /**
  * Issues a code for each party through session B's `api_issue_invite`, inside the caller's
@@ -70,9 +87,9 @@ async function issueInvite(
   tx: Queryable,
   s: Settings,
   partyId: string,
-): Promise<{ status: "issued" | "not_found" | "not_invited" | "taken_down" | "rate_limited"; code?: string; expiresAt?: string }> {
+): Promise<{ status: IssueStatus; code?: string; expiresAt?: string }> {
   const code = newInviteCode(s);
-  const [row] = await tx.query<{ status: "issued" | "not_found" | "not_invited" | "taken_down" | "rate_limited"; expires_at: string | null }>(
+  const [row] = await tx.query<{ status: IssueStatus; expires_at: string | null }>(
     `select i.status, ${iso("i.expires_at")} as expires_at from public.api_issue_invite($1::uuid, $2::text, $3::integer) i`,
     [partyId, await hashInviteCode(code), s.inviteDailyLimit],
   );
@@ -86,7 +103,16 @@ async function sendInvites(modules: Modules, s: Settings, invites: Invite[], rel
       await modules.secretsAndEmail.sendTemplate({
         template: "split_invitation",
         to: invite.to,
-        data: { releaseTitle, artistName, inviteCode: invite.code, expiresAt: readableTime(invite.expiresAt) },
+        // The release id and party id let the invitee find the invitation (getInvitation and
+        // respondToSplit take them in the path). The code stays in the email body only.
+        data: {
+          releaseTitle,
+          artistName,
+          inviteCode: invite.code,
+          expiresAt: readableTime(invite.expiresAt),
+          releaseId: invite.releaseId,
+          partyId: invite.partyId,
+        },
       });
     } catch (error) {
       // The party has a code nobody received; the owner can resend it.
@@ -161,8 +187,12 @@ export function rightsOperations(s: Settings) {
         throw conflict("not_editable", `Rights cannot change while ${release.state}.`);
       }
       const existing = new Map((await partyRows(tx, releaseId)).map((p) => [p.id, p]));
+      // The owner's own share is named from the artist profile; the name sent is ignored
+      // (finding L2). The contract still asks for one.
+      const ownerName = who.row?.artist_name ?? null;
 
       const seen = new Set<string>();
+      const ownerSides = new Set<string>();
       for (const [i, p] of parties.entries()) {
         if (p.id !== null) {
           if (seen.has(p.id)) throw unprocessable("bad_parties", `parties[${i}].id is listed more than once.`);
@@ -178,6 +208,13 @@ export function rightsOperations(s: Settings) {
         if (!isOwner && p.email === null) {
           throw unprocessable("email_needed", `parties[${i}] needs an email for the invitation.`);
         }
+        // At most one owner share (no email) per side: any other party is asked by email.
+        if (isOwner) {
+          if (ownerSides.has(p.side)) {
+            throw unprocessable("bad_parties", `parties[${i}] is a second share with no email on the ${p.side} side; only your own share has no email.`);
+          }
+          ownerSides.add(p.side);
+        }
       }
 
       const keptIds = parties.filter((p) => p.id !== null).map((p) => p.id as string);
@@ -191,6 +228,8 @@ export function rightsOperations(s: Settings) {
       // Each party's place in the request is its position, so getRelease keeps the order sent.
       for (const [position, p] of parties.entries()) {
         const percent = (p.hundredths / 100).toFixed(2);
+        const isOwner = p.id !== null ? existing.get(p.id)!.is_owner : p.email === null;
+        const name = isOwner && ownerName ? ownerName : p.name;
         if (p.id !== null) {
           // Session B's trigger sends a changed party back to invited and voids its code. An
           // unchanged party keeps its state and code; a new position alone changes neither.
@@ -201,13 +240,13 @@ export function rightsOperations(s: Settings) {
               where p.id = $1::uuid
                 and (p.side, p.role, p.name, p.email, p.percent, p.position)
                     is distinct from ($2::text, $3::text, $4::text, $5::text, $6::numeric, $7::integer)`,
-            [p.id, p.side, p.role, p.name, p.email, percent, position],
+            [p.id, p.side, p.role, name, p.email, percent, position],
           );
         } else {
           await tx.query(
             `insert into public.api_parties (release_id, side, role, name, email, percent, is_owner, position)
              values ($1::uuid, $2::text, $3::text, $4::text, $5::text, $6::numeric, $7::boolean, $8::integer)`,
-            [releaseId, p.side, p.role, p.name, p.email, percent, p.email === null, position],
+            [releaseId, p.side, p.role, name, p.email, percent, p.email === null, position],
           );
         }
       }
@@ -219,8 +258,9 @@ export function rightsOperations(s: Settings) {
         if (party.is_owner || party.state !== "invited" || !party.email || party.has_code) continue;
         const issued = await issueInvite(tx, ctx.settings, party.id);
         if (issued.status === "issued") {
-          invites.push({ partyId: party.id, to: party.email, code: issued.code!, expiresAt: issued.expiresAt! });
+          invites.push({ releaseId, partyId: party.id, to: party.email, code: issued.code!, expiresAt: issued.expiresAt! });
         } else {
+          // Over a limit or a cap: the party is saved, no email goes (putRights has no 429).
           ctx.settings.log(`party ${party.id}: invitation not sent (${issued.status}); the owner can resend it later`);
         }
       }
@@ -272,10 +312,20 @@ export function rightsOperations(s: Settings) {
           secondsToNextUtcDay(ctx.settings.now()),
         );
       }
+      if (issued.status === "artist_limited") {
+        throw tooMany("rate_limited", "You sent the most invitations allowed today. Try again tomorrow (UTC).", secondsToNextUtcDay(ctx.settings.now()));
+      }
+      if (issued.status === "address_limited") {
+        throw tooMany("rate_limited", "This address got the most invitations allowed today. Try again tomorrow (UTC).", secondsToNextUtcDay(ctx.settings.now()));
+      }
+      if (issued.status === "release_limited") {
+        // An all-time cap: waiting does not help, so no Retry-After.
+        throw new ApiFailure(429, "rate_limited", "This release invited the most parties allowed. No more invitations can be sent for it.");
+      }
       await sendInvites(
         ctx.modules,
         ctx.settings,
-        [{ partyId, to: party.email!, code: issued.code!, expiresAt: issued.expiresAt! }],
+        [{ releaseId, partyId, to: party.email!, code: issued.code!, expiresAt: issued.expiresAt! }],
         result.title,
         result.artistName,
       );

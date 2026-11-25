@@ -824,6 +824,8 @@ end
 $$;
 
 -- recordPlays: every account may send events; only a live release counts a stream.
+-- Each play is a start, then an end 31 seconds of server time later (p_received_at), and each
+-- play has its own minute, so no two overlap (session J1's rule, finding H1).
 do $$
 declare
   r record;
@@ -834,17 +836,24 @@ declare
   v_got integer;
   v_bad text[] := '{}';
   v_t0 timestamptz := now() - interval '1 hour';
+  v_s timestamptz := now() - interval '10 days';
 begin
+  update public.api_tracks set duration_ms = 200000 where id in (select track_id from ct.rel);
   for v_type, v_user in values ('end_user', 'listener1'), ('artist', 'artistA'), ('third_party', 'tp1'),
                                ('administrator', 'admin1'), ('internal', 'internal1'), ('internal_accounting', 'acct1') loop
     for r in select * from ct.rel loop
       v_rel := case when v_type = 'artist' and r.owner = v_user then 'own' else 'other' end;
       v_play := gen_random_uuid();
-      select qualified_new into v_got from public.api_record_play_batch(ct.uid(v_user), 'k-' || v_play,
+      v_s := v_s + interval '1 minute';
+      perform public.api_record_play_batch(ct.uid(v_user), 'k-' || v_play || '-1',
         jsonb_build_array(
-          jsonb_build_object('type', 'start', 'trackId', r.track_id, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0),
+          jsonb_build_object('type', 'start', 'trackId', r.track_id, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0)),
+        v_s);
+      select qualified_new into v_got from public.api_record_play_batch(ct.uid(v_user), 'k-' || v_play || '-2',
+        jsonb_build_array(
           jsonb_build_object('type', 'end', 'trackId', r.track_id, 'playId', v_play, 'positionMs', 31000,
-                             'occurredAt', v_t0 + interval '31 seconds')));
+                             'occurredAt', v_t0 + interval '31 seconds')),
+        v_s + interval '31 seconds');
       if (ct.expect('recordPlays', v_type, v_rel, r.state) = 'qualifies') <> (v_got = 1) then
         v_bad := v_bad || format('%s %s/%s', v_type, v_rel, r.state);
       end if;

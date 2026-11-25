@@ -32,6 +32,11 @@ export interface Harness {
   modules: FakeModules;
   options: ReturnType<typeof testOptions>;
   ops: ReturnType<typeof makeOperations>;
+  /**
+   * The server receive time recordPlays records (CoreOptions.playsReceivedAt, test only). It
+   * moves only when a test moves it, so a test can send a play's batches seconds apart.
+   */
+  playsAt: { time: Date };
   call(op: OperationId, input?: CallInput): Promise<{ status: number; body: any; headers: Headers }>;
 }
 
@@ -46,12 +51,14 @@ export interface CallInput {
 
 export function harness(method: "tus" | "s3_multipart" = "tus", extra: CoreOptions = {}): Harness {
   const modules = fakeModules(db, method);
-  const options = testOptions(extra);
+  const playsAt = { time: new Date("2026-06-01T12:00:00.000Z") };
+  const options = testOptions({ playsReceivedAt: () => playsAt.time, ...extra });
   const ops = makeOperations(options);
   return {
     modules,
     options,
     ops,
+    playsAt,
     async call(op, input = {}) {
       const o = ops[op];
       let path = o.path;
@@ -101,6 +108,9 @@ export async function account(type: AccountType, opts: { suspended?: boolean } =
   return { userId, type, email };
 }
 
+/** The length of a seeded track with a streaming copy: 3 minutes 20 seconds. */
+export const SEEDED_DURATION_MS = 200_000;
+
 export interface Seeded {
   releaseId: string;
   trackIds: string[];
@@ -144,10 +154,10 @@ export async function seedRelease(owner: Account, state: ReleaseState, opts: { t
     for (const [i, trackId] of trackIds.entries()) {
       await tx.query(
         `insert into public.api_tracks (id, release_id, position, title, master_upload_id, master_key, master_format,
-                                        master_size_bytes, master_sha256, master_confirmed_at, stream_key)
+                                        master_size_bytes, master_sha256, master_confirmed_at, stream_key, duration_ms)
          values ($1::uuid, $2::uuid, $3::integer, $4::text, $5::uuid,
                  format('masters/%s/%s/%s/original', $6::text, $2::text, $1::text), 'wav', 1000, repeat('a', 64), now(),
-                 $7::text)`,
+                 $7::text, case when $7::text is null then null else ${SEEDED_DURATION_MS} end)`,
         [trackId, releaseId, i + 1, `Track ${i + 1}`, uploadId, artistId, i === 0 ? streamKey : null],
       );
     }
@@ -215,4 +225,41 @@ export function jpegHead(width: number, height: number, padding = 100): Uint8Arr
   out.set(app, 2);
   out.set(sof, 2 + app.length);
   return out;
+}
+
+/**
+ * A real play through recordPlays: a start, then the rest `seconds` of server time later in a
+ * second batch (a progress halfway and an end). Moves the harness's receive clock on by a
+ * minute afterwards, so the next play by the same account does not overlap this one. Returns
+ * the play id and both responses.
+ */
+export async function realPlay(
+  h: Harness,
+  as: Account,
+  trackId: string,
+  opts: { seconds?: number; endPositionMs?: number } = {},
+): Promise<{ playId: string; first: { status: number; body: any }; second: { status: number; body: any } }> {
+  const seconds = opts.seconds ?? 31;
+  const endPositionMs = opts.endPositionMs ?? seconds * 1000;
+  const playId = randomUUID();
+  const t0 = h.playsAt.time;
+  const at = (s: number) => new Date(t0.getTime() + s * 1000).toISOString();
+  const first = await h.call("recordPlays", {
+    as,
+    headers: { "idempotency-key": randomUUID() },
+    body: { events: [{ type: "start", trackId, playId, positionMs: 0, occurredAt: at(0) }] },
+  });
+  h.playsAt.time = new Date(t0.getTime() + seconds * 1000);
+  const second = await h.call("recordPlays", {
+    as,
+    headers: { "idempotency-key": randomUUID() },
+    body: {
+      events: [
+        { type: "progress", trackId, playId, positionMs: Math.floor(endPositionMs / 2), occurredAt: at(seconds / 2) },
+        { type: "end", trackId, playId, positionMs: endPositionMs, occurredAt: at(seconds) },
+      ],
+    },
+  });
+  h.playsAt.time = new Date(t0.getTime() + 60_000 + seconds * 1000);
+  return { playId, first, second };
 }
