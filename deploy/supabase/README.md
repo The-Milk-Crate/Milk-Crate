@@ -180,9 +180,11 @@ and digits (`minimum_password_length`, `password_requirements`), as Cognito does
 **Edge Function dependencies.** `supabase/functions/deno.lock` pins the hashes of `jose` and
 `postgres` (review L9). `supabase functions deploy` bundles the function in Docker with
 edge-runtime v1.77.8 (Deno 2.1.4), which finds the lock next to `deno.json` by itself and
-refuses to bundle if a package's hash differs. So keep Docker running for the stand-up: without
-it the CLI bundles on Supabase's servers instead (it prints a warning), and that path was not
-checked. `test/lock.test.ts` checks the lock matches `deno.json` and `package-lock.json`.
+refuses to bundle if a package's hash differs. Without Docker the CLI would bundle on
+Supabase's servers instead (with only a warning), and that path was not checked, so
+`stand-up.sh` stops if Docker is not running. Docker Desktop works; on Windows with WSL, turn on
+its WSL integration for your distribution (Settings, Resources, WSL integration) so `docker`
+works inside WSL. `test/lock.test.ts` checks the lock matches `deno.json` and `package-lock.json`.
 After changing a version in `deno.json` (and `package.json`), run `bash scripts/copy-core.sh`
 and then, from `deploy/supabase/`:
 `npx deno@2.1.4 cache --config supabase/functions/deno.json --lock=supabase/functions/deno.lock --frozen=false supabase/functions/api/index.ts`
