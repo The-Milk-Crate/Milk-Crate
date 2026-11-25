@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 25 November 2026, after session J1 (#41). Next: J2, J3 and J4, then step 9.
+For K Marcus and the next session. Last updated 25 November 2026, after sessions J1 (#41) and J2 (#43). Next: J3 and J4, then step 9.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -190,8 +190,8 @@ current state and the next steps. Update it when a step is done.
    - J2 `docs/phase0-prompts/j2-supabase-fixes.md`: Supabase deployment;
    - J3 `docs/phase0-prompts/j3-aws-fixes.md`: AWS deployment;
    - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
-   J2 and J3 each add a few lines to this file (different sections); merge one, then update the
-   other's branch. Both need `milk-crate-backend-poc` merged in first: J1's lines below are on it.
+   J2 and J3 each add a few lines to this file (different sections). J2 is merged, so J3's
+   branch needs `milk-crate-backend-poc` merged in first: J1's and J2's lines below are on it.
    - J1: done (25 November 2026, merged #41). Migrations `0009` to `0014` and the handler fixes
      for H1, H2 (part a), M1, M2, L1, L2, L3, L6 and the invitation email; details in #41,
      `db/README.md` ("Rate limits") and `core/src/handlers/README.md`. The invitation email now
@@ -205,6 +205,19 @@ current state and the next steps. Update it when a step is done.
      sweep runs other artists' jobs; invitations per party default to 3 a day; every
      `recordPlays` call counts toward 60 a minute; wrong codes are not recorded while locked.
      Offline listening sent later in one batch no longer counts as a stream.
+   - J2: done (25 November 2026, merged #43). Supabase fixes for L5, L7 and L9; details in #43
+     and `deploy/supabase/README.md`. `config.toml` sets passwords of at least 12 characters with
+     lower, upper and digits (key names checked in CLI 2.122.1 and 3.4.0).
+     `supabase/functions/deno.lock` pins `jose` and `postgres` by hash (Deno 2.1.4, lock
+     version 4), and `test/lock.test.ts` keeps it in step with `deno.json` and
+     `package-lock.json`. Checked offline with edge-runtime v1.77.8, the bundler CLI 2.122.1
+     uses in Docker: it reads the lock and refuses a package whose hash differs. The Resend
+     steps are in the README, `secrets.env.example` and "Still open" below. Decided by K Marcus
+     with J2: `stand-up.sh` stops if Docker is not running (without it the CLI bundles on
+     Supabase's servers, which was not checked; Docker Desktop with WSL integration works), and
+     warns unless the Supabase CLI is 2.122.1. Not run for real yet: `supabase config push` and
+     `supabase functions deploy` (K Marcus's stand-up). Run the stand-up after J4 is merged: it
+     copies `worker/src/` into the worker image.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
