@@ -19,7 +19,9 @@
 #      and makes (or updates) the hourly sweep machine.
 #   8. Runs the checks (scripts/confirm.sh).
 #
-# Needs: supabase (CLI v2), psql (16 or newer), flyctl, node (22.18 or newer), npm.
+# Needs: supabase (CLI 2.122.1, checked; another version only warns), Docker running (the CLI
+# bundles the Edge Function in it, and that bundler checks supabase/functions/deno.lock),
+# psql (16 or newer), flyctl, node (22.18 or newer), npm.
 #
 # Settings, from your shell (never from the repository):
 #   SUPABASE_ACCESS_TOKEN   a Supabase personal access token (CLI and Management API)
@@ -55,6 +57,13 @@ done
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "Missing: ${missing[*]}. See the top of this script." >&2
   exit 2
+fi
+# The Supabase CLI version these scripts were checked with (password rules, deno.lock).
+cli_wanted="2.122.1"
+cli_version="$(supabase --version 2>/dev/null | tr -d '[:space:]')"
+if [[ "$cli_version" != "$cli_wanted" ]]; then
+  echo "Warning: Supabase CLI $cli_version; these scripts were checked with $cli_wanted." >&2
+  echo "Install it with: npm install -g supabase@$cli_wanted" >&2
 fi
 for f in "$MC_SECRETS_FILE" "$MC_FLY_SECRETS_FILE"; do
   [[ -f "$f" ]] || { echo "No file $f" >&2; exit 2; }
