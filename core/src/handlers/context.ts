@@ -1,5 +1,5 @@
 import type { AccountType, Caller, Handler, Modules, Queryable } from "../platform/index.ts";
-import { ApiFailure, errorResponse, forbidden, mapModuleError, unauthorized } from "./http.ts";
+import { ApiFailure, errorResponse, forbidden, mapModuleError, storageRefusal, unauthorized } from "./http.ts";
 
 /** What the handlers take besides the modules. Tests pass their own clock and random source. */
 export interface CoreOptions {
@@ -13,6 +13,14 @@ export interface CoreOptions {
   inviteDailyLimit?: number;
   /** Smallest cover side in pixels. Default 1400 (decided by K Marcus). */
   minCoverPixels?: number;
+  /** Largest cover side in pixels. Default 6000 (decided by K Marcus, finding L3). */
+  maxCoverPixels?: number;
+  /**
+   * Test only: the server receive time `recordPlays` records for a batch. Default: none, so
+   * the database's own clock decides (it is the server time the qualified-stream rule uses).
+   * Never set it from anything the client sends.
+   */
+  playsReceivedAt?: () => Date;
   /** Where unexpected errors are written. Default: `console.error`. */
   log?: (message: string) => void;
 }
@@ -23,6 +31,8 @@ export interface Settings {
   newRequestId: () => string;
   inviteDailyLimit: number;
   minCoverPixels: number;
+  maxCoverPixels: number;
+  playsReceivedAt: (() => Date) | null;
   log: (message: string) => void;
 }
 
@@ -39,6 +49,8 @@ export function settings(options: CoreOptions = {}): Settings {
     newRequestId: options.newRequestId ?? (() => crypto.randomUUID()),
     inviteDailyLimit: options.inviteDailyLimit ?? 5,
     minCoverPixels: options.minCoverPixels ?? 1400,
+    maxCoverPixels: options.maxCoverPixels ?? 6000,
+    playsReceivedAt: options.playsReceivedAt ?? null,
     log: options.log ?? ((message) => console.error(message)),
   };
 }
@@ -105,7 +117,13 @@ export function operation(
       return await run({ request, modules, settings: settingsValue, requestId, params });
     } catch (error) {
       const failure = mapModuleError(error);
-      if (failure) return errorResponse(failure, requestId);
+      if (failure) {
+        // Storage's own words can name buckets and keys: the client gets a fixed message, the
+        // log gets the detail.
+        const detail = storageRefusal(error);
+        if (detail !== null) settingsValue.log(`request ${requestId} (${operationId}): storage refused the request: ${detail}`);
+        return errorResponse(failure, requestId);
+      }
       settingsValue.log(
         `request ${requestId} (${operationId}) failed: ${(error as Error)?.stack ?? String(error)}`,
       );

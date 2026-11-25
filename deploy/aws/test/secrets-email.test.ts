@@ -9,7 +9,14 @@ import type { EmailTemplate } from "../src/core.ts";
 import { FakeAws, awsError } from "./fake-aws.ts";
 
 const DATA: Record<EmailTemplate, Record<string, string>> = {
-  split_invitation: { releaseTitle: 'Blue "Night" <b>', artistName: "A & B", inviteCode: "CODE-123", expiresAt: "2026-11-27" },
+  split_invitation: {
+    releaseTitle: 'Blue "Night" <b>',
+    artistName: "A & B",
+    inviteCode: "CODE-123",
+    expiresAt: "2026-11-27",
+    releaseId: "11111111-1111-4111-8111-111111111111",
+    partyId: "22222222-2222-4222-8222-222222222222",
+  },
   review_needs_changes: { releaseTitle: "Blue\r\nBcc: x@y", reason: "Fix the <cover>" },
   release_taken_down: { releaseTitle: "Blue", reason: "Rights claim" },
 };
@@ -24,8 +31,17 @@ test("values are escaped in HTML, subjects stay on one line, a missing field is 
   const invite = renderF("split_invitation", DATA.split_invitation);
   assert.ok(invite.html.includes("&lt;b&gt;") && invite.html.includes("A &amp; B") && !invite.html.includes("<b>"));
   assert.ok(!/[\r\n]/.test(renderF("review_needs_changes", DATA.review_needs_changes).subject));
-  assert.throws(() => renderF("split_invitation", { releaseTitle: "x", artistName: "y", inviteCode: "z" }), /needs expiresAt/);
+  assert.throws(() => renderF("split_invitation", { releaseTitle: "x", artistName: "y", inviteCode: "z" }), /needs expiresAt, releaseId, partyId/);
   assert.throws(() => renderF("release_taken_down", { releaseTitle: "x", reason: "" }), /needs reason/);
+});
+
+test("the invitation names the release and the party, and keeps the code out of any link (session J1)", () => {
+  const { text, html } = renderF("split_invitation", DATA.split_invitation);
+  assert.match(text, /^Release: 11111111-1111-4111-8111-111111111111$/m);
+  assert.match(text, /^Invitation: 22222222-2222-4222-8222-222222222222$/m);
+  assert.ok(html.includes("Release: 11111111-1111-4111-8111-111111111111"));
+  assert.ok(!/https?:\/\/|href=/i.test(text + html), "no link");
+  assert.equal(text.split("CODE-123").length, 2, "the code appears once, in the body");
 });
 
 function module(secrets = new FakeAws(), ses = new FakeAws(), now = () => 0) {

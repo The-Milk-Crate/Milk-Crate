@@ -80,9 +80,42 @@ describe("error mapping (both deployments' shapes)", () => {
     assert.equal(mapModuleError(new StorageError(404, "no object"))!.status, 404);
     const big = mapModuleError(new StorageError(413, "this deployment takes files up to 52428800 bytes"))!;
     assert.deepEqual([big.status, big.code], [422, "too_large"]);
-    assert.equal(mapModuleError(new StorageError(400, "bad"))!.status, 400);
+    const refused = mapModuleError(new StorageError(400, "bucket mc-masters: bad key"))!;
+    assert.deepEqual([refused.status, refused.code, refused.message], [400, "bad_request", "Storage refused the request."]);
     assert.equal(mapModuleError(new StorageError(500, "down")), null);
     assert.equal(mapModuleError(new TypeError("x")), null);
+  });
+});
+
+describe("storage's own words (finding L6)", () => {
+  it("a storage 400 answers a fixed message; the detail goes to the log with the request id", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const s = await seedRelease(artist, "draft");
+    h.modules.storage.startUpload = async () => {
+      throw new StorageError(400, "bucket mc-masters refused key masters/x/y/z/original: InvalidKey");
+    };
+    const r = await h.call("startUpload", {
+      as: artist,
+      params: { releaseId: s.releaseId, trackId: s.trackIds[0] },
+      body: { format: "wav", sizeBytes: 10 },
+      headers: { "x-request-id": "req-storage-400" },
+    });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.message, "Storage refused the request.");
+    assert.ok(!JSON.stringify(r.body).includes("mc-masters"));
+    assert.ok(h.options.logs.some((l) => l.includes("req-storage-400") && l.includes("mc-masters refused key")), h.options.logs.join("\n"));
+  });
+
+  it("a storage 413 keeps its words, which name the size limit", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const s = await seedRelease(artist, "draft");
+    h.modules.storage.sizeLimit = 100;
+    const r = await h.call("startUpload", { as: artist, params: { releaseId: s.releaseId, trackId: s.trackIds[0] }, body: { format: "wav", sizeBytes: 101 } });
+    assert.equal(r.status, 422);
+    assert.equal(r.body.code, "too_large");
+    assert.match(r.body.message, /up to 100 bytes/);
   });
 });
 
@@ -123,6 +156,22 @@ describe("releases", () => {
     assert.equal(r.body.tracks.length, 100);
     assert.equal(r.body.tracks[99].position, 100);
     assert.match(r.body.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  it("createRelease: 20 a UTC day per artist, then 429 with Retry-After (finding M2)", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const body = { title: "Many", releaseDate: "2026-01-01", tracks: [{ title: "A" }] };
+    for (let i = 0; i < 20; i++) assert.equal((await h.call("createRelease", { as: artist, body })).status, 201, `release ${i + 1}`);
+    const over = await h.call("createRelease", { as: artist, body });
+    assert.equal(over.status, 429);
+    assert.equal(over.body.code, "rate_limited");
+    // The database's clock decides the day: up to the next UTC midnight.
+    const wait = Number(over.headers.get("retry-after"));
+    assert.ok(wait >= 1 && wait <= 86400, String(wait));
+    const [n] = await db.query<{ n: number }>("select count(*)::int as n from public.api_releases where owner_id = $1::uuid", [artist.userId]);
+    assert.equal(n.n, 20, "the 21st was not created");
+    assert.equal((await h.call("createRelease", { as: await account("artist"), body })).status, 201, "another artist has their own count");
   });
 
   it("updateRelease edits title, date and track order; a bad track list is 422", async () => {

@@ -9,13 +9,17 @@ export const TEMPLATES: Record<
   { needs: string[]; subject: (d: Record<string, string>) => string; text: (d: Record<string, string>) => string }
 > = {
   split_invitation: {
-    needs: ["releaseTitle", "artistName", "inviteCode", "expiresAt"],
+    needs: ["releaseTitle", "artistName", "inviteCode", "expiresAt", "releaseId", "partyId"],
     subject: (d) => `${d.artistName} invited you to a split on "${d.releaseTitle}"`,
     text: (d) =>
       [
         `${d.artistName} listed you as a rights holder on "${d.releaseTitle}" on Milk Crate.`,
         "",
         `Your invite code: ${d.inviteCode}`,
+        "",
+        // The ids find the invitation; the code never goes in a link (session J1).
+        `Release: ${d.releaseId}`,
+        `Invitation: ${d.partyId}`,
         "",
         "Sign in to Milk Crate and enter the code to see your share, then accept or decline.",
         `The code works once and expires on ${d.expiresAt}.`,

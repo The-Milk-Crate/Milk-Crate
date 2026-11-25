@@ -112,6 +112,17 @@ begin
 end
 $$;
 
+-- Upload every master: the release ends processing, with no job yet.
+create function t.to_processing(p_release uuid) returns void language plpgsql as $$
+declare
+  v_track uuid;
+begin
+  for v_track in select id from public.api_tracks where release_id = p_release order by position loop
+    perform t.upload_master(p_release, v_track);
+  end loop;
+end
+$$;
+
 create function t.full_rights(p_release uuid) returns void language sql as $$
   insert into public.api_parties (release_id, side, role, name, percent) values
     (p_release, 'recording', 'artist', 'Owner', 100),
@@ -415,6 +426,7 @@ $$;
 -- Plays ------------------------------------------------------------------------------
 \echo '# play batches count once; qualified streams are worked out by the server'
 
+-- Each call passes its server receive time (p_received_at), as the handler tests do.
 do $$
 declare
   v_live_track uuid := (select id from public.api_tracks where release_id = t.id('rel2'));
@@ -423,55 +435,72 @@ declare
   v_events jsonb;
   v_row record;
   v_t0 timestamptz := '2026-01-01 12:00:00+00';
+  v_s0 timestamptz := '2026-01-01 12:00:00+00';
 begin
+  -- Session H records the length; a track with none never qualifies (checked below).
+  update public.api_tracks set duration_ms = 200000 where id = v_live_track;
+
+  -- start in one batch, the rest 31 seconds of server time later.
+  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0000', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0)), v_s0);
+  perform t.ok(v_row.status = 'ok' and v_row.qualified_new = 0, 'a start alone does not qualify');
   v_events := jsonb_build_array(
-    jsonb_build_object('type', 'start', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0),
+    jsonb_build_object('type', 'progress', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 15000,
+                       'occurredAt', v_t0 + interval '15 seconds'),
     jsonb_build_object('type', 'progress', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 31000,
                        'occurredAt', v_t0 + interval '31 seconds'));
-  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0001', v_events);
-  perform t.ok(v_row.status = 'ok' and not v_row.duplicate and v_row.qualified_new = 1, 'a 31-second play qualifies');
-  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0001', v_events);
+  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0001', v_events, v_s0 + interval '31 seconds');
+  perform t.ok(v_row.status = 'ok' and not v_row.duplicate and v_row.qualified_new = 1, 'a 31-second play over two batches qualifies');
+  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0001', v_events, v_s0 + interval '40 seconds');
   perform t.ok(v_row.status = 'duplicate' and v_row.duplicate and v_row.qualified_new = 0, 'the same batch again is a duplicate');
   perform t.eq((select count(*)::text from public.api_play_events where idempotency_key = 'batch-0001'), '2',
                'a duplicate batch stores no more events');
   perform t.eq((select count(*)::text from public.api_qualified_streams where play_id = v_play), '1', 'it counts once');
-  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0001', v_events - 1);
+  perform t.ok((select first_received_at = v_s0 and last_received_at = v_s0 + interval '31 seconds'
+                  from public.api_qualified_streams where play_id = v_play), 'the qualified stream keeps its server-time span');
+  select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0001', v_events - 1, v_s0 + interval '41 seconds');
   perform t.eq(v_row.status, 'conflict', 'the same key with other events is a conflict');
-  select * into v_row from public.api_record_play_batch(t.id('third'), 'batch-0001', v_events);
+  select * into v_row from public.api_record_play_batch(t.id('third'), 'batch-0001', v_events, v_s0 + interval '42 seconds');
   perform t.eq(v_row.status, 'ok', 'keys are per listener');
 
-  -- Three batches for one play: qualifies when it reaches 30 seconds, once.
+  -- Three batches for one play, 15 seconds of server time apart: qualifies when it reaches 30
+  -- seconds, once.
+  v_s0 := v_s0 + interval '10 minutes';
   v_play := gen_random_uuid();
   select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0002', jsonb_build_array(
-    jsonb_build_object('type', 'start', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0)));
+    jsonb_build_object('type', 'start', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0)), v_s0);
   select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0003', jsonb_build_array(
     jsonb_build_object('type', 'progress', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 29999,
-                       'occurredAt', v_t0 + interval '29.999 seconds')));
+                       'occurredAt', v_t0 + interval '29.999 seconds')), v_s0 + interval '15 seconds');
   perform t.eq(v_row.qualified_new::text, '0', 'under 30 seconds does not qualify');
   select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0004', jsonb_build_array(
     jsonb_build_object('type', 'progress', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 30000,
-                       'occurredAt', v_t0 + interval '30 seconds')));
+                       'occurredAt', v_t0 + interval '30 seconds')), v_s0 + interval '30 seconds');
   perform t.eq(v_row.qualified_new::text, '1', 'exactly 30 seconds across batches qualifies');
   select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0005', jsonb_build_array(
     jsonb_build_object('type', 'end', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 90000,
-                       'occurredAt', v_t0 + interval '90 seconds')));
+                       'occurredAt', v_t0 + interval '90 seconds')), v_s0 + interval '90 seconds');
   perform t.eq(v_row.qualified_new::text, '0', 'one play qualifies once');
 
   -- A seek is not listening: position jumps 60 seconds in 1 second of device time.
+  v_s0 := v_s0 + interval '10 minutes';
   v_play := gen_random_uuid();
+  perform public.api_record_play_batch(t.id('listener'), 'batch-0006a', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0)), v_s0);
   select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0006', jsonb_build_array(
-    jsonb_build_object('type', 'start', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0),
     jsonb_build_object('type', 'end', 'trackId', v_live_track, 'playId', v_play, 'positionMs', 60000,
-                       'occurredAt', v_t0 + interval '1 second')));
+                       'occurredAt', v_t0 + interval '1 second')), v_s0 + interval '60 seconds');
   perform t.eq(v_row.qualified_new::text, '0', 'a seek does not qualify');
 
   -- A release that is not live: events kept, no qualified stream.
+  v_s0 := v_s0 + interval '10 minutes';
   v_draft_track := (select id from public.api_tracks where release_id = t.id('rel3'));
   v_play := gen_random_uuid();
+  perform public.api_record_play_batch(t.id('listener'), 'batch-0007a', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_draft_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0)), v_s0);
   select * into v_row from public.api_record_play_batch(t.id('listener'), 'batch-0007', jsonb_build_array(
-    jsonb_build_object('type', 'start', 'trackId', v_draft_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_t0),
     jsonb_build_object('type', 'end', 'trackId', v_draft_track, 'playId', v_play, 'positionMs', 60000,
-                       'occurredAt', v_t0 + interval '60 seconds')));
+                       'occurredAt', v_t0 + interval '60 seconds')), v_s0 + interval '60 seconds');
   perform t.ok(v_row.status = 'ok' and v_row.qualified_new = 0, 'no qualified stream unless the release is live');
 
   perform t.fails(format($q$select public.api_record_play_batch(%L, 'batch-0008', %L)$q$, t.id('listener'),
@@ -487,6 +516,181 @@ begin
                'a refused batch records nothing');
   perform t.eq((select count(*)::text from public.api_qualified_streams where user_id = t.id('listener')), '2',
                'the listener has two qualified streams in total');
+end
+$$;
+
+\echo '# qualified streams: server time, track length, one play at a time (finding H1)'
+
+do $$
+declare
+  v_track uuid := (select id from public.api_tracks where release_id = t.id('rel2'));
+  v_user uuid := gen_random_uuid();
+  v_events jsonb := '[]'::jsonb;
+  v_play uuid;
+  v_a uuid := gen_random_uuid();
+  v_b uuid := gen_random_uuid();
+  v_row record;
+  v_s0 timestamptz := '2026-02-01 08:00:00+00';
+  i integer;
+begin
+  -- Session I's R1: 50 fake plays in one batch, device times in 2020. All in one request, so
+  -- each spans 0 seconds of server time.
+  for i in 1 .. 50 loop
+    v_play := gen_random_uuid();
+    v_events := v_events
+      || jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 0,
+                            'occurredAt', timestamptz '2020-01-01 00:00:00+00' + make_interval(mins => i))
+      || jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 30000,
+                            'occurredAt', timestamptz '2020-01-01 00:00:30+00' + make_interval(mins => i));
+  end loop;
+  select * into v_row from public.api_record_play_batch(v_user, 'r1-batch-1', v_events, v_s0);
+  perform t.ok(v_row.status = 'ok' and v_row.qualified_new = 0, 'R1: 50 fake plays in one batch count 0');
+  perform t.eq((select count(*)::text from public.api_play_events where user_id = v_user), '100', 'R1: their events are kept');
+
+  -- A real play: start, progress 15 seconds of server time later, end.
+  v_s0 := v_s0 + interval '1 hour';
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'real-0001', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_s0)), v_s0);
+  select * into v_row from public.api_record_play_batch(v_user, 'real-0002', jsonb_build_array(
+    jsonb_build_object('type', 'progress', 'trackId', v_track, 'playId', v_play, 'positionMs', 15000,
+                       'occurredAt', v_s0 + interval '15 seconds'),
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 31000,
+                       'occurredAt', v_s0 + interval '31 seconds')), v_s0 + interval '15 seconds');
+  perform t.eq(v_row.qualified_new::text, '1', 'a real play over 15 seconds of server time counts once');
+
+  -- Under 15 seconds of server time does not.
+  v_s0 := v_s0 + interval '1 hour';
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'short-0001', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_s0)), v_s0);
+  select * into v_row from public.api_record_play_batch(v_user, 'short-0002', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 31000,
+                       'occurredAt', v_s0 + interval '31 seconds')), v_s0 + interval '14.999 seconds');
+  perform t.eq(v_row.qualified_new::text, '0', 'under 15 seconds of server time does not count');
+
+  -- Two plays overlapping in server time count once.
+  v_s0 := v_s0 + interval '1 hour';
+  perform public.api_record_play_batch(v_user, 'overlap-01', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_a, 'positionMs', 0, 'occurredAt', v_s0),
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_b, 'positionMs', 0, 'occurredAt', v_s0)), v_s0);
+  select * into v_row from public.api_record_play_batch(v_user, 'overlap-02', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_a, 'positionMs', 31000, 'occurredAt', v_s0 + interval '31 seconds'),
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_b, 'positionMs', 31000, 'occurredAt', v_s0 + interval '31 seconds')),
+    v_s0 + interval '31 seconds');
+  perform t.eq(v_row.qualified_new::text, '1', 'two plays overlapping in server time count once');
+  -- A later play that overlaps the counted one, sent in other batches, does not count either.
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'overlap-03', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_s0)),
+    v_s0 + interval '20 seconds');
+  select * into v_row from public.api_record_play_batch(v_user, 'overlap-04', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 31000, 'occurredAt', v_s0 + interval '31 seconds')),
+    v_s0 + interval '51 seconds');
+  perform t.eq(v_row.qualified_new::text, '0', 'a play that starts before the counted one ends does not count');
+  -- Back to back (one starts as the counted one ends) is not an overlap.
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'overlap-05', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_s0)),
+    v_s0 + interval '31 seconds');
+  select * into v_row from public.api_record_play_batch(v_user, 'overlap-06', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 31000, 'occurredAt', v_s0 + interval '31 seconds')),
+    v_s0 + interval '90 seconds');
+  perform t.eq(v_row.qualified_new::text, '1', 'a play that starts as the counted one ends counts');
+
+  -- A position past the track's length (200 seconds, plus 1 second) does not count.
+  v_s0 := v_s0 + interval '1 hour';
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'long-0001', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 170000, 'occurredAt', v_s0)), v_s0);
+  select * into v_row from public.api_record_play_batch(v_user, 'long-0002', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 201001, 'occurredAt', v_s0 + interval '31.001 seconds')),
+    v_s0 + interval '31 seconds');
+  perform t.eq(v_row.qualified_new::text, '0', 'a position past the duration (plus 1 second) does not count');
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'long-0003', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 170000, 'occurredAt', v_s0)),
+    v_s0 + interval '1 minute');
+  select * into v_row from public.api_record_play_batch(v_user, 'long-0004', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 201000, 'occurredAt', v_s0 + interval '31 seconds')),
+    v_s0 + interval '2 minutes');
+  perform t.eq(v_row.qualified_new::text, '1', 'up to the duration plus 1 second counts');
+
+  -- A track with no duration has no streaming copy: never counts.
+  update public.api_tracks set duration_ms = null where id = v_track;
+  v_s0 := v_s0 + interval '1 hour';
+  v_play := gen_random_uuid();
+  perform public.api_record_play_batch(v_user, 'nodur-0001', jsonb_build_array(
+    jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', v_play, 'positionMs', 0, 'occurredAt', v_s0)), v_s0);
+  select * into v_row from public.api_record_play_batch(v_user, 'nodur-0002', jsonb_build_array(
+    jsonb_build_object('type', 'end', 'trackId', v_track, 'playId', v_play, 'positionMs', 31000, 'occurredAt', v_s0 + interval '31 seconds')),
+    v_s0 + interval '31 seconds');
+  perform t.eq(v_row.qualified_new::text, '0', 'a track with no duration_ms never counts');
+  update public.api_tracks set duration_ms = 200000 where id = v_track;
+end
+$$;
+
+\echo '# rate limits on recordPlays (finding M2)'
+
+do $$
+declare
+  v_track uuid := (select id from public.api_tracks where release_id = t.id('rel2'));
+  v_user uuid := gen_random_uuid();
+  v_row record;
+  v_s0 timestamptz := '2026-03-01 10:00:20+00';
+  v_one jsonb;
+  v_hundred jsonb := '[]'::jsonb;
+  i integer;
+begin
+  v_one := jsonb_build_array(jsonb_build_object('type', 'start', 'trackId', v_track, 'playId', gen_random_uuid(),
+                                                'positionMs', 0, 'occurredAt', v_s0));
+  for i in 1 .. 60 loop
+    select * into v_row from public.api_record_play_batch(v_user, 'minute-' || lpad(i::text, 4, '0'), v_one, v_s0);
+  end loop;
+  perform t.eq(v_row.status, 'ok', '60 batches in a minute are stored');
+  select * into v_row from public.api_record_play_batch(v_user, 'minute-0061', v_one, v_s0 + interval '30 seconds');
+  perform t.ok(v_row.status = 'too_many_batches' and v_row.retry_after_seconds = 10,
+               'the 61st in that minute is refused, with the seconds to the next minute');
+  perform t.ok(not exists (select 1 from public.api_play_batches where user_id = v_user and idempotency_key = 'minute-0061'),
+               'a refused batch is not stored');
+  select * into v_row from public.api_record_play_batch(v_user, 'minute-0061', v_one, v_s0 + interval '40 seconds');
+  perform t.eq(v_row.status, 'ok', 'the next minute starts a new count');
+  perform t.eq((select count(*)::text from public.api_rate_counters where bucket = 'play_batches_minute' and subject = v_user::text),
+               '1', 'the old minute''s counter row is deleted by the next hit');
+
+  -- 10,000 stored events a day. Set today's count close to the cap, then send 100 more.
+  for i in 1 .. 100 loop
+    v_hundred := v_hundred || jsonb_build_object('type', 'progress', 'trackId', v_track, 'playId', gen_random_uuid(),
+                                                 'positionMs', i, 'occurredAt', v_s0);
+  end loop;
+  update public.api_rate_counters set hits = 9939
+    where bucket = 'play_events_day' and subject = v_user::text;
+  select * into v_row from public.api_record_play_batch(v_user, 'day-0001', v_hundred, v_s0 + interval '2 hours');
+  perform t.ok(v_row.status = 'too_many_events' and v_row.retry_after_seconds = 11 * 3600 + 59 * 60 + 40,
+               'over 10,000 events a day is refused, with the seconds to the next UTC day');
+  perform t.ok(not exists (select 1 from public.api_play_batches where user_id = v_user and idempotency_key = 'day-0001'),
+               'and not stored');
+  select * into v_row from public.api_record_play_batch(v_user, 'day-0002', v_one || v_one, v_s0 + interval '2 hours');
+  perform t.ok(v_row.status = 'ok' and (select hits from public.api_rate_counters
+                 where bucket = 'play_events_day' and subject = v_user::text) = 9941, 'a smaller batch still fits');
+  select * into v_row from public.api_record_play_batch(v_user, 'day-0001', v_hundred, v_s0 + interval '14 hours');
+  perform t.eq(v_row.status, 'ok', 'the next UTC day starts a new count');
+end
+$$;
+
+do $$
+declare
+  v_row record;
+  v_subject text := gen_random_uuid()::text;
+begin
+  select * into v_row from public.api_rate_hit('releases_day', v_subject, 20, '2026-04-01 23:59:59.5+00');
+  perform t.ok(v_row.allowed and v_row.hits = 20 and v_row.cap = 20 and v_row.retry_after_seconds = 1,
+               'api_rate_hit counts up to the cap; retry_after_seconds is at least 1');
+  select * into v_row from public.api_rate_hit('releases_day', v_subject, 1, '2026-04-01 23:59:59.5+00');
+  perform t.ok(not v_row.allowed and v_row.hits = 20, 'one over the cap is refused and adds nothing');
+  select * into v_row from public.api_rate_hit('invites_release', v_subject, 20, null);
+  perform t.ok(v_row.allowed and v_row.retry_after_seconds is null, 'the all-time bucket has no retry time');
+  perform t.fails($q$select * from public.api_rate_hit('nope', 'x', 1, null)$q$, 'MC422', 'an unknown bucket is refused');
 end
 $$;
 
@@ -725,18 +929,161 @@ begin
                   'MC409', 'another party cannot be accepted without using a code');
   perform public.api_issue_invite(v_p, t.hash('producer-code-0001'), 3);
 
-  -- 10 wrong codes in an hour lock the invitation, even for the right code.
+  -- 10 wrong codes in an hour lock out wrong codes only (finding L1): the right code still works.
   for i in 1..10 loop
     perform public.api_get_invitation(v_rel, v_p, t.hash('guess-' || i));
   end loop;
-  select * into v_row from public.api_get_invitation(v_rel, v_p, t.hash('producer-code-0001'));
-  perform t.eq(v_row.status, 'rate_limited', 'after 10 wrong codes in an hour the read is locked');
-  select * into v_row from public.api_respond_to_invite(v_rel, v_p, t.hash('producer-code-0001'), t.id('listener'), 'accept');
-  perform t.eq(v_row.status, 'rate_limited', 'after 10 wrong codes in an hour the reply is locked');
+  select * into v_row from public.api_get_invitation(v_rel, v_p, t.hash('guess-11'));
+  perform t.eq(v_row.status, 'rate_limited', 'after 10 wrong codes in an hour a wrong code is refused as rate_limited');
+  select * into v_row from public.api_respond_to_invite(v_rel, v_p, t.hash('guess-12'), t.id('listener'), 'accept');
+  perform t.eq(v_row.status, 'rate_limited', 'and so is a wrong reply');
   perform t.eq(public.api_invite_wrong_count(v_p, 3600)::text, '10', 'locked attempts are not counted again');
-  update public.api_invite_wrong_codes set attempted_at = now() - interval '61 minutes' where party_id = v_p;
+  select * into v_row from public.api_get_invitation(v_rel, v_p, t.hash('producer-code-0001'));
+  perform t.eq(v_row.status, 'ok', 'R2: the right code still reads the invitation after 10 wrong ones');
   select * into v_row from public.api_respond_to_invite(v_rel, v_p, t.hash('producer-code-0001'), t.id('listener'), 'accept');
-  perform t.eq(v_row.status, 'ok', 'the lock lifts after an hour');
+  perform t.eq(v_row.status, 'ok', 'R2: and still replies');
+  update public.api_invite_wrong_codes set attempted_at = now() - interval '61 minutes' where party_id = v_p;
+  select * into v_row from public.api_get_invitation(v_rel, v_p, t.hash('guess-13'));
+  perform t.eq(v_row.status, 'wrong_code', 'the lock on wrong codes lifts after an hour');
+end
+$$;
+
+-- Session J1 ---------------------------------------------------------------------------
+\echo '# invitation caps: per release, per artist a day, per address a day (finding M1)'
+
+do $$
+declare
+  v_rel uuid;
+  v_rel2 uuid;
+  v_p uuid;
+  v_ids uuid[] := '{}';
+  v_row record;
+  i integer;
+begin
+  -- A release with 21 invited parties: the first 20 get an invitation, the 21st does not.
+  v_rel := t.new_release(t.id('artist'), 'Caps', t.today() + 30, 1);
+  for i in 1 .. 21 loop
+    insert into public.api_parties (release_id, side, role, name, email, percent)
+      values (v_rel, 'recording', 'player', 'P' || i, format('p%s@example.invalid', i), 0) returning id into v_p;
+    v_ids := v_ids || v_p;
+  end loop;
+  for i in 1 .. 20 loop
+    select * into v_row from public.api_issue_invite(v_ids[i], t.hash('caps-code-' || lpad(i::text, 8, '0')), 5);
+    if v_row.status <> 'issued' then
+      raise exception 'FAIL - invitation % of 20 was %', i, v_row.status;
+    end if;
+  end loop;
+  select * into v_row from public.api_issue_invite(v_ids[21], t.hash('caps-code-00000021'), 5);
+  perform t.eq(v_row.status, 'release_limited', 'the 21st party invited on one release is refused');
+  perform t.ok((select invite_code_hash is null from public.api_parties where id = v_ids[21]),
+               'a refused party gets no code');
+  select * into v_row from public.api_issue_invite(v_ids[1], t.hash('caps-code-resend01'), 5);
+  perform t.eq(v_row.status, 'issued', 'a resend to a party already invited does not count against the 20');
+  delete from public.api_parties where id = v_ids[2];
+  select * into v_row from public.api_issue_invite(v_ids[21], t.hash('caps-code-00000022'), 5);
+  perform t.eq(v_row.status, 'release_limited', 'a removed party still counts');
+
+  -- 50 a day per artist: 21 sent so far today by this artist. Fill to 50 on another release.
+  v_rel2 := t.new_release(t.id('artist'), 'Caps two', t.today() + 30, 1);
+  update public.api_rate_counters set hits = 50
+    where bucket = 'invites_artist_day' and subject = t.id('artist')::text;
+  insert into public.api_parties (release_id, side, role, name, email, percent)
+    values (v_rel2, 'recording', 'player', 'Q', 'q@example.invalid', 0) returning id into v_p;
+  select * into v_row from public.api_issue_invite(v_p, t.hash('caps-artist-000001'), 5);
+  perform t.eq(v_row.status, 'artist_limited', 'the 51st invitation by one artist in a UTC day is refused');
+  perform t.ok(not exists (select 1 from public.api_rate_counters
+                            where bucket = 'invites_release' and subject = v_rel2::text and hits > 0),
+               'a refused invitation counts toward no other cap');
+  delete from public.api_rate_counters where bucket = 'invites_artist_day' and subject = t.id('artist')::text;
+
+  -- 3 a day per address, lowercased and trimmed.
+  v_rel := t.new_release(t.id('artist2'), 'Caps three', t.today() + 30, 1);
+  v_ids := '{}';
+  for i in 1 .. 4 loop
+    insert into public.api_parties (release_id, side, role, name, email, percent)
+      values (v_rel, 'recording', 'player', 'Same ' || i,
+              (array['same@example.invalid', 'SAME@Example.invalid', ' same@example.invalid ', 'Same@example.INVALID'])[i], 0)
+      returning id into v_p;
+    v_ids := v_ids || v_p;
+  end loop;
+  for i in 1 .. 3 loop
+    select * into v_row from public.api_issue_invite(v_ids[i], t.hash('caps-addr-0000000' || i), 5);
+    perform t.eq(v_row.status, 'issued', format('invitation %s to one address today is sent', i));
+  end loop;
+  select * into v_row from public.api_issue_invite(v_ids[4], t.hash('caps-addr-00000004'), 5);
+  perform t.eq(v_row.status, 'address_limited', 'the 4th to one address (any case, any spaces) in a UTC day is refused');
+  perform t.ok(not exists (select 1 from public.api_rate_counters where subject like '%@%'),
+               'counters hold no email address, only its hash');
+end
+$$;
+
+\echo '# submit cancels open uploads (finding H2)'
+
+do $$
+declare
+  v_rel uuid;
+  v_track uuid;
+  v_cover uuid;
+  v_up record;
+begin
+  v_rel := t.new_release(t.id('artist'), 'Covered', t.today() + 30, 1);
+  perform t.to_awaiting_splits(v_rel);
+  insert into public.api_parties (release_id, side, role, name, percent, is_owner)
+    values (v_rel, 'recording', 'artist', 'Artist A', 100, true), (v_rel, 'composition', 'songwriter', 'Artist A', 100, true);
+  select * into v_up from public.api_start_upload(v_rel, null, 'cover', 'tus', 'open-cover', 'png', 100, null);
+  v_cover := v_up.upload_id;
+  perform t.eq((select state from public.api_uploads where id = v_cover), 'open', 'a cover upload is open before submit');
+  update public.api_releases set state = 'awaiting_review' where id = v_rel;
+  perform t.eq((select state from public.api_uploads where id = v_cover), 'cancelled', 'submit cancels the open cover upload');
+  perform t.fails(format($q$select * from public.api_confirm_upload(%L, %L, null, 1400, 1400)$q$, v_cover, repeat('c', 64)),
+                  'MC409', 'a cancelled upload cannot be confirmed');
+  perform t.ok(not exists (select 1 from public.api_uploads where release_id = v_rel and state = 'open'),
+               'no upload of a submitted release is open');
+end
+$$;
+
+\echo '# one owner share per side (finding L2)'
+
+do $$
+declare
+  v_rel uuid;
+begin
+  v_rel := t.new_release(t.id('artist'), 'Owners', t.today() + 30, 1);
+  insert into public.api_parties (release_id, side, role, name, percent, is_owner)
+    values (v_rel, 'recording', 'artist', 'Artist A', 50, true), (v_rel, 'composition', 'songwriter', 'Artist A', 100, true);
+  perform t.fails(format($q$insert into public.api_parties (release_id, side, role, name, percent, is_owner)
+                           values (%L, 'recording', 'producer', 'A Famous Producer', 50, true)$q$, v_rel),
+                  '23505', 'a second owner share on one side is refused');
+end
+$$;
+
+\echo '# at most 2 running jobs per artist (finding M2)'
+
+do $$
+declare
+  v_jobs uuid[] := '{}';
+  v_rel uuid;
+  v_other uuid;
+  i integer;
+begin
+  for i in 1 .. 3 loop
+    v_rel := t.new_release(t.id('artist'), 'Job ' || i, t.today() + 30, 1);
+    perform t.to_processing(v_rel);
+    v_jobs := v_jobs || public.api_create_job(v_rel, 'process_release');
+  end loop;
+  v_other := t.new_release(t.id('artist2'), 'Other artist', t.today() + 30, 1);
+  perform t.to_processing(v_other);
+  perform t.ok(public.api_job_started(v_jobs[1]) and public.api_job_started(v_jobs[2]), 'two jobs of one artist can run');
+  perform t.ok(not public.api_job_started(v_jobs[3]), 'a third does not start while two run');
+  perform t.eq((select state from public.api_jobs where id = v_jobs[3]), 'queued', 'it stays queued');
+  perform t.ok(public.api_job_started(public.api_create_job(v_other, 'process_release')), 'another artist''s job starts');
+  perform public.api_apply_job_result(v_jobs[1], true, null);
+  perform t.ok(public.api_job_started(v_jobs[3]), 'when one finishes the third starts');
+  update public.api_jobs set started_at = now() - interval '5 hours' where id in (v_jobs[2], v_jobs[3]);
+  v_rel := t.new_release(t.id('artist'), 'Job 4', t.today() + 30, 1);
+  perform t.to_processing(v_rel);
+  perform t.ok(public.api_job_started(public.api_create_job(v_rel, 'process_release')),
+               'a job running past the 4-hour limit does not count');
 end
 $$;
 

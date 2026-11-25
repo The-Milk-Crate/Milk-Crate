@@ -104,7 +104,8 @@ How it stays safe:
 
 What it cannot check on a real deployment, and skips with the reason: accepting invitations (the
 codes are only in the emails), firing the go-live schedule (it runs at 00:00 UTC on the release
-date; the first release stays `scheduled` and is taken down), counting qualified streams, the
+date; the first release stays `scheduled` and is taken down), counting qualified streams (and
+moving a play's receive times back 31 seconds, which a play needs to count since session J1), the
 storage and audit rows after a takedown, the sweep's late pass (it runs 2 hours or more after the
 takedown), and the suspended or removed accounts. The mocks check all of those.
 

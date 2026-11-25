@@ -4,7 +4,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { AccountType, ReleaseState } from "../src/platform/index.ts";
-import { account, db, harness, seedRelease, uuid, type Account, type Seeded } from "./helpers.ts";
+import { account, db, harness, realPlay, seedRelease, uuid, type Account, type Seeded } from "./helpers.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("../../db/test/access-expected.json", import.meta.url), "utf8")) as {
   accountTypes: AccountType[];
@@ -70,19 +70,11 @@ async function outcome(op: string, as: Account, s: Seeded, state: ReleaseState):
       return r === true ? "listed" : r === false ? "not_listed" : String(r);
     }
     case "recordPlays": {
-      const playId = uuid();
-      const r = await h.call("recordPlays", {
-        as,
-        headers: { "idempotency-key": uuid() },
-        body: {
-          events: [
-            { type: "start", trackId: s.trackIds[0], playId, positionMs: 0, occurredAt: "2026-06-01T12:00:00Z" },
-            { type: "end", trackId: s.trackIds[0], playId, positionMs: 31000, occurredAt: "2026-06-01T12:00:31Z" },
-          ],
-        },
-      });
-      assert.equal(r.status, 202, JSON.stringify(r.body));
-      assert.equal(await keptFor(playId), 2, "the events are kept");
+      // A real play: a start, then the end 31 seconds of server time later (session J1's rule).
+      const { playId, first, second } = await realPlay(h, as, s.trackIds[0]);
+      assert.equal(first.status, 202, JSON.stringify(first.body));
+      assert.equal(second.status, 202, JSON.stringify(second.body));
+      assert.equal(await keptFor(playId), 3, "the events are kept");
       return (await qualifiedFor(playId)) === 1 ? "qualifies" : "kept";
     }
     default:

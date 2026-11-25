@@ -16,7 +16,7 @@ describe("Secrets and email (Edge Function secrets, Resend mocked at the HTTP ed
   test("sends each template through Resend with the key from the secrets", async () => {
     const resend = fakeFetch(() => Response.json({ id: "e1" }));
     const s = supabaseSecretsAndEmail({ env: env({ RESEND_API_KEY: "re_test" }), from: "Milk Crate <noreply@example.invalid>", fetch: resend.fetch });
-    await s.sendTemplate({ template: "split_invitation", to: "p@example.invalid", data: { releaseTitle: "Blue", artistName: "Ana", inviteCode: "ABCD-1234", expiresAt: "2026-11-26" } });
+    await s.sendTemplate({ template: "split_invitation", to: "p@example.invalid", data: { releaseTitle: "Blue", artistName: "Ana", inviteCode: "ABCD-1234", expiresAt: "2026-11-26", releaseId: "11111111-1111-4111-8111-111111111111", partyId: "22222222-2222-4222-8222-222222222222" } });
     await s.sendTemplate({ template: "review_needs_changes", to: "a@example.invalid", data: { releaseTitle: "Blue", reason: "Cover is blurry." } });
     await s.sendTemplate({ template: "release_taken_down", to: "a@example.invalid", data: { releaseTitle: "Blue", reason: "Rights claim." } });
     assert.equal(resend.calls.length, 3);
@@ -28,6 +28,10 @@ describe("Secrets and email (Edge Function secrets, Resend mocked at the HTTP ed
     assert.equal(body.from, "Milk Crate <noreply@example.invalid>");
     assert.equal(body.subject, 'Ana invited you to a split on "Blue"');
     assert.match(body.text, /ABCD-1234/);
+    // Session J1: the ids that find the invitation, as plain lines; the code is in no link.
+    assert.match(body.text, /^Release: 11111111-1111-4111-8111-111111111111$/m);
+    assert.match(body.text, /^Invitation: 22222222-2222-4222-8222-222222222222$/m);
+    assert.ok(!/https?:\/\/|href=/i.test(body.text + body.html), "no link");
     assert.match((await resend.calls[1].json()).text, /Cover is blurry\./);
   });
 
@@ -38,7 +42,7 @@ describe("Secrets and email (Edge Function secrets, Resend mocked at the HTTP ed
     const body = await resend.calls[0].json();
     assert.ok(!body.html.includes("<script>") && body.html.includes("&lt;script&gt;"));
     assert.ok(!/[\r\n]/.test(body.subject));
-    await assert.rejects(s.sendTemplate({ template: "split_invitation", to: "a@b.c", data: { releaseTitle: "X" } }), /needs artistName, inviteCode, expiresAt/);
+    await assert.rejects(s.sendTemplate({ template: "split_invitation", to: "a@b.c", data: { releaseTitle: "X" } }), /needs artistName, inviteCode, expiresAt, releaseId, partyId/);
     await assert.rejects(s.sendTemplate({ template: "review_needs_changes", to: "not an address", data: { releaseTitle: "X", reason: "Y" } }), /bad email/);
   });
 

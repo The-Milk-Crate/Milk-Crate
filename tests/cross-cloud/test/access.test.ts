@@ -70,17 +70,14 @@ async function outcome(w: World, op: string, as: Account, s: Seeded, state: Rele
     case "listReleases":
       return listed(w, as, state, s.releaseId);
     case "recordPlays": {
+      // A start, then the end in a second batch 31 seconds of server time later: the start's
+      // receive time is moved back (test only), as a real play's would be (session J1).
       const playId = crypto.randomUUID();
-      const r = await api.call(op, {
-        token: t,
-        headers: { "idempotency-key": crypto.randomUUID() },
-        body: {
-          events: [
-            { type: "start", trackId: s.trackIds[0], playId, positionMs: 0, occurredAt: "2026-06-01T12:00:00Z" },
-            { type: "end", trackId: s.trackIds[0], playId, positionMs: 31000, occurredAt: "2026-06-01T12:00:31Z" },
-          ],
-        },
-      });
+      const send = (events: unknown[]) => api.call(op, { token: t, headers: { "idempotency-key": crypto.randomUUID() }, body: { events } });
+      const first = await send([{ type: "start", trackId: s.trackIds[0], playId, positionMs: 0, occurredAt: "2026-06-01T12:00:00Z" }]);
+      if (first.status !== 202) return String(first.status);
+      await w.d.db.query("update public.api_play_events set received_at = received_at - interval '31 seconds' where play_id = $1::uuid", [playId]);
+      const r = await send([{ type: "end", trackId: s.trackIds[0], playId, positionMs: 31000, occurredAt: "2026-06-01T12:00:31Z" }]);
       if (r.status !== 202) return String(r.status);
       const [{ events, qualified }] = await w.d.db.query<{ events: number; qualified: number }>(
         `select (select count(*)::int from public.api_play_events where play_id = $1::uuid) as events,
@@ -179,6 +176,11 @@ describe("invitations from the fixture (getInvitation and respondToSplit), on bo
             for (let i = 0; i < 10; i++) {
               await w.d.api.call("getInvitation", { token: listener.token, params: { releaseId, partyId }, body: { inviteCode: `wrong-${i}-0123456789abcdef` } });
             }
+            // Only wrong codes meet the lock (session J1): the right code still answers 200.
+            const right = op === "getInvitation" ? { inviteCode: code } : { response: "accept", inviteCode: code };
+            const ok = await w.d.api.call(op, { token: listener.token, params: { releaseId, partyId }, body: right });
+            if (ok.status !== 200) seen.push(`rate_limited, ${op}: the right code while locked answered ${ok.status}, not 200`);
+            code = "wrong-10-0123456789abcdef";
           }
           const body = op === "getInvitation" ? { inviteCode: code } : { response: "accept", inviteCode: code };
           const r = await w.d.api.call(op, { token: listener.token, params: { releaseId, partyId }, body });
