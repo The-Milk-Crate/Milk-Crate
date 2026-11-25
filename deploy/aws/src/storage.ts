@@ -46,7 +46,7 @@ const PUT_MAX_BYTES = 5 * 1024 ** 3;
 const MAX_PARTS = 10_000;
 const MIN_PART_BYTES = 8 * MIB;
 /** The bucket's lifecycle rule aborts an unfinished multipart upload after this many days. */
-export const UPLOAD_DAYS = 7;
+export const UPLOAD_DAYS = 1;
 
 const CONTENT_TYPES = {
   wav: "audio/wav",
@@ -106,7 +106,7 @@ export function planParts(sizeBytes: number): PartPlan {
   return { partSize, partCount: Math.max(1, Math.ceil(sizeBytes / partSize)) };
 }
 
-function partBytes(plan: PartPlan, sizeBytes: number, n: number): number {
+export function partBytes(plan: PartPlan, sizeBytes: number, n: number): number {
   return n < plan.partCount ? plan.partSize : sizeBytes - plan.partSize * (plan.partCount - 1);
 }
 
@@ -142,7 +142,9 @@ function unquote(etag: string | undefined): string {
  *
  * Uploads (`s3_multipart`): the server opens a multipart upload with a full-object CRC64NVME
  * checksum and gives the client presigned part URLs. The client never gets AWS credentials,
- * and each URL allows only that one part of that one upload, for an hour.
+ * and each URL allows only that one part of that one upload, at its planned size, for an
+ * hour. Once the core has recorded a new upload, `abortOtherUploads` aborts every other
+ * unfinished upload to the same key.
  *
  * Reads: CloudFront signed cookies for one track's streaming folder (or one release's cover
  * folder), valid 600 seconds, plus the address to read. Never a master.
@@ -154,18 +156,53 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
   const partTtl = options.partTtlSeconds ?? 3600;
   const batch = options.partsPerBatch ?? 50;
 
-  async function sign(key: string, s3UploadId: string, numbers: number[]): Promise<SignedPart[]> {
+  async function sign(key: string, s3UploadId: string, sizeBytes: number, numbers: number[]): Promise<SignedPart[]> {
     const expiresAt = new Date(now() + partTtl * 1000).toISOString();
+    const plan = planParts(sizeBytes);
     return Promise.all(
       numbers.map(async (partNumber) => ({
         partNumber,
+        // The part's planned size is signed (content-length is a signed header), so S3 refuses
+        // a body of any other length. Clients send it as is: fetch sets Content-Length itself.
         url: await options.presign(
-          new UploadPartCommand({ Bucket: bucket, Key: key, UploadId: s3UploadId, PartNumber: partNumber }),
+          new UploadPartCommand({
+            Bucket: bucket,
+            Key: key,
+            UploadId: s3UploadId,
+            PartNumber: partNumber,
+            ContentLength: partBytes(plan, sizeBytes, partNumber),
+          }),
           partTtl,
         ),
         expiresAt,
       })),
     );
+  }
+
+  /**
+   * Aborts every unfinished multipart upload under the prefix; with `exactKey`, only those
+   * for that one key (a prefix also matches longer keys), and never the S3 upload `keep`.
+   */
+  async function abortUploads(prefix: string, exactKey?: string, keep?: string): Promise<void> {
+    let keyMarker: string | undefined;
+    let idMarker: string | undefined;
+    for (;;) {
+      const out = await s3.send(
+        new ListMultipartUploadsCommand({ Bucket: bucket, Prefix: prefix, KeyMarker: keyMarker, UploadIdMarker: idMarker }),
+      );
+      for (const u of out.Uploads ?? []) {
+        if (exactKey !== undefined && u.Key !== exactKey) continue;
+        if (keep !== undefined && u.UploadId === keep) continue;
+        try {
+          await s3.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: u.Key, UploadId: u.UploadId }));
+        } catch (error) {
+          if (errorName(error) !== "NoSuchUpload") throw error;
+        }
+      }
+      if (!out.IsTruncated) return;
+      keyMarker = out.NextKeyMarker;
+      idMarker = out.NextUploadIdMarker;
+    }
   }
 
   /** Every stored part of an open upload, or null when the upload is no longer open. */
@@ -225,7 +262,7 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       method: "s3_multipart",
       providerUploadId,
       ...plan,
-      parts: stored === "done" ? [] : await sign(key, s3UploadId, missing),
+      parts: stored === "done" ? [] : await sign(key, s3UploadId, sizeBytes, missing),
       completedParts,
       expiresAt: new Date(startedMs + UPLOAD_DAYS * 86_400_000).toISOString(),
     };
@@ -269,6 +306,12 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       return session(key, packUploadId(created.UploadId, started, sizeBytes), []);
     },
 
+    async abortOtherUploads(key: ObjectKey, keepProviderUploadId: string): Promise<void> {
+      if (!MASTER_KEY.test(key) && !COVER_KEY.test(key)) throw new Error(`uploads go only to a master or cover key, not ${key}`);
+      // A replaced upload's parts go now rather than when the lifecycle rule aborts them.
+      await abortUploads(key, key, unpackUploadId(keepProviderUploadId).s3UploadId);
+    },
+
     getUpload,
 
     async signParts(key: ObjectKey, providerUploadId: string, partNumbers: number[]): Promise<SignedPart[]> {
@@ -278,7 +321,7 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
       for (const n of partNumbers) {
         if (!Number.isInteger(n) || n < 1 || n > partCount) throw new Error(`this upload has parts 1 to ${partCount}, not ${n}`);
       }
-      return sign(key, s3UploadId, [...new Set(partNumbers)]);
+      return sign(key, s3UploadId, sizeBytes, [...new Set(partNumbers)]);
     },
 
     async confirmUpload(input: ConfirmUploadInput): Promise<ConfirmUploadResult> {
@@ -446,23 +489,7 @@ export function s3Storage(options: S3StorageOptions): ObjectStorage {
     async delete(prefix: ObjectKey): Promise<void> {
       if (!DELETE_PREFIX.test(prefix)) throw new Error(`delete takes a release folder ending in /, not ${prefix}`);
       // Unfinished uploads under the prefix first, so no part outlives the takedown.
-      let keyMarker: string | undefined;
-      let idMarker: string | undefined;
-      for (;;) {
-        const out = await s3.send(
-          new ListMultipartUploadsCommand({ Bucket: bucket, Prefix: prefix, KeyMarker: keyMarker, UploadIdMarker: idMarker }),
-        );
-        for (const u of out.Uploads ?? []) {
-          try {
-            await s3.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: u.Key, UploadId: u.UploadId }));
-          } catch (error) {
-            if (errorName(error) !== "NoSuchUpload") throw error;
-          }
-        }
-        if (!out.IsTruncated) break;
-        keyMarker = out.NextKeyMarker;
-        idMarker = out.NextUploadIdMarker;
-      }
+      await abortUploads(prefix);
 
       const keys = await listKeys(prefix);
       for (let i = 0; i < keys.length; i += 1000) {

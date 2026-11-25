@@ -218,6 +218,20 @@ current state and the next steps. Update it when a step is done.
      warns unless the Supabase CLI is 2.122.1. Not run for real yet: `supabase config push` and
      `supabase functions deploy` (K Marcus's stand-up). Run the stand-up after J4 is merged: it
      copies `worker/src/` into the worker image.
+   - J3: pull request #45 open, with `milk-crate-backend-poc` (J1's #41, J2's #43) merged in.
+     AWS fixes for M2, M3, L4, L8 and L9; details in #45 and `deploy/aws/README.md`. Decided by
+     K Marcus with J3: J3 also changed `core/`, so the S3 abort for a replaced upload runs only
+     after the database records the new one.
+     - `ObjectStorage` gets a required `abortOtherUploads(key, keepProviderUploadId)` (AWS
+       aborts its S3 uploads; Supabase does nothing).
+     - In `core/src/handlers/uploads.ts`, `start(...)` calls it right after the
+       `api_start_upload` query and before the 201, in a try/catch. A failure is logged and the
+       start still answers 201.
+     - `core/test/fakes.ts`: `FakeStorage` gets `aborts`, `abortError` and the method. Three
+       tests are under "replaced uploads (abortOtherUploads)" in `core/test/uploads.test.ts`.
+     - For later changes to `start(...)`: keep the abort after every step that can still refuse
+       a start (a refused start must not end the upload it would have replaced), and give any
+       new `ObjectStorage` fake the method.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
@@ -252,6 +266,9 @@ current state and the next steps. Update it when a step is done.
   keys. K Marcus deletes `aws-sandbox-run` in the GitHub branch list, and merges pull requests.
 - Restarting a sandbox run: K Marcus deletes `aws-sandbox-run`, the session creates it again
   from `milk-crate-backend-poc`, K Marcus approves under "Review deployments".
+- Sandbox rules (decided by K Marcus, finding L8): `milkcrate-dev` holds nothing but the
+  Phase 0 sandbox (the sandbox role is close to admin there). Before approving a run, open it
+  and check its commit is the expected one on `milk-crate-backend-poc`.
 - Changing the sandbox role (`deploy/aws/infra/github-oidc.json`) takes two steps: merge the
   change, and run the `aws cloudformation deploy` command for stack `MilkCrateGitHubSandbox`
   from `deploy/aws/README.md` by hand. The deployed role changes only when K Marcus does that.

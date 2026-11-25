@@ -116,6 +116,13 @@ async function start(
        from public.api_start_upload($1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::text, $7::bigint, $8::timestamptz) s`,
     [releaseId, trackId, kind, stored.method, stored.providerUploadId, format, sizeBytes, stored.expiresAt],
   );
+  // Only now, with the new upload recorded, end the one it replaced. A failure here does not
+  // fail the start: the bucket's lifecycle rule ends a left-over upload within a day.
+  try {
+    await ctx.modules.storage.abortOtherUploads(key, stored.providerUploadId);
+  } catch (error) {
+    ctx.settings.log(`upload ${recorded.upload_id}: ending the uploads it replaced failed: ${(error as Error)?.message ?? String(error)}`);
+  }
   return json(
     201,
     sessionView({ id: recorded.upload_id, kind, track_id: trackId, object_key: recorded.object_key, size_bytes: sizeBytes }, stored),

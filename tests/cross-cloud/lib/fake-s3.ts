@@ -1,9 +1,10 @@
 // Test only: an in-memory S3 bucket at the SDK edge (session F's FakeAws), with the commands
 // F's storage module sends, plus the two HTTP edges a client reaches: a presigned part URL
-// (PUT, answers an ETag) and CloudFront (GET, served only with valid signed cookies whose
+// (PUT, answers an ETag; the signature is checked with the body's real length, so a part of
+// the wrong size is refused as S3 refuses it) and CloudFront (GET, served only with valid signed cookies whose
 // policy covers the address, as CloudFront checks them). F's own tests answer one command at a
 // time; this keeps state so a whole scenario can run through it.
-import { createHash, createVerify } from "node:crypto";
+import { createHash, createHmac, createVerify } from "node:crypto";
 import { crc64nvme } from "../../../deploy/aws/src/crc64nvme.ts";
 import { FakeAws, awsError } from "../../../deploy/aws/test/fake-aws.ts";
 
@@ -22,7 +23,45 @@ export interface S3Object {
   crc64nvme?: string;
 }
 
-export function fakeS3(options: { bucket: string; region: string; cloudFrontDomain: string; cloudFrontPublicKeyPem: string; keyPairId: string }) {
+/** RFC 3986 encoding, as SigV4 wants it. */
+const sigEncode = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/**
+ * S3's check of a presigned (query string) SigV4 request: the signature recomputed from the
+ * request as it arrived, with `content-length` taken from the real body. A URL signed for
+ * another length, or a changed URL, does not match.
+ */
+function presignedSignatureOk(url: URL, method: string, headers: Headers, bodyLength: number, secretAccessKey: string): boolean {
+  const q = url.searchParams;
+  if (q.get("X-Amz-Algorithm") !== "AWS4-HMAC-SHA256") return false;
+  const signature = q.get("X-Amz-Signature") ?? "";
+  const date = q.get("X-Amz-Date") ?? "";
+  const [, scopeDate, region, service] = (q.get("X-Amz-Credential") ?? "").split("/");
+  const signedHeaders = (q.get("X-Amz-SignedHeaders") ?? "").split(";");
+  const value = (name: string) => (name === "host" ? url.host : name === "content-length" ? String(bodyLength) : (headers.get(name) ?? "").trim());
+  const query = [...q.entries()]
+    .filter(([k]) => k !== "X-Amz-Signature")
+    .map(([k, v]) => [sigEncode(k), sigEncode(v)])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 1))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+  const canonical = [method, url.pathname, query, signedHeaders.map((h) => `${h}:${value(h)}\n`).join(""), signedHeaders.join(";"), "UNSIGNED-PAYLOAD"].join("\n");
+  const scope = `${scopeDate}/${region}/${service}/aws4_request`;
+  const toSign = ["AWS4-HMAC-SHA256", date, scope, createHash("sha256").update(canonical).digest("hex")].join("\n");
+  let key: Buffer = createHmac("sha256", `AWS4${secretAccessKey}`).update(scopeDate).digest();
+  for (const part of [region, service, "aws4_request"]) key = createHmac("sha256", key).update(part).digest();
+  return createHmac("sha256", key).update(toSign).digest("hex") === signature;
+}
+
+export function fakeS3(options: {
+  bucket: string;
+  region: string;
+  cloudFrontDomain: string;
+  cloudFrontPublicKeyPem: string;
+  keyPairId: string;
+  /** The presigner's made-up secret key, to check part URL signatures as S3 does. */
+  secretAccessKey: string;
+}) {
   const objects = new Map<string, S3Object>();
   const uploads = new Map<string, Upload>();
   let n = 0;
@@ -154,9 +193,16 @@ export function fakeS3(options: { bucket: string; region: string; cloudFrontDoma
         (url.searchParams.get("X-Amz-Date") ?? "").replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"),
       ) + Number(url.searchParams.get("X-Amz-Expires")) * 1000;
       if (!(expires > Date.now())) return new Response("Request has expired", { status: 403 });
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      // F signs each part's planned size (content-length), so a body of another length fails here.
+      if (!(url.searchParams.get("X-Amz-SignedHeaders") ?? "").split(";").includes("content-length")) {
+        return new Response("the part URL does not sign content-length", { status: 403 });
+      }
+      if (!presignedSignatureOk(url, req.method, req.headers, bytes.length, options.secretAccessKey)) {
+        return new Response("SignatureDoesNotMatch", { status: 403 });
+      }
       const u = uploads.get(uploadId);
       if (!u || u.key !== key) return new Response("NoSuchUpload", { status: 404 });
-      const bytes = new Uint8Array(await req.arrayBuffer());
       const etag = createHash("md5").update(bytes).digest("hex");
       u.parts.set(partNumber, { bytes, etag, modified: Date.now() });
       return new Response(null, { status: 200, headers: { etag: `"${etag}"` } });

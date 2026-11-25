@@ -228,6 +228,8 @@ const CLIENT_ID = "cross-cloud-client";
 const BUCKET = "mc-files";
 const CLOUDFRONT = "d111crosscloud.cloudfront.net";
 const KEY_PAIR_ID = "K2CROSSCLOUD";
+// Made up: presigning is local, and the fake S3 checks part URL signatures with it.
+const PRESIGN_SECRET = "made-up-for-tests";
 
 export async function awsDeployment(dbUrl: string): Promise<MockDeployment> {
   const logs: string[] = [];
@@ -242,6 +244,7 @@ export async function awsDeployment(dbUrl: string): Promise<MockDeployment> {
     cloudFrontDomain: CLOUDFRONT,
     cloudFrontPublicKeyPem: cloudFrontKeys.publicKey.export({ type: "spki", format: "pem" }).toString(),
     keyPairId: KEY_PAIR_ID,
+    secretAccessKey: PRESIGN_SECRET,
   });
 
   const dataApi = new FakeDataApi(dbUrl);
@@ -282,7 +285,7 @@ export async function awsDeployment(dbUrl: string): Promise<MockDeployment> {
   const { getSignedCookies } = awsRequire("@aws-sdk/cloudfront-signer");
   const presigner = new S3Client({
     region: REGION,
-    credentials: { accessKeyId: "AKIDCROSSCLOUD", secretAccessKey: "made-up-for-tests" },
+    credentials: { accessKeyId: "AKIDCROSSCLOUD", secretAccessKey: PRESIGN_SECRET },
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
   });

@@ -65,6 +65,13 @@ export interface PutOptions {
 /** Start an upload, confirm it, read its first bytes or all of it, write one, sign a read, delete. */
 export interface ObjectStorage {
   startUpload(input: StartUploadInput): Promise<StorageUpload>;
+  /**
+   * Ends every other unfinished upload to the key, keeping `keepProviderUploadId`. The core
+   * calls it after the database has recorded the new upload (and marked the old one
+   * `replaced`), so a refused start never ends the upload it would have replaced. A no-op
+   * where the provider keeps no upload session to end.
+   */
+  abortOtherUploads(key: ObjectKey, keepProviderUploadId: string): Promise<void>;
   /** Progress of an upload that was interrupted. */
   getUpload(key: ObjectKey, providerUploadId: string): Promise<StorageUpload>;
   /** More presigned parts (s3_multipart only). */

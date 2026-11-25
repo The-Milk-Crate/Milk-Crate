@@ -85,9 +85,15 @@ next token refresh (tokens last an hour).
 `startUpload` opens a multipart upload with `ChecksumAlgorithm: CRC64NVME` and
 `ChecksumType: FULL_OBJECT` (that is the checksum setting: S3 sets it per upload, not per
 bucket), plans 8 MiB parts (larger only to stay within 10,000; 5 GiB is 640 parts) and signs the
-first 50. Part URLs last an hour and carry no checksum. `getUpload` lists the stored parts, so an
-interrupted upload re-sends only the rest; `signParts` signs more. A lifecycle rule aborts an
-unfinished upload after 7 days (the session's `expiresAt`). `providerUploadId` is the S3 upload id
+first 50. Part URLs last an hour and carry no checksum. Each is signed with its part's planned
+size (`ContentLength`, so `content-length` is a signed header; the last part is smaller), and S3
+refuses a body of any other length. `getUpload` lists the stored parts, so an
+interrupted upload re-sends only the rest; `signParts` signs more. Once the core has recorded a new
+upload (and session B has marked the old one `replaced`), it calls `abortOtherUploads`, which
+aborts every other unfinished upload for the same key, so a replaced upload's parts go at once.
+A start the database refuses ends nothing; a failed abort is logged and left to the lifecycle
+rule. A
+lifecycle rule aborts an unfinished upload after 1 day (the session's `expiresAt`). `providerUploadId` is the S3 upload id
 with the start time and size in its fragment, as on E.
 **Confirm** checks every part is there (else `incomplete`), the client's ETags and the total size
 (else `checksum_mismatch`), then completes with the client's CRC64NVME; S3 refuses a wrong one and
@@ -134,7 +140,16 @@ missed-minute gap, so there is no daily sweep as on E.
 returns the Lambda handler. The event becomes a `Request` (path cut to `/v1/...`, query,
 cookies, base64 bodies); the `Response` goes back with `Set-Cookie` in `cookies` and binary
 bodies as base64. No match is the contract's 404; a throw is a 500 with no details, logged with
-the request id. Lambdas time out at 29 seconds, inside API Gateway's 30.
+the request id. Lambdas time out at 29 seconds, inside API Gateway's 30. The HTTP API's
+`$default` stage is throttled at 50 requests a second, burst 100 (decided by K Marcus; the
+per-user limits are in the database). Each operation's Lambda has its own role. The listener
+operations (`LISTENER_OPERATIONS` in `infra/stack.ts`: `getPublicRelease`, `getPlayback`,
+`getCover`, `recordPlays`) get only the Data API (which includes reading the database secret).
+The two read grants, `getPlayback` and `getCover`, also get `s3:GetObject` on `streams/*` and
+`art/*`, `s3:ListBucket` on the bucket (so a missing object is a 404, not a 403; key names
+only, decided by K Marcus) and the CloudFront key secret, and nothing else. Every other operation gets the full set: the bucket,
+`ecs:RunTask`, `iam:PassRole` for the worker and the schedule role, Scheduler, SES and the
+secrets under `milk-crate/phase0/`.
 
 **Secrets and email.** Secrets Manager, by name (`milk-crate/phase0/<NAME>`), kept 5 minutes in
 memory. Chosen over Parameter Store because the Data API needs the database login in Secrets
@@ -164,7 +179,8 @@ MC_SETTINGS_FILE=/path/outside/the/repo/aws.settings.env bash deploy/aws/scripts
 
 The smoke test (about 10 minutes) checks against the real services what the mocked tests
 could not: the Data API's parameters, value shapes and error text; presigned parts on a
-CRC64NVME upload, resume and confirm; CloudFront cookies (one track only, never a master); a
+CRC64NVME upload, a part of the wrong length refused, resume and confirm, `abortOtherUploads`
+ending a replaced upload; CloudFront cookies (one track only, never a master); a
 real Cognito token and the claim through the sync and suspension; a schedule running through
 the Data API and a failed one in the dead-letter queue; one Fargate task per job id; and, with
 `MC_SMOKE_EMAIL_TO`, one SES email. It writes only test data under fresh random ids and removes
@@ -202,6 +218,12 @@ The role has `PowerUserAccess` (no IAM changes) plus passing the stack's own rol
 worker task. CDK deploys through its bootstrap roles, whose CloudFormation role is an
 administrator, so anyone who can run this workflow can change anything in that account. Use an
 account that holds nothing else you care about; your approval is the gate.
+
+Two rules for this (decided by K Marcus, finding L8):
+- `milkcrate-dev` holds nothing but the Phase 0 sandbox. The sandbox role is close to admin
+  there.
+- Before approving a run, open it and check its commit is the one you expect on
+  `milk-crate-backend-poc` (the run page shows the commit; compare it with the branch's latest).
 
 ### Once, by hand (account administrator, AWS CLI)
 

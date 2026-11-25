@@ -27,6 +27,7 @@ import {
 } from "aws-cdk-lib";
 import type { Construct } from "constructs";
 import { COGNITO_GROUPS } from "../src/identity.ts";
+import { CLOUDFRONT_KEY_SECRET } from "../src/modules.ts";
 import { UPLOAD_DAYS } from "../src/storage.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +56,18 @@ export const DB_NAME = "milk_crate";
 export const SCHEDULE_GROUP = "milk-crate-phase0";
 export const SWEEP_SCHEDULE = "mc-worker-sweep";
 export const ACCOUNT_SYNC_SCHEDULE = "mc-account-sync";
+
+/**
+ * Listener operations (decided by K Marcus, finding L4): their Lambdas get only the Data API.
+ * The two read grants (READ_GRANT_OPERATIONS) also read streaming copies and covers and the
+ * CloudFront key. Every other operation in functions/routes.json gets the full set.
+ */
+export const LISTENER_OPERATIONS = ["getPublicRelease", "getPlayback", "getCover", "recordPlays"] as const;
+/** The listener operations that sign CloudFront cookies (storage.signRead). */
+export const READ_GRANT_OPERATIONS = ["getPlayback", "getCover"] as const;
+
+/** Stage throttling on the HTTP API (decided by K Marcus, finding M2): the platform backstop. */
+export const API_THROTTLE = { rateLimit: 50, burstLimit: 100 } as const;
 
 /**
  * The Phase 0 AWS deployment, one stack:
@@ -338,7 +351,9 @@ export class MilkCrateStack extends Stack {
 
     // The API: an HTTP API with one Lambda per operation (functions/routes.json, one entry per
     // operation in session G's core/src/handlers/). Identity checks the token itself, so routes have no authorizer.
-    const api = new apigw.HttpApi(this, "Api", { description: "Milk Crate Phase 0 API", createDefaultStage: true });
+    const api = new apigw.HttpApi(this, "Api", { description: "Milk Crate Phase 0 API", createDefaultStage: false });
+    // The $default stage, made here so it can carry the throttle (HttpApi's own has none).
+    new apigw.HttpStage(this, "ApiDefaultStage", { httpApi: api, stageName: "$default", autoDeploy: true, throttle: API_THROTTLE });
     const operationEnv: Record<string, string> = {
       MC_BUCKET: bucket.bucketName,
       MC_CLOUDFRONT_DOMAIN: distribution.distributionDomainName,
@@ -363,17 +378,15 @@ export class MilkCrateStack extends Stack {
       resourceName: `${SECRET_PREFIX}*`,
       arnFormat: ArnFormat.COLON_RESOURCE_NAME,
     });
-    for (const r of routes) {
-      const match = /^([A-Z]+) (\/v1\/[^\s]*)$/.exec(r.route);
-      if (!match || !/^[A-Za-z]+$/.test(r.operationId) || !/^[A-Za-z0-9_-]+\.ts$/.test(r.entry)) {
-        throw new Error(`bad route in functions/routes.json: ${JSON.stringify(r)}`);
-      }
-      const fn = new nodejs.NodejsFunction(this, `Op-${r.operationId}`, {
-        ...lambdaDefaults(`Op-${r.operationId}`, join(PACKAGE_DIR, "functions", r.entry), operationEnv),
-        // API Gateway waits at most 30 seconds.
-        timeout: Duration.seconds(29),
-      });
-      cluster.grantDataApiAccess(fn);
+    // Only the CloudFront key (Secrets Manager adds six random characters to the name).
+    const cloudFrontKeySecret = Stack.of(this).formatArn({
+      service: "secretsmanager",
+      resource: "secret",
+      resourceName: `${SECRET_PREFIX}${CLOUDFRONT_KEY_SECRET}-??????`,
+      arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    /** The full role: what every operation but the listener ones may do (as before L4). */
+    const addFullOperationPolicy = (fn: nodejs.NodejsFunction) => {
       fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [appSecrets] }));
       fn.addToRolePolicy(
         new iam.PolicyStatement({
@@ -415,6 +428,35 @@ export class MilkCrateStack extends Stack {
           resources: [Stack.of(this).formatArn({ service: "ses", resource: "identity", resourceName: settings.emailDomain })],
         }),
       );
+    };
+
+    for (const r of routes) {
+      const match = /^([A-Z]+) (\/v1\/[^\s]*)$/.exec(r.route);
+      if (!match || !/^[A-Za-z]+$/.test(r.operationId) || !/^[A-Za-z0-9_-]+\.ts$/.test(r.entry)) {
+        throw new Error(`bad route in functions/routes.json: ${JSON.stringify(r)}`);
+      }
+      const fn = new nodejs.NodejsFunction(this, `Op-${r.operationId}`, {
+        ...lambdaDefaults(`Op-${r.operationId}`, join(PACKAGE_DIR, "functions", r.entry), operationEnv),
+        // API Gateway waits at most 30 seconds.
+        timeout: Duration.seconds(29),
+      });
+      // Each function has its own role (CDK makes one per function). The database secret is
+      // read by the Data API with the caller's credentials, so every one needs this. The other
+      // listener operations (getPublicRelease, recordPlays) get nothing more.
+      cluster.grantDataApiAccess(fn);
+      if ((READ_GRANT_OPERATIONS as readonly string[]).includes(r.operationId)) {
+        // Read grants: signRead checks the object exists (a HEAD), then signs cookies with the
+        // CloudFront key. ListBucket lets S3 answer 404, not 403, for a missing object (decided
+        // by K Marcus); it shows key names, never contents. No writes, deletes, ECS, PassRole,
+        // Scheduler, SES or other secret.
+        fn.addToRolePolicy(
+          new iam.PolicyStatement({ actions: ["s3:GetObject"], resources: [bucket.arnForObjects("streams/*"), bucket.arnForObjects("art/*")] }),
+        );
+        fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:ListBucket"], resources: [bucket.bucketArn] }));
+        fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["secretsmanager:GetSecretValue"], resources: [cloudFrontKeySecret] }));
+      } else if (!(LISTENER_OPERATIONS as readonly string[]).includes(r.operationId)) {
+        addFullOperationPolicy(fn);
+      }
       api.addRoutes({
         path: match[2],
         methods: [match[1] as apigw.HttpMethod],
@@ -422,6 +464,11 @@ export class MilkCrateStack extends Stack {
           payloadFormatVersion: apigw.PayloadFormatVersion.VERSION_2_0,
         }),
       });
+    }
+    // A renamed listener operation would otherwise get the full role without a word.
+    const operationIds = new Set(routes.map((r) => r.operationId));
+    for (const id of LISTENER_OPERATIONS) {
+      if (!operationIds.has(id)) throw new Error(`listener operation ${id} is not in functions/routes.json`);
     }
 
     // What the scripts and confirm read.

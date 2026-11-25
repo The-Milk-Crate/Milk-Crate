@@ -151,6 +151,59 @@ describe("master uploads", () => {
   });
 });
 
+describe("replaced uploads (abortOtherUploads)", () => {
+  it("ends the other uploads to the key only after the new upload is recorded, keeping the new one", async () => {
+    const h = harness("s3_multipart");
+    const artist = await account("artist");
+    const { releaseId, trackIds } = await draft(h, artist);
+    const start = () => h.call("startUpload", { as: artist, params: { releaseId, trackId: trackIds[0] }, body: { format: "wav", sizeBytes: 10 } });
+    const first = await start();
+    const second = await start();
+    assert.equal(second.status, 201);
+    const aborts = h.modules.storage.aborts;
+    assert.equal(aborts.length, 2);
+    assert.equal(aborts[1].key, second.body.objectKey);
+    const [row] = await db.query<{ provider_upload_id: string }>("select provider_upload_id from public.api_uploads where id = $1::uuid", [second.body.uploadId]);
+    assert.equal(aborts[1].keep, row.provider_upload_id);
+    assert.notEqual(aborts[1].keep, aborts[0].keep);
+    // The first upload is replaced in the database, so ending its storage upload loses nothing.
+    const old = await h.call("getUpload", { as: artist, params: { uploadId: first.body.uploadId } });
+    assert.equal(old.status, 409);
+  });
+
+  it("a start the database refuses ends nothing, so the upload it would have replaced still works", async () => {
+    const h = harness("s3_multipart");
+    const artist = await account("artist");
+    const { releaseId, trackIds } = await draft(h, artist);
+    const first = await h.call("startUpload", { as: artist, params: { releaseId, trackId: trackIds[0] }, body: { format: "wav", sizeBytes: 10 } });
+    assert.equal(first.status, 201);
+    const real = h.modules.database;
+    h.modules.database = {
+      ...real,
+      query: (async (sql: string, params?: unknown[]) => {
+        if (sql.includes("api_start_upload")) throw new Error("the database refused");
+        return real.query(sql, params as never);
+      }) as typeof real.query,
+    };
+    const refused = await h.call("startUpload", { as: artist, params: { releaseId, trackId: trackIds[0] }, body: { format: "wav", sizeBytes: 10 } });
+    h.modules.database = real;
+    assert.equal(refused.status, 500);
+    assert.equal(h.modules.storage.aborts.length, 1);
+    const still = await h.call("getUpload", { as: artist, params: { uploadId: first.body.uploadId } });
+    assert.equal(still.status, 200);
+  });
+
+  it("an abort that fails is logged and the start still answers 201", async () => {
+    const h = harness("s3_multipart");
+    h.modules.storage.abortError = new Error("S3 said no");
+    const artist = await account("artist");
+    const { releaseId, trackIds } = await draft(h, artist);
+    const r = await h.call("startUpload", { as: artist, params: { releaseId, trackId: trackIds[0] }, body: { format: "wav", sizeBytes: 10 } });
+    assert.equal(r.status, 201);
+    assert.ok(h.options.logs.some((m) => /ending the uploads it replaced failed: S3 said no/.test(m)), h.options.logs.join("\n"));
+  });
+});
+
 describe("cover art", () => {
   it("a square PNG or JPEG is confirmed, replaces the cover and changes no state", async () => {
     const h = harness();
