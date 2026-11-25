@@ -21,5 +21,6 @@ with `_`, with `verify_jwt` off, because `Identity` checks the token itself (the
 check does not know the newer signing keys, and a missing token must still get the
 contract's 401).
 
-`deno.json` maps the two packages to npm. `sloppy-imports` lets Deno follow `core/`'s
+`deno.json` maps the two packages to npm, and `deno.lock` next to it pins their hashes (how to
+make it again: `deploy/supabase/README.md`, "Edge Function dependencies"). `sloppy-imports` lets Deno follow `core/`'s
 platform imports, which have no file extensions (they are type-only and erased at run time).

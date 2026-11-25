@@ -36,6 +36,10 @@ enable_refresh_token_rotation = true
 enable_signup = true
 # Only signed-in accounts: Identity refuses anonymous sign-ins anyway.
 enable_anonymous_sign_ins = false
+# Password rules, as on Cognito: at least 12 characters with lower and upper case letters and
+# digits (decided by K Marcus, security review L5). Staff MFA comes in Phase 1.
+minimum_password_length = 12
+password_requirements = "lower_upper_letters_digits"
 
 [auth.email]
 enable_signup = true

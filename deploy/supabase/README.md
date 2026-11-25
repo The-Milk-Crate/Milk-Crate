@@ -162,6 +162,26 @@ tables; read, never changed), then `db/migrations/`, `db/supabase/` (its `0006` 
 `sql/` here. The default grants on B's tables are never left open, and a failure changes
 nothing.
 
+**Resend (before the stand-up).** The invitation emails hold live invite codes (valid 14
+days), and Resend keeps sent messages with their bodies (security review L7, decided by
+K Marcus):
+- Make the `RESEND_API_KEY` for `MC_SECRETS_FILE` with **sending access only**, so it cannot
+  read sent emails back.
+- Turn on 2FA on the Resend account, and keep the account to K Marcus.
+- Shorten or turn off message retention in Resend's settings if it offers that.
+
+**Password rules.** `config.toml` sets at least 12 characters with lower and upper case letters
+and digits (`minimum_password_length`, `password_requirements`), as Cognito does (review L5).
+`supabase config push` sends them. Staff MFA comes in Phase 1.
+
+**Edge Function dependencies.** `supabase/functions/deno.lock` pins the hashes of `jose` and
+`postgres` (review L9). Deno finds it next to `deno.json` and refuses a package whose hash
+differs. After changing a version in `deno.json`, run `bash scripts/copy-core.sh` and then,
+from `deploy/supabase/`:
+`npx deno@2.1.4 cache --config supabase/functions/deno.json --lock=supabase/functions/deno.lock --frozen=false supabase/functions/api/index.ts`
+(Deno 2.1.4 writes lock version 4, which older and newer Deno both read). The lock holds only
+the npm packages, never `_core/`.
+
 **Plan and file size.** `MC_FILE_SIZE_LIMIT` sets the project's file size limit
 (`config.toml`), the masters bucket's limit and the largest upload `startUpload` accepts. On the
 free Phase 0 project set it to `50MiB`, the Free plan's cap, in your shell and in the secrets
