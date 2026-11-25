@@ -223,6 +223,9 @@ current state and the next steps. Update it when a step is done.
   keys. K Marcus deletes `aws-sandbox-run` in the GitHub branch list, and merges pull requests.
 - Restarting a sandbox run: K Marcus deletes `aws-sandbox-run`, the session creates it again
   from `milk-crate-backend-poc`, K Marcus approves under "Review deployments".
+- Sandbox rules (decided by K Marcus, finding L8): `milkcrate-dev` holds nothing but the
+  Phase 0 sandbox (the sandbox role is close to admin there). Before approving a run, open it
+  and check its commit is the expected one on `milk-crate-backend-poc`.
 - Changing the sandbox role (`deploy/aws/infra/github-oidc.json`) takes two steps: merge the
   change, and run the `aws cloudformation deploy` command for stack `MilkCrateGitHubSandbox`
   from `deploy/aws/README.md` by hand. The deployed role changes only when K Marcus does that.

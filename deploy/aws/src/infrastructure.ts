@@ -98,7 +98,7 @@ export async function confirmDeployment(options: ConfirmOptions): Promise<{ ok: 
       (r: { Status?: string; AbortIncompleteMultipartUpload?: { DaysAfterInitiation?: number } }) =>
         r.Status === "Enabled" && r.AbortIncompleteMultipartUpload?.DaysAfterInitiation === UPLOAD_DAYS,
     );
-    if (!abort) problems.push(`bucket ${facts.bucket} has no rule to abort unfinished uploads after ${UPLOAD_DAYS} days`);
+    if (!abort) problems.push(`bucket ${facts.bucket} has no rule to abort unfinished uploads after ${UPLOAD_DAYS} day${UPLOAD_DAYS === 1 ? "" : "s"}`);
     const cors = await options.s3.send(new GetBucketCorsCommand({ Bucket: facts.bucket }));
     const put = (cors.CORSRules ?? []).find(
       (r: { AllowedMethods?: string[]; ExposeHeaders?: string[] }) =>

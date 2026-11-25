@@ -142,7 +142,8 @@ await check("Data API: a failed transaction changes nothing", async () => {
   expect(rows.length === 0, "the row was kept");
 });
 
-// 2. Uploads: presigned parts with no part checksum, resume, CRC64NVME confirm.
+// 2. Uploads: presigned parts with no part checksum, signed part sizes, resume, CRC64NVME
+// confirm, and a replaced upload aborted.
 const size = 9 * MIB; // two parts of the 8 MiB plan
 const wav = new Uint8Array(size);
 wav.set(new TextEncoder().encode("RIFF"), 0);
@@ -168,6 +169,17 @@ const uploaded = await check("upload: presigned part with no part checksum, on a
   await putPart(session.parts[0].url, 1);
 });
 if (uploaded) {
+  await check("upload: S3 refuses a part of the wrong length (each part URL signs its size)", async () => {
+    const [part1] = await storage.signParts(masterKey, uploadId, [1]);
+    try {
+      for (const length of [8 * MIB - 1, 8 * MIB + 1]) {
+        const response = await fetch(part1.url, { method: "PUT", body: wav.subarray(0, length) });
+        expect(response.status === 403, `a ${length}-byte part 1 answered ${response.status}`);
+      }
+    } finally {
+      await putPart(part1.url, 1); // part 1 holds the right bytes again, whatever happened
+    }
+  });
   await check("upload: resume lists the stored part and signs only the missing one", async () => {
     const session = await storage.getUpload(masterKey, uploadId);
     if (session.method !== "s3_multipart") throw new Error("method");
@@ -199,6 +211,15 @@ if (uploaded) {
     expect(head.length === 12 && text.startsWith("RIFF") && text.endsWith("WAVE"), `got ${JSON.stringify(text)}`);
   });
 }
+
+await check("upload: a new upload for the same key aborts the old one", async () => {
+  const key = `masters/${artist}/${release}/${otherTrack}/original`;
+  const first = await storage.startUpload({ key, format: "wav", sizeBytes: MIB });
+  await storage.startUpload({ key, format: "wav", sizeBytes: MIB });
+  const old = await storage.getUpload(key, first.providerUploadId);
+  if (old.method !== "s3_multipart") throw new Error("method");
+  expect(old.parts.length === 0 && old.completedParts.length === 0, "the old upload is still open");
+});
 
 // 3. Reads through CloudFront with signed cookies.
 const cookieHeader = (cookies: { name: string; value: string }[]) => cookies.map((c) => `${c.name}=${c.value}`).join("; ");

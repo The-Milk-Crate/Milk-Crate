@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { MilkCrateStack, PACKAGE_DIR, readRoutes } from "../infra/stack.ts";
+import { LISTENER_OPERATIONS, MilkCrateStack, PACKAGE_DIR, READ_GRANT_OPERATIONS, readRoutes } from "../infra/stack.ts";
 import { operations } from "../../../core/src/handlers/index.ts";
 
 const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -43,10 +43,10 @@ test("Cognito: the five groups with precedence 1 to 5, and the post-confirmation
   template.hasResourceProperties("AWS::Cognito::UserPool", { LambdaConfig: { PostConfirmation: Match.anyValue() } });
 });
 
-test("the bucket is private, unversioned, aborts unfinished uploads and exposes ETag to uploads", () => {
+test("the bucket is private, unversioned, aborts unfinished uploads after 1 day and exposes ETag to uploads", () => {
   template.hasResourceProperties("AWS::S3::Bucket", {
     PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true },
-    LifecycleConfiguration: { Rules: Match.arrayWith([Match.objectLike({ AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }, Status: "Enabled" })]) },
+    LifecycleConfiguration: { Rules: Match.arrayWith([Match.objectLike({ AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }, Status: "Enabled" })]) },
     CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ["PUT"], ExposedHeaders: ["ETag"] })] },
   });
   assert.ok(!/"VersioningConfiguration"/.test(json));
@@ -146,4 +146,80 @@ test("one Lambda and one route per operation from functions/routes.json, matchin
   ]);
   assert.throws(() => new MilkCrateStack(new App({ outdir }), "Bad", settings, [{ operationId: "x", route: "GET /other", entry: "x.ts" }]), /bad route/);
   assert.throws(() => new MilkCrateStack(new App(), "Bad2", settings, [{ operationId: "x", route: "GET /v1/x", entry: "../x.ts" }]), /bad route/);
+});
+
+test("the API's default stage is throttled: 50 requests a second, burst 100", () => {
+  template.resourceCountIs("AWS::ApiGatewayV2::Stage", 1);
+  template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
+    StageName: "$default",
+    AutoDeploy: true,
+    DefaultRouteSettings: { ThrottlingRateLimit: 50, ThrottlingBurstLimit: 100 },
+  });
+});
+
+/** Every IAM statement on the role of one operation's Lambda, as "action resource" lines. */
+function operationGrants(operationId: string): { action: string; resource: string }[] {
+  const fns = Object.entries(template.findResources("AWS::Lambda::Function")).filter(([id]) => id.startsWith(`Op${operationId}`));
+  assert.equal(fns.length, 1, operationId);
+  const roleId: string = fns[0][1].Properties.Role["Fn::GetAtt"][0];
+  const grants: { action: string; resource: string }[] = [];
+  for (const policy of Object.values(template.findResources("AWS::IAM::Policy"))) {
+    if (!JSON.stringify(policy.Properties.Roles).includes(`"${roleId}"`)) continue;
+    for (const st of policy.Properties.PolicyDocument.Statement) {
+      assert.equal(st.Effect, "Allow");
+      for (const action of [st.Action].flat()) {
+        for (const resource of [st.Resource].flat()) grants.push({ action: String(action), resource: JSON.stringify(resource) });
+      }
+    }
+  }
+  // Only CDK's managed policy for logs is attached to the role itself.
+  const role = template.findResources("AWS::IAM::Role")[roleId];
+  assert.ok(!role.Properties.Policies, operationId);
+  assert.equal(JSON.stringify(role.Properties.ManagedPolicyArns ?? []).match(/AWSLambdaBasicExecutionRole/g)?.length, 1, operationId);
+  return grants;
+}
+
+test("listener operations get a narrow role: Data API, s3:GetObject on streams/* and art/*, the CloudFront key only for read grants", () => {
+  assert.deepEqual([...LISTENER_OPERATIONS].sort(), ["getCover", "getPlayback", "getPublicRelease", "recordPlays"]);
+  for (const op of LISTENER_OPERATIONS) {
+    const grants = operationGrants(op);
+    const actions = [...new Set(grants.map((g) => g.action))].sort();
+    for (const g of grants) {
+      const ok =
+        g.action.startsWith("rds-data:") ||
+        // grantDataApiAccess: the Data API reads the database secret with the caller's credentials.
+        ((g.action === "secretsmanager:GetSecretValue" || g.action === "secretsmanager:DescribeSecret") && /DatabaseSecret/.test(g.resource)) ||
+        (g.action === "s3:GetObject" && /"\/(streams|art)\/\*"/.test(g.resource)) ||
+        (g.action === "secretsmanager:GetSecretValue" && g.resource.includes("milk-crate/phase0/MC_CLOUDFRONT_PRIVATE_KEY-??????"));
+      assert.ok(ok, `${op}: ${g.action} on ${g.resource}`);
+    }
+    // Nothing that writes, deletes, lists, runs tasks, passes roles, schedules or sends email.
+    for (const a of actions) {
+      assert.ok(!/^(ecs|iam|scheduler|ses|sqs|cognito-idp):/.test(a), `${op}: ${a}`);
+      assert.ok(!/^s3:(Put|Delete|Abort|List)/.test(a), `${op}: ${a}`);
+    }
+    const s3 = grants.filter((g) => g.action.startsWith("s3:"));
+    assert.equal(s3.length, 2, op);
+    assert.ok(s3.some((g) => /\/streams\/\*/.test(g.resource)) && s3.some((g) => /\/art\/\*/.test(g.resource)), op);
+    // No secret under milk-crate/phase0/* as a whole; the CloudFront key only where cookies are signed.
+    assert.ok(!grants.some((g) => g.resource.includes("milk-crate/phase0/*")), op);
+    const readsKey = grants.some((g) => g.resource.includes("MC_CLOUDFRONT_PRIVATE_KEY"));
+    assert.equal(readsKey, (READ_GRANT_OPERATIONS as readonly string[]).includes(op), op);
+    assert.ok(actions.includes("rds-data:ExecuteStatement"), op);
+  }
+});
+
+test("every other operation keeps the full role", () => {
+  const listeners = new Set<string>(LISTENER_OPERATIONS);
+  const others = readRoutes().map((r) => r.operationId).filter((id) => !listeners.has(id));
+  assert.equal(others.length, 17);
+  for (const op of others) {
+    const actions = new Set(operationGrants(op).map((g) => g.action));
+    for (const a of ["s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListBucketMultipartUploads", "ecs:RunTask", "iam:PassRole", "scheduler:CreateSchedule", "ses:SendEmail", "secretsmanager:GetSecretValue"]) {
+      assert.ok(actions.has(a), `${op}: ${a}`);
+    }
+  }
+  // A listener id missing from routes.json stops the synth.
+  const routes = readRoutes().filter((r) => r.operationId !== "getCover");
+  assert.throws(() => new MilkCrateStack(new App({ outdir }), "NoCover", settings, routes), /getCover is not in functions\/routes\.json/);
 });

@@ -34,7 +34,7 @@ function healthy(over: { db?: Record<string, boolean>; groups?: { GroupName: str
     s3: new FakeAws()
       .on(GetPublicAccessBlockCommand, () => ({ PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true } }))
       .on(GetBucketVersioningCommand, () => ({}))
-      .on(GetBucketLifecycleConfigurationCommand, () => ({ Rules: [{ Status: "Enabled", AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } }] }))
+      .on(GetBucketLifecycleConfigurationCommand, () => ({ Rules: [{ Status: "Enabled", AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }] }))
       .on(GetBucketCorsCommand, () => ({ CORSRules: [{ AllowedMethods: ["PUT"], ExposeHeaders: ["ETag"] }] })),
     cloudFront: new FakeAws()
       .on(GetDistributionCommand, () => ({
