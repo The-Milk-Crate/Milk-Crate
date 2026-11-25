@@ -1,0 +1,24 @@
+Step,Task or check,Status,Ready?,Who,Expected,From,Result and notes
+Pre 1,"A session adds the processing smoke check to deploy/aws/scripts/smoke.ts (WAV, AIFF, FLAC, and the HLS playlist declared wav)",To do,Not built,A session,Pull request merged into milk-crate-backend-poc,"H, J4 (#47)","Needs ffmpeg on the runner, so the brief must allow a change to aws-sandbox.yml"
+Pre 2,A session writes the test-account helper for a kept sandbox (tokens to a file outside the repository),To do,Not built,A session,"Merged, or leave the API checks for a later run",G2 decision 6,Only needed for steps 6 and 7
+Pre 3,Sign in to AWS SSO,To do,Ready,K Marcus,aws sso login --profile milkcrate-dev; export AWS_PROFILE=milkcrate-dev,Working notes,
+Pre 4,"Check milkcrate-dev holds only the Phase 0 sandbox, and no MilkCratePhase0 stack is left",To do,Ready,K Marcus,Nothing else in the account,L8,
+1,Decide whether to keep the sandbox (MC_SANDBOX_KEEP=true in the aws-sandbox environment),To do,Ready,K Marcus,Set only if doing steps 6 and 7; MC_SMOKE_SKIP_WORKER unset,aws-sandbox.yml,
+2,Create the branch aws-sandbox-run from the latest milk-crate-backend-poc,To do,Ready,A session or K Marcus,"A new ""AWS sandbox run"" waiting for approval",aws-sandbox.yml,Note the commit
+3,"Check the run's commit is the latest on milk-crate-backend-poc, then approve aws-sandbox",To do,Ready,K Marcus,Job starts; stand-up about 30 minutes,L8,
+4,Stand-up checks (confirm.sh),To do,Ready,The run,"Only the two SES problems; no ""no rule to abort unfinished uploads after 1 day""",J3 (#45),
+5a,Smoke: Data API (three checks),To do,Ready,The run,ok - Data API: ...,F,
+5b,Smoke: S3 refuses a part of the wrong length,To do,Ready,The run,ok - upload: S3 refuses a part of the wrong length (each part URL signs its size),J3 (#45),
+5c,"Smoke: resume, confirm (two), readHead",To do,Ready,The run,ok on each,F,
+5d,Smoke: abortOtherUploads,To do,Ready,The run,ok - upload: abortOtherUploads ends the replaced upload and keeps the new one,J3 (#45),
+5e,"Smoke: CloudFront (two), Cognito, Schedules (three)",To do,Ready,The run,ok on each,F,
+5f,"Smoke: Fargate, one task per job id, exits cleanly",To do,Ready,The run,"ok - Fargate: two starts for one job id make one task, ...","F, J4",The image now carries J4's ffmpeg fix
+5g,"Smoke: WAV, AIFF and FLAC reach awaiting_splits on the real Fargate image",To do,Not built (Pre 1),The run,"Each with a stream key, duration and sample rate",H,"Note the time per job, for the 4-hour limit"
+5h,Smoke: HLS playlist declared wav fails,To do,Not built (Pre 1),The run,"failed: Track 1, ""<title>"": this file is not a valid WAV. Export it again and upload it.",J4 (#47),Any other reason: stop and bring it to a session
+5i,Smoke: SES,To do,Ready,The run,skip - SES (no MC_SMOKE_EMAIL_TO),F,Expected while there is no email domain
+5j,Smoke summary line,To do,Ready,The run,All smoke checks passed.,F,Copy any FAIL line into a session
+6,API throttle (kept sandbox only),To do,Ready,K Marcus,"ThrottlingRateLimit 50.0, ThrottlingBurstLimit 100",J3 (#45),"aws apigatewayv2 get-apis, then get-stage --stage-name '$default' (commands in the runbook)"
+7,"API checks: getPlayback, getCover, getPublicRelease, recordPlays; run-live.ts",To do,Not built (Pre 2),K Marcus,Cookies open stream and cover; missing stream is 404; no AccessDenied in logs,"J3 (#45), G2",Kept sandbox only
+8,"Tear down a kept sandbox: create aws-sandbox-teardown, approve",To do,Ready,K Marcus,MilkCratePhase0: destroyed,aws-sandbox.yml,Then unset MC_SANDBOX_KEEP
+9,Delete the branches aws-sandbox-run and aws-sandbox-teardown,To do,Ready,K Marcus,Branches gone,Working notes,A session cannot delete branches
+10,"Record the run for the handoff: link, date, commit, FAIL lines, time per job, throttle, tear-down",To do,Ready,"K Marcus, then a session",Added under Done in docs/phase0-handoff.md,Handoff,

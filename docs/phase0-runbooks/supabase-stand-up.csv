@@ -1,0 +1,24 @@
+Step,Task,Status,Expected,Command or where,Done on,Notes
+0a,Check the Supabase CLI,To do,2.122.1,supabase --version,,Other versions only warn. Install: npm install -g supabase@2.122.1
+0b,Check Docker Desktop (WSL integration on),To do,No error,docker info,,The script stops if Docker is not running
+0c,Check psql,To do,16 or newer,psql --version,,
+0d,Check flyctl,To do,A recent version,flyctl version,,
+0e,Check Node,To do,22.18 or newer,node --version,,nvm use 22
+0f,"Resend: sending-only key, 2FA on",To do,Key saved in password manager,Resend dashboard,,Open question: no verified email domain yet
+1,Make the Phase 0 Supabase project (Free plan),To do,"New, empty project; not the live app's",Supabase dashboard: New project,,"Note the ref, session pooler address, publishable and secret keys, a personal access token"
+2,Make the Fly token,To do,A token starting FlyV1,flyctl auth login; flyctl orgs list; flyctl tokens create org <your-org>,,Check the form with: flyctl tokens create org --help
+3,Make the two secrets files outside the repository,To do,Two files in ~/mc-secrets,cp deploy/supabase/scripts/secrets.env.example and fly-secrets.env.example to ~/mc-secrets/,,MC_FILE_SIZE_LIMIT=50MiB and MC_FLY_WORKER_IMAGE=registry.fly.io/<app>:phase0 must match the shell
+4,Set the settings in your shell,To do,No output,"read -rs for the three secrets, then one export line (see the runbook)",,Open question: MC_SITE_URL (http://localhost:1420 assumed)
+5,Bring the checkout up to date,To do,Latest commit is the #48 merge or later,cd /mnt/e/GitHub/Milk-Crate && git checkout milk-crate-backend-poc && git pull,,
+6,Run the stand-up,To do,"Type the ref again, then stages 2 to 8",bash deploy/supabase/scripts/stand-up.sh,,Safe to run again after a fix
+6.2,Stage: link,To do,Finished supabase link.,(in the script),,
+6.3,Stage: database (one transaction),To do,No error,(in the script),,A failure changes nothing
+6.4,Stage: config.toml push,To do,Answer yes if asked,(in the script),,"Sign-in hook, token life, password rules, file size limit"
+6.5,Stage: Edge Function secrets,To do,Finished supabase secrets set.,(in the script),,
+6.6,Stage: Edge Functions,To do,deployed 1 Edge Functions,(in the script),,Bundled in Docker; checks deno.lock
+6.7,Stage: Fly worker,To do,Image pushed; one machine named sweep,(in the script),,The image carries J4's ffmpeg fix
+6.8,Stage: checks,To do,ok - the Phase 0 Supabase deployment checks passed,(in the script),,Any problem line: see the runbook's table
+7,"Run the checks again (any time, read only)",To do,ok - the Phase 0 Supabase deployment checks passed,bash deploy/supabase/scripts/confirm.sh,,
+8,Tick the Resend item in docs/phase0-handoff.md,To do,Item ticked,"docs/phase0-handoff.md, Still open",,
+9,"Make test accounts: one artist, one admin",To do,Two accounts in the project,Supabase dashboard: Authentication,,The project starts with none
+10,Record the run's date and commit for the handoff,To do,Given to a session,Chat with a session,,
