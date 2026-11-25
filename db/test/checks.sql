@@ -1075,10 +1075,14 @@ begin
   perform t.to_processing(v_other);
   perform t.ok(public.api_job_started(v_jobs[1]) and public.api_job_started(v_jobs[2]), 'two jobs of one artist can run');
   perform t.ok(not public.api_job_started(v_jobs[3]), 'a third does not start while two run');
-  perform t.eq((select state from public.api_jobs where id = v_jobs[3]), 'queued', 'it stays queued');
+  perform t.eq((select state from public.api_jobs where id = v_jobs[3]), 'waiting',
+               'it is set aside (waiting), so the sweep goes on to other queued jobs');
+  perform t.ok(not public.api_job_started(v_jobs[3]), 'a waiting job does not start');
   perform t.ok(public.api_job_started(public.api_create_job(v_other, 'process_release')), 'another artist''s job starts');
   perform public.api_apply_job_result(v_jobs[1], true, null);
-  perform t.ok(public.api_job_started(v_jobs[3]), 'when one finishes the third starts');
+  perform t.eq((select state from public.api_jobs where id = v_jobs[3]), 'queued',
+               'when one finishes, the artist''s oldest waiting job is queued again');
+  perform t.ok(public.api_job_started(v_jobs[3]), 'and then it starts');
   update public.api_jobs set started_at = now() - interval '5 hours' where id in (v_jobs[2], v_jobs[3]);
   v_rel := t.new_release(t.id('artist'), 'Job 4', t.today() + 30, 1);
   perform t.to_processing(v_rel);

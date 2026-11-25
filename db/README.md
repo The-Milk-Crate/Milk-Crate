@@ -61,7 +61,7 @@ Every table and function starts with `api_`, because the app already has `public
 | `api_parties` | Rights: side, role, name, email, percent, state (`invited`, `accepted`, `declined`), `is_owner` (the owner's own share), the invite code hash, sent, expiry and used times, the account that replied, and `position` (the party's place in the `putRights` request, from 0; added by `0008`). |
 | `api_invite_sends` | Invitations sent per party per day (UTC). |
 | `api_invite_wrong_codes` | Wrong invite codes per party, with times. |
-| `api_jobs` | Jobs: release, kind (`process_release`), state (`queued`, `running`, `succeeded`, `failed`), times, failure message. |
+| `api_jobs` | Jobs: release, kind (`process_release`), state (`queued`, `waiting` (its artist had 2 running; added by `0014`), `running`, `succeeded`, `failed`), times, failure message. |
 | `api_play_batches` | One row per (listener, `Idempotency-Key`), with a hash of the events. |
 | `api_play_events` | The events as sent (`start`, `progress`, `end`), with device and server times. |
 | `api_qualified_streams` | One row per qualified play, with its server-time span (`first_received_at`, `last_received_at`; added by `0010`, empty for rows from before it). |
@@ -105,8 +105,10 @@ Triggers enforce these whoever writes the row:
   its first invitation; a removed party still counts); 50 invitations per artist (the release
   owner) per UTC day; 3 per recipient address per UTC day, compared lowercased and trimmed.
 - **Processing jobs** (`0014`): at most 2 running per artist. `api_job_started` returns false
-  for a third (it stays queued); the hourly sweep runs it later, so a third job can wait up to
-  an hour. A job running longer than 4 hours (the job limit) does not count.
+  for a third and marks it `waiting`, so the sweep (which runs only `queued` jobs) goes on to
+  other artists' jobs. When one of the artist's jobs finishes, `api_apply_job_result` queues
+  their oldest waiting job again and the hourly sweep runs it, so a third job can wait up to an
+  hour after a place frees. A job running longer than 4 hours (the job limit) does not count.
 - **Accounts.** An artist account stays an artist, and no other account becomes one (a staff
   member who makes music uses a second account). One row per `user_id`. An account that owns a
   release, made a review decision or took a release down cannot be deleted: set `suspended`.
@@ -123,7 +125,7 @@ Handlers (session G), workers and schedules call these. Each returns a few rows 
 | `api_start_upload(release, track, kind, method, provider_upload_id, format, size_bytes, expires_at)` | `startUpload` / `startCoverUpload`. Replaces an open upload for the same target; for a master clears the old master and streaming copy and moves `draft`, `needs_changes` or `failed` to `uploading`. |
 | `api_confirm_upload(upload, sha256, crc64nvme, width, height)` | `confirmUpload`. Masters: when every track is confirmed, `uploading` moves to `processing` and `start_processing` is true (then queue the job). Covers: must be square; replaces the cover. |
 | `api_create_job(release, 'process_release')` | `Jobs.enqueue`: the job row. |
-| `api_job_started(job)` | The worker picked the job up. False when the job is not queued, or its artist already has 2 jobs running. |
+| `api_job_started(job)` | The worker picked the job up. False when the job is not queued, or its artist already has 2 jobs running (then the job is marked `waiting`). |
 | `api_apply_job_result(job, ok, message)` | The job result. Moves `processing` to `awaiting_splits` or `failed` only for the release's newest job. Safe to call twice. |
 | `api_record_review(release, reviewer, 'approve' or 'needs_changes', reason)` | `reviewRelease`. Reviewer must be `administrator` or `internal` and not the owner. |
 | `api_publish_release(release)` | `publishRelease`. Returns `scheduled` (release date after today, UTC) or `live`. |
