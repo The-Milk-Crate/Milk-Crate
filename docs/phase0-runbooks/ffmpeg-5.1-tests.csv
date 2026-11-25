@@ -1,0 +1,14 @@
+Step,Task or check,Status,Expected,Command,Result and notes
+0,Start Docker Desktop with WSL integration on,To do,docker info shows no error,docker info,
+1,Bring the checkout up to date,To do,worker/test/untrusted.test.ts exists,cd /mnt/e/GitHub/Milk-Crate && git checkout milk-crate-backend-poc && git pull,
+2,Install deploy/supabase packages (skip if node_modules exists),To do,"added ... packages, no error",(cd deploy/supabase && npm ci),The tests load its postgres package
+3,Build the test image (pinned base image plus the workers' ffmpeg line),To do,naming to docker.io/library/mc-ffmpeg51,"docker build -t mc-ffmpeg51 - (Dockerfile text in the runbook, step 3)",A few minutes the first time
+4,Run the tests in the image with the checkout mounted,To do,Ends in about 5 seconds,"docker run --rm -v ""$PWD"":/repo -w /repo/worker mc-ffmpeg51 sh -c 'ffmpeg -hide_banner -version | head -n1 && node --test --test-reporter=spec test/untrusted.test.ts'",
+4a,Check: ffmpeg version line,To do,ffmpeg version 5.1...,(in the output),Any other version: the wrong image ran
+4b,"Check: playlist and ffconcat refused, no URL opened",To do,"✔ ffprobe and ffmpeg refuse a playlist or concat file saved as a WAV, and open no URL",(in the output),A fail here is a security finding: stop before the sandbox run
+4c,Check: FLAC marker,To do,"✔ with the format forced, a FLAC still needs its own marker; ...",(in the output),
+4d,"Check: only PATH reaches ffmpeg, real files still decode",To do,"✔ ffprobe and ffmpeg get only PATH, and still process a WAV, AIFF and FLAC",(in the output),
+4e,Check: database suite skipped,To do,﹣ untrusted masters through the processing step (local Postgres) ... # needs MC_TEST_DB_URL,(in the output),Expected: it needs the test database; CI runs it on 6.1
+4f,Check: totals,To do,"tests 3, pass 3, fail 0",(in the output),Locale or HOME warnings are fine
+5,Record the result for the handoff,To do,"Date, ffmpeg version line, 3 pass",Give it to a session,
+6,Remove the image (optional),To do,Image removed,docker rmi mc-ffmpeg51,
