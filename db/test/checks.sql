@@ -658,6 +658,15 @@ begin
   perform t.eq((select count(*)::text from public.api_rate_counters where bucket = 'play_batches_minute' and subject = v_user::text),
                '1', 'the old minute''s counter row is deleted by the next hit');
 
+  -- Duplicates count too (decided by K Marcus): 59 new batches and one retry fill the minute.
+  for i in 1 .. 59 loop
+    perform public.api_record_play_batch(v_user, 'dupmin-' || lpad(i::text, 4, '0'), v_one, v_s0 + interval '1 hour');
+  end loop;
+  select * into v_row from public.api_record_play_batch(v_user, 'dupmin-0001', v_one, v_s0 + interval '1 hour');
+  perform t.eq(v_row.status, 'duplicate', 'a retry of a stored batch is a duplicate');
+  select * into v_row from public.api_record_play_batch(v_user, 'dupmin-0001', v_one, v_s0 + interval '1 hour');
+  perform t.eq(v_row.status, 'too_many_batches', 'and it counted toward the 60 a minute');
+
   -- 10,000 stored events a day. Set today's count close to the cap, then send 100 more.
   for i in 1 .. 100 loop
     v_hundred := v_hundred || jsonb_build_object('type', 'progress', 'trackId', v_track, 'playId', gen_random_uuid(),
