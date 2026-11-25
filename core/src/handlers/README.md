@@ -31,7 +31,7 @@ so it works behind the router or as a function of its own.
 - Email failures and storage deletes after a takedown are logged, never answered as errors. The
   two sweep functions above pick up a missing job and undeleted takedown files.
 - Decided by K Marcus: a cover is at least 1400 pixels a side; invitations are 5 sends per party
-  per UTC day; the owner's own share is the party with no email; `respondToSplit` returns only
+  per UTC day (3 since session J1, the same as the per-address cap); the owner's own share is the party with no email; `respondToSplit` returns only
   the invitee's own party; `putRights` needs both sides at 100.
 - Decided by K Marcus after session I's review (session J1):
   - a cover is at most 6000 pixels a side (422 `too_large_image`);

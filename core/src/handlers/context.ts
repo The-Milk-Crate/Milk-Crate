@@ -9,7 +9,10 @@ export interface CoreOptions {
   randomBytes?: (length: number) => Uint8Array;
   /** A new request id. Default: `crypto.randomUUID`. A request's own `x-request-id` wins. */
   newRequestId?: () => string;
-  /** Invitations sent per party per UTC day, the first one included. Default 5. */
+  /**
+   * Invitations sent per party per UTC day, the first one included. Default 3 (K Marcus, session
+   * J1: the same as the per-address cap, which used to stop a party first).
+   */
   inviteDailyLimit?: number;
   /** Smallest cover side in pixels. Default 1400 (decided by K Marcus). */
   minCoverPixels?: number;
@@ -47,7 +50,7 @@ export function settings(options: CoreOptions = {}): Settings {
         return bytes;
       }),
     newRequestId: options.newRequestId ?? (() => crypto.randomUUID()),
-    inviteDailyLimit: options.inviteDailyLimit ?? 5,
+    inviteDailyLimit: options.inviteDailyLimit ?? 3,
     minCoverPixels: options.minCoverPixels ?? 1400,
     maxCoverPixels: options.maxCoverPixels ?? 6000,
     playsReceivedAt: options.playsReceivedAt ?? null,

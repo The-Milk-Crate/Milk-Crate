@@ -359,8 +359,8 @@ export async function runScenario(t: Target): Promise<ScenarioResult> {
   if (B) {
     await rec.call("4b another artist cannot resend", "resendInvitation", B, { params: { releaseId: r2, partyId: p4 } }, 404);
   }
-  // putRights sent the first; two resends reach the cap of three a day to one address
-  // (session J1), which comes before the limit of five a day per party.
+  // putRights sent the first; two resends reach the limit of three a day per party (and per
+  // address; both 3 since session J1).
   for (let i = 2; i <= 3; i++) {
     await rec.call(`4b resend ${i} of 3`, "resendInvitation", A, { params: { releaseId: r2, partyId: p4 } }, 204, { release: r2 });
   }

@@ -449,7 +449,7 @@ describe("invite codes", () => {
 
 describe("resendInvitation", () => {
   it("issues a new code and voids the old; only for invited parties; limited per day", async () => {
-    const h = harness("tus", { inviteDailyLimit: 3 });
+    const h = harness(); // the default: 3 a day per party
     const artist = await account("artist");
     const s = await seedRelease(artist, "draft");
     const { partyId, code, parties } = await withInvitee(h, artist, s.releaseId);

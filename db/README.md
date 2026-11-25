@@ -100,8 +100,8 @@ Triggers enforce these whoever writes the row:
   send. After 10 wrong codes in an hour, wrong codes for that party are refused
   (`rate_limited`, not counted) for the rest of that hour. The right code is checked first, so it
   still works (`0012`, finding L1).
-- **Invitation caps** (`0012`, in `api_issue_invite`, on top of 5 sends per party per UTC day,
-  which the caller passes): 20 parties invited per release, all time (each party counts once, at
+- **Invitation caps** (`0012`, in `api_issue_invite`, on top of the sends per party per UTC day,
+  which the caller passes: 3 in the handlers, the same as the per-address cap): 20 parties invited per release, all time (each party counts once, at
   its first invitation; a removed party still counts); 50 invitations per artist (the release
   owner) per UTC day; 3 per recipient address per UTC day, compared lowercased and trimmed.
 - **Processing jobs** (`0014`): at most 2 running per artist. `api_job_started` returns false
