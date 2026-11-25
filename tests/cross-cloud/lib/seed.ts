@@ -53,8 +53,8 @@ export async function seedRelease(d: MockDeployment, owner: Account, state: Rele
     );
     await tx.query(
       `insert into public.api_tracks (id, release_id, position, title, master_upload_id, master_key, master_format,
-                                      master_size_bytes, master_sha256, master_confirmed_at, stream_key)
-       values ($1::uuid, $2::uuid, 1, 'Track 1', $3::uuid, $4::text, 'wav', 1000, repeat('a', 64), now(), $5::text)`,
+                                      master_size_bytes, master_sha256, master_confirmed_at, stream_key, duration_ms)
+       values ($1::uuid, $2::uuid, 1, 'Track 1', $3::uuid, $4::text, 'wav', 1000, repeat('a', 64), now(), $5::text, 200000)`,
       [trackId, releaseId, uploadId, masterKey, streamKey],
     );
     await tx.query(

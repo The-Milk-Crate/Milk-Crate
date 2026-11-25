@@ -162,6 +162,35 @@ tables; read, never changed), then `db/migrations/`, `db/supabase/` (its `0006` 
 `sql/` here. The default grants on B's tables are never left open, and a failure changes
 nothing.
 
+**Resend (before the stand-up).** The invitation emails hold live invite codes (valid 14
+days), and Resend keeps sent messages with their bodies (security review L7, decided by
+K Marcus):
+- Make the `RESEND_API_KEY` for `MC_SECRETS_FILE` with **sending access only**, so it cannot
+  read sent emails back.
+- Turn on 2FA on the Resend account, and keep the account to K Marcus.
+- Shorten or turn off message retention in Resend's settings if it offers that.
+
+**Password rules.** `config.toml` sets at least 12 characters with lower and upper case letters
+and digits (`minimum_password_length`, `password_requirements`), as Cognito does (review L5).
+`supabase config push` sends them. Staff MFA comes in Phase 1.
+
+**Supabase CLI version.** The scripts were checked with CLI **2.122.1** (the last v2 release);
+`stand-up.sh` warns on any other version. Install it with `npm install -g supabase@2.122.1`.
+
+**Edge Function dependencies.** `supabase/functions/deno.lock` pins the hashes of `jose` and
+`postgres` (review L9). `supabase functions deploy` bundles the function in Docker with
+edge-runtime v1.77.8 (Deno 2.1.4), which finds the lock next to `deno.json` by itself and
+refuses to bundle if a package's hash differs. Without Docker the CLI would bundle on
+Supabase's servers instead (with only a warning), and that path was not checked, so
+`stand-up.sh` stops if Docker is not running. Docker Desktop works; on Windows with WSL, turn on
+its WSL integration for your distribution (Settings, Resources, WSL integration) so `docker`
+works inside WSL. `test/lock.test.ts` checks the lock matches `deno.json` and `package-lock.json`.
+After changing a version in `deno.json` (and `package.json`), run `bash scripts/copy-core.sh`
+and then, from `deploy/supabase/`:
+`npx deno@2.1.4 cache --config supabase/functions/deno.json --lock=supabase/functions/deno.lock --frozen=false supabase/functions/api/index.ts`
+Use Deno 2.1.4: it writes lock version 4, the one the edge-runtime reads (Deno 2.3 and later
+write version 5). The lock holds only the npm packages, never `_core/`.
+
 **Plan and file size.** `MC_FILE_SIZE_LIMIT` sets the project's file size limit
 (`config.toml`), the masters bucket's limit and the largest upload `startUpload` accepts. On the
 free Phase 0 project set it to `50MiB`, the Free plan's cap, in your shell and in the secrets

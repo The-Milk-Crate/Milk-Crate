@@ -70,7 +70,9 @@ function plainWords(text: string): string {
  *   A plain constraint error (`23xxx`) is a request the handler should have refused: 422.
  * - `ObjectStorage` (both deployments): `status` is HTTP-like. 404 is no such object; 413 is a
  *   file over this deployment's size limit, which the contract has no 413 for, so it is 422
- *   `too_large`; 400 is a request storage refused as malformed.
+ *   `too_large` with storage's words (they name the limit, which the artist needs); 400 is a
+ *   request storage refused as malformed, answered with a fixed message (the operation
+ *   wrapper logs storage's words, see `storageRefusal`).
  */
 export function mapModuleError(error: unknown): ApiFailure | null {
   if (error instanceof ApiFailure) return error;
@@ -96,7 +98,21 @@ export function mapModuleError(error: unknown): ApiFailure | null {
     if (e.status === 413) {
       return new ApiFailure(422, "too_large", plainWords(message || "The file is larger than this deployment takes"));
     }
-    if (e.status === 400) return badRequest(plainWords(message || "Storage refused the request"));
+    if (e.status === 400) return badRequest(STORAGE_REFUSED);
   }
   return null;
+}
+
+const STORAGE_REFUSED = "Storage refused the request.";
+
+/**
+ * Storage's own words for a 400 it answered, for the log; null for any other error. They can
+ * name buckets, keys or internal messages, so they never reach the client.
+ */
+export function storageRefusal(error: unknown): string | null {
+  if (error instanceof ApiFailure) return null;
+  const e = error as { code?: unknown; status?: unknown; message?: unknown } | null;
+  if (!e || typeof e !== "object" || (typeof e.code === "string" && /^[0-9A-Z]{5}$/.test(e.code))) return null;
+  if (e.status !== 400) return null;
+  return typeof e.message === "string" && e.message ? e.message : "(no message)";
 }

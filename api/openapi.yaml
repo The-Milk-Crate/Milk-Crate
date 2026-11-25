@@ -241,7 +241,8 @@ paths:
         Same upload session as a master (`tus` or `s3_multipart`), with `kind` set to `cover`,
         then `getUpload`, `signUploadParts` and `confirmUpload` work the same way.
         JPEG or PNG, up to 20 MiB. The image must be square; `confirmUpload` returns 422 if it
-        is not or cannot be read.
+        is not or cannot be read. Each side may be at most 6000 pixels; `confirmUpload` returns
+        422 `too_large_image` above that.
         Stored at `art/{artist}/{release}/cover/original` and never altered. A new upload replaces
         the old cover when confirmed. Allowed in `draft`, `uploading`, `processing`,
         `awaiting_splits` and `needs_changes`; any other state returns 409. It never changes the

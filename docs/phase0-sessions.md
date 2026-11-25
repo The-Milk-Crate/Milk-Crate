@@ -435,7 +435,9 @@ file added.
   - After 10 wrong codes in an hour, a party's invitation is locked inside the database.
   - Accounts with history are suspended, never deleted.
   - Release dates are UTC dates.
-  - The qualified-stream rule stays as built for Phase 0.
+  - The qualified-stream rule stays as built for Phase 0. Reopened by K Marcus after session I
+    (finding H1) and tightened by session J1: server receive time, track length, no overlapping
+    plays. See `db/README.md`.
 
 - **Who is "the invited person".** An invite code. The invitation email carries a single-use,
   expiring code (`inviteCode`). The invitee signs in with any non-staff account (`end_user`,

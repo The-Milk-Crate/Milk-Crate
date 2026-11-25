@@ -254,6 +254,67 @@ describe("cover art", () => {
     assert.equal(r.body.code, "too_small");
   });
 
+  it("a cover over 6000 pixels a side is 422 too_large_image (finding L3)", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const { releaseId } = await draft(h, artist);
+    for (const [format, head] of [["png", pngHead(6001, 6001)], ["jpeg", jpegHead(60000, 60000)]] as const) {
+      const id = await coverUpload(h, artist, releaseId, format, head);
+      const r = await h.call("confirmUpload", { as: artist, params: { uploadId: id }, body: { sha256: "c".repeat(64) } });
+      assert.equal(r.status, 422, format);
+      assert.equal(r.body.code, "too_large_image");
+    }
+    const id = await coverUpload(h, artist, releaseId, "png", pngHead(6000, 6000));
+    assert.equal((await h.call("confirmUpload", { as: artist, params: { uploadId: id }, body: { sha256: "c".repeat(64) } })).status, 200);
+  });
+
+  it("R3: a cover upload left open is cancelled by submit; getUpload is 409 before storage, also once live", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    const reviewer = await account("internal");
+    const s = await seedRelease(artist, "awaiting_splits");
+    // A confirmed square cover, then a second cover upload left open.
+    const first = await coverUpload(h, artist, s.releaseId, "png", pngHead(3000, 3000));
+    assert.equal((await h.call("confirmUpload", { as: artist, params: { uploadId: first }, body: { sha256: "c".repeat(64) } })).status, 200);
+    const open = await h.call("startCoverUpload", { as: artist, params: { releaseId: s.releaseId }, body: { format: "png", sizeBytes: 100 } });
+    assert.equal(open.status, 201);
+    assert.equal((await h.call("getUpload", { as: artist, params: { uploadId: open.body.uploadId } })).status, 200, "open while awaiting_splits");
+    const rights = await h.call("putRights", {
+      as: artist,
+      params: { releaseId: s.releaseId },
+      body: { parties: [{ side: "recording", role: "artist", name: "x", percent: 100 }, { side: "composition", role: "writer", name: "x", percent: 100 }] },
+    });
+    assert.equal(rights.status, 200, JSON.stringify(rights.body));
+    assert.equal((await h.call("submitRelease", { as: artist, params: { releaseId: s.releaseId } })).status, 200);
+    const [row] = await db.query<{ state: string }>("select state from public.api_uploads where id = $1::uuid", [open.body.uploadId]);
+    assert.equal(row.state, "cancelled", "submit cancels the open upload");
+    assert.equal((await h.call("reviewRelease", { as: reviewer, params: { releaseId: s.releaseId }, body: { decision: "approve" } })).status, 200);
+    assert.equal((await h.call("publishRelease", { as: artist, params: { releaseId: s.releaseId } })).status, 200);
+    assert.equal(await releaseState(s.releaseId), "live");
+    const before = h.modules.storage.uploads.size;
+    const got = await h.call("getUpload", { as: artist, params: { uploadId: open.body.uploadId } });
+    assert.equal(got.status, 409);
+    assert.equal(got.body.code, "upload_closed");
+    assert.equal(h.modules.storage.uploads.size, before);
+  });
+
+  it("getUpload is 409 upload_closed when the release's state no longer allows that kind of upload (finding H2)", async () => {
+    const h = harness();
+    const artist = await account("artist");
+    // seedRelease leaves an open master upload: allowed in draft, uploading, needs_changes, failed only.
+    for (const [state, want] of [["draft", 200], ["failed", 200], ["processing", 409], ["awaiting_splits", 409], ["live", 409]] as const) {
+      const s = await seedRelease(artist, state);
+      const r = await h.call("getUpload", { as: artist, params: { uploadId: s.openUploadId } });
+      assert.equal(r.status, want, state);
+      if (want === 409) assert.equal(r.body.code, "upload_closed");
+    }
+    // A cover upload opened while processing is still served there.
+    const s = await seedRelease(artist, "processing");
+    const cover = await h.call("startCoverUpload", { as: artist, params: { releaseId: s.releaseId }, body: { format: "png", sizeBytes: 100 } });
+    assert.equal(cover.status, 201);
+    assert.equal((await h.call("getUpload", { as: artist, params: { uploadId: cover.body.uploadId } })).status, 200);
+  });
+
   it("sizes up to 20 MiB, JPEG or PNG only", async () => {
     const h = harness();
     const artist = await account("artist");

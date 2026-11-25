@@ -44,7 +44,7 @@ export interface RequeueResult {
 }
 
 /**
- * Finds releases stuck in `processing` with no queued or running job, and queues a job for
+ * Finds releases stuck in `processing` with no queued, waiting or running job, and queues a job for
  * each. That happens when `confirmUpload` moved the release to processing but `Jobs.enqueue`
  * then failed, so there is no job row for the hourly sweep to find. Each deployment's hourly
  * sweep calls this. The grace period leaves alone a confirm whose enqueue is still under way.
@@ -63,7 +63,7 @@ export function makeRequeueStuckReleases(
         where r.state = 'processing'
           and r.updated_at < now() - make_interval(mins => $1::integer)
           and not exists (select 1 from public.api_jobs j
-                           where j.release_id = r.id and j.state in ('queued', 'running'))
+                           where j.release_id = r.id and j.state in ('queued', 'waiting', 'running'))
         order by r.updated_at
         limit $2::integer`,
       [minutes, limit],

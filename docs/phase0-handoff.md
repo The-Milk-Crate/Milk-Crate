@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 21 November 2026, after five sandbox runs, sessions G1, H, G2 and G3. Next: session I.
+For K Marcus and the next session. Last updated 25 November 2026, after sessions J1 (#41) and J2 (#43). Next: J3 and J4, then step 9.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -190,22 +190,48 @@ current state and the next steps. Update it when a step is done.
    - J2 `docs/phase0-prompts/j2-supabase-fixes.md`: Supabase deployment;
    - J3 `docs/phase0-prompts/j3-aws-fixes.md`: AWS deployment;
    - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
-   J2 and J3 each add a few lines to this file (different sections); merge one, then update the
-   other's branch.
-   - J3 to J1 (decided by K Marcus, 25 November; in J3's pull request #45): J3 also changed
-     `core/`, so the S3 abort for a replaced upload runs only after the database records the
-     new one.
+   J2 and J3 each add a few lines to this file (different sections). J2 is merged, so J3's
+   branch needs `milk-crate-backend-poc` merged in first: J1's and J2's lines below are on it.
+   - J1: done (25 November 2026, merged #41). Migrations `0009` to `0014` and the handler fixes
+     for H1, H2 (part a), M1, M2, L1, L2, L3, L6 and the invitation email; details in #41,
+     `db/README.md` ("Rate limits") and `core/src/handlers/README.md`. The invitation email now
+     shows the release id and party id; the link itself waits for Phase 1. Not run for real yet:
+     the new limits and play rule on a real Supabase or AWS deployment (the next sandbox run,
+     step 9, exercises them through the deployed API only if it calls `recordPlays` and
+     `putRights`). Decided by K Marcus with
+     J1: the owner's `getUpload` fixture cells (409 where the release's state no longer allows
+     that kind of upload); the release cap counts distinct parties; a job running over 4 hours
+     does not count toward the 2 per artist, and a refused job waits aside (`waiting`) so the
+     sweep runs other artists' jobs; invitations per party default to 3 a day; every
+     `recordPlays` call counts toward 60 a minute; wrong codes are not recorded while locked.
+     Offline listening sent later in one batch no longer counts as a stream.
+   - J2: done (25 November 2026, merged #43). Supabase fixes for L5, L7 and L9; details in #43
+     and `deploy/supabase/README.md`. `config.toml` sets passwords of at least 12 characters with
+     lower, upper and digits (key names checked in CLI 2.122.1 and 3.4.0).
+     `supabase/functions/deno.lock` pins `jose` and `postgres` by hash (Deno 2.1.4, lock
+     version 4), and `test/lock.test.ts` keeps it in step with `deno.json` and
+     `package-lock.json`. Checked offline with edge-runtime v1.77.8, the bundler CLI 2.122.1
+     uses in Docker: it reads the lock and refuses a package whose hash differs. The Resend
+     steps are in the README, `secrets.env.example` and "Still open" below. Decided by K Marcus
+     with J2: `stand-up.sh` stops if Docker is not running (without it the CLI bundles on
+     Supabase's servers, which was not checked; Docker Desktop with WSL integration works), and
+     warns unless the Supabase CLI is 2.122.1. Not run for real yet: `supabase config push` and
+     `supabase functions deploy` (K Marcus's stand-up). Run the stand-up after J4 is merged: it
+     copies `worker/src/` into the worker image.
+   - J3: pull request #45 open, with `milk-crate-backend-poc` (J1's #41, J2's #43) merged in.
+     AWS fixes for M2, M3, L4, L8 and L9; details in #45 and `deploy/aws/README.md`. Decided by
+     K Marcus with J3: J3 also changed `core/`, so the S3 abort for a replaced upload runs only
+     after the database records the new one.
      - `ObjectStorage` gets a required `abortOtherUploads(key, keepProviderUploadId)` (AWS
        aborts its S3 uploads; Supabase does nothing).
      - In `core/src/handlers/uploads.ts`, `start(...)` calls it right after the
        `api_start_upload` query and before the 201, in a try/catch. A failure is logged and the
-       start still answers 201. Nothing else in that file changed.
+       start still answers 201.
      - `core/test/fakes.ts`: `FakeStorage` gets `aborts`, `abortError` and the method. Three
        tests are under "replaced uploads (abortOtherUploads)" in `core/test/uploads.test.ts`.
-     - When merging: keep the abort after every step that can still refuse a start (a refused
-       start must not end the upload it would have replaced); give any new `ObjectStorage`
-       fake the method. Whichever pull request merges second merges `milk-crate-backend-poc`
-       into its branch, then runs `bash core/test/run.sh` and `bash tests/cross-cloud/run.sh`.
+     - For later changes to `start(...)`: keep the abort after every step that can still refuse
+       a start (a refused start must not end the upload it would have replaced), and give any
+       new `ObjectStorage` fake the method.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
@@ -222,6 +248,9 @@ current state and the next steps. Update it when a step is done.
   G2 calls them).
 - Two handler limits noted in #31: a failed email is only logged (the owner can resend an
   invitation), and two sweeps at the same moment could queue an extra, harmless job.
+- [ ] Resend, after the Supabase stand-up (review L7): the `RESEND_API_KEY` has sending access
+  only; 2FA is on the Resend account, kept to K Marcus; message retention is shortened or off,
+  if Resend offers it.
 - The owner and repository ids are written into `deploy/aws/infra/github-oidc.json`. They
   survive a rename; a transfer or a new repository needs new ones.
 

@@ -19,7 +19,10 @@
 #      and makes (or updates) the hourly sweep machine.
 #   8. Runs the checks (scripts/confirm.sh).
 #
-# Needs: supabase (CLI v2), psql (16 or newer), flyctl, node (22.18 or newer), npm.
+# Needs: supabase (CLI 2.122.1, checked; another version only warns), Docker running (the CLI
+# bundles the Edge Function in it, and that bundler checks supabase/functions/deno.lock; the
+# script stops if it is not running; Docker Desktop works), psql (16 or newer), flyctl,
+# node (22.18 or newer), npm.
 #
 # Settings, from your shell (never from the repository):
 #   SUPABASE_ACCESS_TOKEN   a Supabase personal access token (CLI and Management API)
@@ -45,7 +48,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 pkg="$(cd "$here/.." && pwd)"
 
 missing=()
-for tool in supabase psql flyctl node npm; do
+for tool in supabase docker psql flyctl node npm; do
   command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
 done
 for var in SUPABASE_ACCESS_TOKEN MC_SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD PGPASSWORD MC_DB_URL MC_SITE_URL \
@@ -55,6 +58,19 @@ done
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "Missing: ${missing[*]}. See the top of this script." >&2
   exit 2
+fi
+# The Edge Function must be bundled in Docker: that bundler checks supabase/functions/deno.lock.
+# Without Docker the CLI bundles on Supabase's servers instead, which was not checked.
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker is not running. Start Docker Desktop (with WSL integration on, under WSL) and run this again." >&2
+  exit 2
+fi
+# The Supabase CLI version these scripts were checked with (password rules, deno.lock).
+cli_wanted="2.122.1"
+cli_version="$(supabase --version 2>/dev/null | tr -d '[:space:]')"
+if [[ "$cli_version" != "$cli_wanted" ]]; then
+  echo "Warning: Supabase CLI $cli_version; these scripts were checked with $cli_wanted." >&2
+  echo "Install it with: npm install -g supabase@$cli_wanted" >&2
 fi
 for f in "$MC_SECRETS_FILE" "$MC_FLY_SECRETS_FILE"; do
   [[ -f "$f" ]] || { echo "No file $f" >&2; exit 2; }

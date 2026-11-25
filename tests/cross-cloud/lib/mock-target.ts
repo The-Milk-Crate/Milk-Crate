@@ -65,6 +65,14 @@ export async function mockTarget(d: MockDeployment): Promise<Target> {
       );
       return row;
     },
+    async serverTimePasses(playIds, seconds) {
+      // As if these events had been received `seconds` earlier (test only).
+      await d.db.query(
+        `update public.api_play_events set received_at = received_at - make_interval(secs => $2::integer)
+          where play_id in (select x::uuid from jsonb_array_elements_text($1::jsonb) as x)`,
+        [JSON.stringify(playIds), seconds],
+      );
+    },
     accounts: {
       async suspendedArtist() {
         const a = await d.account("artist", { suspended: true });
