@@ -265,10 +265,14 @@ current state and the next steps. Update it when a step is done.
      no `AccessDenied`.
 
    From J4 (#47), the worker on ffmpeg 5.1:
-   - In the smoke check above, the WAV, AIFF and FLAC still reach `awaiting_splits` (they now run
-     with `-f`, `-protocol_whitelist file` and only `PATH`).
-   - Add a fourth release with one master declared `wav` whose bytes are this text (an HLS
-     playlist; the address is never meant to answer):
+   - Not built yet: the processing smoke check at the top of this step. Today's
+     `deploy/aws/scripts/smoke.ts` processes no audio (its Fargate check starts a task for a job
+     that does not exist and checks only that it exits cleanly). A session writes it before the
+     run. When it does, the WAV, AIFF and FLAC must reach `awaiting_splits` (they now run with
+     `-f`, `-protocol_whitelist file` and only `PATH`), and it needs ffmpeg on the runner to
+     make them, so its brief must allow a change to `.github/workflows/aws-sandbox.yml`.
+   - In the same check, a fourth release with one master declared `wav` whose bytes are this
+     text (an HLS playlist; the address is never meant to answer):
      ```
      #EXTM3U
      #EXT-X-TARGETDURATION:2
