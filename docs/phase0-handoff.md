@@ -221,6 +221,9 @@ current state and the next steps. Update it when a step is done.
   G2 calls them).
 - Two handler limits noted in #31: a failed email is only logged (the owner can resend an
   invitation), and two sweeps at the same moment could queue an extra, harmless job.
+- [ ] Resend, after the Supabase stand-up (review L7): the `RESEND_API_KEY` has sending access
+  only; 2FA is on the Resend account, kept to K Marcus; message retention is shortened or off,
+  if Resend offers it.
 - The owner and repository ids are written into `deploy/aws/infra/github-oidc.json`. They
   survive a rename; a transfer or a new repository needs new ones.
 
