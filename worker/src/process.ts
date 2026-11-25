@@ -154,7 +154,7 @@ export function makeProcessRelease(deps: ProcessDeps): (job: JobToRun) => Promis
       }
 
       // 3. Decode it all the way through into the MP3.
-      const made = await transcode(tools, masterFile, streamFile, probed.expectedSamples);
+      const made = await transcode(tools, masterFile, track.master_format, streamFile, probed.expectedSamples);
       await rm(masterFile, { force: true });
       if (!made.ok) {
         log(`job ${job.jobId}: track ${track.id}: ffmpeg said: ${made.detail}`);
