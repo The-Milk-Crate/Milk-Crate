@@ -1,6 +1,6 @@
 # Phase 0: where things stand (handoff)
 
-For K Marcus and the next session. Last updated 25 November 2026, after sessions J1 (#41) and J2 (#43). Next: J3 and J4, then step 9.
+For K Marcus and the next session. Last updated 25 November 2026, after sessions J1 (#41), J2 (#43) and J3 (#45). Next: J4, then step 9.
 `docs/phase0-sessions.md` holds the rules and each session's brief; this file holds only the
 current state and the next steps. Update it when a step is done.
 
@@ -190,8 +190,7 @@ current state and the next steps. Update it when a step is done.
    - J2 `docs/phase0-prompts/j2-supabase-fixes.md`: Supabase deployment;
    - J3 `docs/phase0-prompts/j3-aws-fixes.md`: AWS deployment;
    - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
-   J2 and J3 each add a few lines to this file (different sections). J2 is merged, so J3's
-   branch needs `milk-crate-backend-poc` merged in first: J1's and J2's lines below are on it.
+   J1, J2 and J3 are merged; J4 is next.
    - J1: done (25 November 2026, merged #41). Migrations `0009` to `0014` and the handler fixes
      for H1, H2 (part a), M1, M2, L1, L2, L3, L6 and the invitation email; details in #41,
      `db/README.md` ("Rate limits") and `core/src/handlers/README.md`. The invitation email now
@@ -218,8 +217,13 @@ current state and the next steps. Update it when a step is done.
      warns unless the Supabase CLI is 2.122.1. Not run for real yet: `supabase config push` and
      `supabase functions deploy` (K Marcus's stand-up). Run the stand-up after J4 is merged: it
      copies `worker/src/` into the worker image.
-   - J3: pull request #45 open, with `milk-crate-backend-poc` (J1's #41, J2's #43) merged in.
-     AWS fixes for M2, M3, L4, L8 and L9; details in #45 and `deploy/aws/README.md`. Decided by
+   - J3: done (25 November 2026, merged #45). AWS fixes for M2, M3, L4, L8 and L9; details in
+     #45 and `deploy/aws/README.md`. Each part URL is signed with its size; unfinished uploads
+     are aborted after 1 day (was 7); the API's `$default` stage is throttled at 50 a second,
+     burst 100; `getPublicRelease` and `recordPlays` get only the Data API, and `getPlayback`
+     and `getCover` add reads of `streams/*` and `art/*`, `s3:ListBucket` (a missing file is a
+     404) and the CloudFront key; `aws-cdk-lib` 2.278.0 (`npm audit`: 0), CLI kept at 2.1146.1.
+     Not run for real yet: all of it (the checks are in step 9). Decided by
      K Marcus with J3: J3 also changed `core/`, so the S3 abort for a replaced upload runs only
      after the database records the new one.
      - `ObjectStorage` gets a required `abortOtherUploads(key, keepProviderUploadId)` (AWS
@@ -236,7 +240,16 @@ current state and the next steps. Update it when a step is done.
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
    tests use 6.1; decided by K Marcus with session H). Note the real time per job, for the
-   4-hour limit.
+   4-hour limit. From J3 (#45), check on AWS:
+   - the smoke test's new checks: S3 refuses a part of the wrong length, and
+     `abortOtherUploads` ends a replaced upload but not the new one;
+   - `confirm.sh` reports the bucket's 1-day rule for unfinished uploads;
+   - `aws apigatewayv2 get-stage --api-id <id> --stage-name '$default'` shows rate 50 and
+     burst 100;
+   - with the sandbox kept (`MC_SANDBOX_KEEP=true`) and `tests/cross-cloud/run-live.ts` or calls
+     by hand: `getPlayback` and `getCover` give cookies that open the stream and the cover, a
+     missing stream is a 404, `getPublicRelease` and `recordPlays` answer, and their logs show
+     no `AccessDenied`.
 
 ## Still open
 
