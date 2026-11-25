@@ -192,6 +192,20 @@ current state and the next steps. Update it when a step is done.
    - J4 `docs/phase0-prompts/j4-worker-fixes.md`: the worker.
    J2 and J3 each add a few lines to this file (different sections); merge one, then update the
    other's branch.
+   - J3 to J1 (decided by K Marcus, 25 November; in J3's pull request #45): J3 also changed
+     `core/`, so the S3 abort for a replaced upload runs only after the database records the
+     new one.
+     - `ObjectStorage` gets a required `abortOtherUploads(key, keepProviderUploadId)` (AWS
+       aborts its S3 uploads; Supabase does nothing).
+     - In `core/src/handlers/uploads.ts`, `start(...)` calls it right after the
+       `api_start_upload` query and before the 201, in a try/catch. A failure is logged and the
+       start still answers 201. Nothing else in that file changed.
+     - `core/test/fakes.ts`: `FakeStorage` gets `aborts`, `abortError` and the method. Three
+       tests are under "replaced uploads (abortOtherUploads)" in `core/test/uploads.test.ts`.
+     - When merging: keep the abort after every step that can still refuse a start (a refused
+       start must not end the upload it would have replaced); give any new `ObjectStorage`
+       fake the method. Whichever pull request merges second merges `milk-crate-backend-poc`
+       into its branch, then runs `bash core/test/run.sh` and `bash tests/cross-cloud/run.sh`.
 
 9. A larger sandbox run after I, with the same workflow. Add a smoke check to it that processes
    one small WAV, AIFF and FLAC on the real Fargate image, which has Debian's ffmpeg 5.1 (the
