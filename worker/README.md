@@ -10,7 +10,7 @@ session G's `makeApplyJobResult`. The step never moves a release's state itself.
 
 1. Streams the master once (`ObjectStorage.read`) to a temp file, hashing it on the way, and
    compares the SHA-256 with `api_tracks.master_sha256` (what the client sent at confirm).
-2. Checks what the file really is with ffprobe: the container and codec must match the
+2. Checks what the file really is with ffprobe, read only as the declared format: the container and codec must match the
    declared format (WAV or AIFF holding PCM, or FLAC), it must have an audio stream, and its
    sample rate must be readable.
 3. Decodes it all the way through with ffmpeg into one 320 kbps MP3 (libmp3lame, 44.1 kHz
@@ -29,6 +29,12 @@ failure, a crash, or the release moved on, such as a takedown during the job), t
 job wrote are deleted. Two cases keep them: a newer job exists (it owns those keys), or the
 track has a copy an earlier job recorded. Temp files are removed either way. A retried job
 writes the same keys and gives the same result.
+
+Masters are untrusted. ffprobe and ffmpeg get `-f wav|aiff|flac` (the declared format, so no
+format guessing: a playlist or concat file is not opened as one) and `-protocol_whitelist file`
+before the input, and run with only `PATH` in their environment (no database password, service
+key or cloud credentials). ffmpeg's FLAC reader does not check the file's first bytes, so the
+step checks the `fLaC` marker itself (after any ID3v2 tag). Security review, M4.
 
 The words the artist reads are in `src/words.ts`.
 
@@ -55,6 +61,10 @@ copy scripts, type-checks, starts a throwaway PostgreSQL 16, applies `db/migrati
   tag that reads `[error]`), a wrong SHA-256, a missing master, one bad track among good ones,
   a storage failure part way, a retried job, a stale job, a takedown during the job, cleanup
   after failures;
+- `untrusted.test.ts`: an HLS playlist and an `ffconcat` file pointing at a local HTTP server,
+  saved as a WAV, fail as the wrong format and the server gets no request; the tools get only
+  `PATH` (fakes that record their environment) and still process a WAV, AIFF and FLAC; a FLAC
+  with an ID3v2 tag in front passes;
 - `platforms.test.ts`: one run through each platform's skeleton with its storage module over
   its fake (E's Supabase Storage fake; S3 at the SDK edge with F's Data API stand-in), ending in
   `awaiting_splits` or `failed`;

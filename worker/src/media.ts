@@ -35,9 +35,28 @@ interface Run {
   errors: string[];
 }
 
+/** The ffmpeg demuxer for each declared format. */
+const DEMUXER: Record<AudioFormat, string> = { wav: "wav", aiff: "aiff", flac: "flac" };
+
+/**
+ * Masters are untrusted. Both commands read the input only as the declared format (no format
+ * guessing, so no playlist or concat file) and only from local files (no other protocol).
+ */
+function inputOptions(declared: AudioFormat): string[] {
+  return ["-f", DEMUXER[declared], "-protocol_whitelist", "file"];
+}
+
+/**
+ * The environment ffprobe and ffmpeg get: only PATH, so they never see the worker's database
+ * password, service key or cloud credentials.
+ */
+function toolEnv(): Record<string, string> {
+  return process.env.PATH ? { PATH: process.env.PATH } : {};
+}
+
 function run(command: string, args: string[]): Promise<Run> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env: toolEnv() });
     let stdout = "";
     const tail: string[] = [];
     const errors: string[] = [];
@@ -69,13 +88,18 @@ function run(command: string, args: string[]): Promise<Run> {
 
 /** What the file really is, read from its content (the temp file has no extension). */
 export async function probe(tools: Tools, file: string, declared: AudioFormat): Promise<ProbeResult> {
+  // ffmpeg's WAV and AIFF readers refuse a file without their header, but its FLAC reader skips
+  // the first 4 bytes unchecked, so check FLAC's marker here.
+  if (declared === "flac" && !(await startsWithFlacMarker(file))) return { ok: false, reason: "wrong_format" };
   const out = await run(tools.ffprobe ?? "ffprobe", [
     "-v", "error",
     "-print_format", "json",
     "-show_entries", "format=format_name:stream=codec_type,codec_name,sample_rate,channels,duration_ts,time_base",
+    ...inputOptions(declared),
     file,
   ]);
-  // ffprobe cannot open it at all (empty, or not audio): not the declared format.
+  // ffprobe cannot open it as the declared format (empty, not audio, or another format such as
+  // a playlist): not the declared format.
   if (out.code !== 0) return { ok: false, reason: "wrong_format" };
   let info: {
     format?: { format_name?: string };
@@ -109,6 +133,30 @@ export async function probe(tools: Tools, file: string, declared: AudioFormat): 
     if (fromHeader !== null) expectedSamples = fromHeader;
   }
   return { ok: true, sampleRateHz, channels: Number(audio.channels) || 0, expectedSamples };
+}
+
+/**
+ * Whether the file starts with "fLaC", after any ID3v2 tags (ffmpeg reads those before any
+ * format, so a FLAC with one in front is still a FLAC).
+ */
+export async function startsWithFlacMarker(file: string): Promise<boolean> {
+  const handle = await open(file, "r");
+  try {
+    let position = 0;
+    for (let n = 0; n < 10; n++) {
+      const buffer = Buffer.alloc(10);
+      const { bytesRead } = await handle.read(buffer, 0, 10, position);
+      if (bytesRead >= 4 && buffer.toString("latin1", 0, 4) === "fLaC") return true;
+      if (bytesRead < 10 || buffer.toString("latin1", 0, 3) !== "ID3") return false;
+      // ID3v2: a 10-byte header, a size in 4 bytes of 7 bits each, and a 10-byte footer when flagged.
+      if ((buffer[6] | buffer[7] | buffer[8] | buffer[9]) & 0x80) return false;
+      const size = (buffer[6] << 21) | (buffer[7] << 14) | (buffer[8] << 7) | buffer[9];
+      position += 10 + size + (buffer[5] & 0x10 ? 10 : 0);
+    }
+    return false;
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -178,12 +226,19 @@ export type TranscodeResult =
  * or corrupt file) or decodes fewer samples than the header declares. `samples` is the count
  * per channel at the master's own sample rate, for the duration.
  */
-export async function transcode(tools: Tools, input: string, output: string, expectedSamples: number | null): Promise<TranscodeResult> {
+export async function transcode(
+  tools: Tools,
+  input: string,
+  declared: AudioFormat,
+  output: string,
+  expectedSamples: number | null,
+): Promise<TranscodeResult> {
   const out = await run(tools.ffmpeg ?? "ffmpeg", [
     "-nostdin", "-hide_banner", "-nostats",
     // Info level, so astats prints the sample count; each line is tagged with its level.
     "-loglevel", "level+info",
     "-xerror",
+    ...inputOptions(declared),
     "-i", input,
     "-map", "0:a:0",
     "-vn",
